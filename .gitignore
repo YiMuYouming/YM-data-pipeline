@@ -5,3 +5,4 @@ dist/
 build/
 .cache/
 *.DS_Store
+outputs/*.json

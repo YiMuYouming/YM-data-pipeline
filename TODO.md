@@ -1,19 +1,28 @@
 # 开发计划
 
-## 批1 ✅ 核心基座 — 已完成
+## 批1 ✅ 核心基座
 - [x] 仓库初始化 + pyproject.toml
-- [x] sources/pytdx.py（PyTDX 全新重写，6个数据接口）
-- [x] sources/iwencai.py（问财模块化，支持通用查询+批量个股）
-- [x] sources/ths_hot.py / tencent.py / eastmoney.py / northbound.py（复制管道源码）
-- [x] sources/ths_industry.py（同花顺行业板块直连，替代akshare）
+- [x] 7个数据源全部通过验证
 - [x] fetch.py 统一路由（12个data_type）
+- [x] iwencai.py 按 iwencai-data Skill 规范修正
 
-## 批2 对比验证 + 看板切流
-- [ ] scripts/compare.py（新老系统输出对照）
-- [ ] poll_live.py 改造为调用 ym_stock_data
+## 批2 ✅ 对比验证 + 最佳实践对标
+- [x] compare.py 新老系统对比（5维度全通过）
+- [x] 对标 simonlin1212/a-stock-data 最佳实践
+- [x] 对标 PyTDX API 文档 (45字段确认)
+- [x] iwencai 新增 comprehensive/search (代码就绪，待API key升级)
+- [x] tencent 字段映射确认为正确 (v39=PE, v43=振幅, v46=PB)
+- [x] 提取 _iwencai_headers() 消除重复
+
+## 批3 ✅ 看板接入 + L4研报/公告/新闻
+- [x] consumer/dashboard.py 看板数据适配器
+- [x] research.py 东财研报 (reportapi.eastmoney.com)
+- [x] filings.py 巨潮公告 (cninfo.cn, PDF下载)
+- [x] news.py 财联社新闻 (cls.cn, 分钟级)
+- [x] fetch.py 新增 L4 路由 (15个data_type)
+- [x] 全量测试: 14/14 通过
+
+## 后续 (pending)
+- [ ] poll_live.py 切流（改为调用 ym_stock_data）
 - [ ] W10 板块热力新增净流入维度
-
-## 批3 研报/公告/新闻
-- [ ] sources/research.py（东财研报API）
-- [ ] sources/filings.py（巨潮公告）
-- [ ] sources/news.py（东财/财联社新闻）
+- [ ] iwencai comprehensive/search API key权限升级

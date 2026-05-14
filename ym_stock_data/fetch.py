@@ -46,6 +46,11 @@ _ROUTES = {
     "northbound":    ("northbound", "fetch_realtime", {"layer": 3, "desc": "北向资金分钟级262点"}),
     "dragon_tiger":  ("eastmoney", "fetch_daily_dragon_tiger", {"layer": 3, "desc": "全市场龙虎榜"}),
     "sector_inflow": ("ths_industry", "fetch_industry_summary", {"layer": 3, "desc": "行业板块净流入(同花顺直连)"}),
+
+    # === L4 研报/公告/新闻 ===
+    "research":      ("research", "fetch_reports",    {"layer": 4, "desc": "个股研报(东财reportapi)"}),
+    "filings":       ("filings", "fetch_filings",     {"layer": 4, "desc": "公司公告(巨潮cninfo)"}),
+    "news":          ("news", "fetch_news",           {"layer": 4, "desc": "实时新闻(财联社电报)"}),
 }
 
 
