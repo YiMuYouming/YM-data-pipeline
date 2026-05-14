@@ -1,0 +1,147 @@
+{
+  "_meta": {
+    "version": "0.1.0",
+    "updated": "2026-05-14",
+    "description": "弈沐资本全部数据字段的自动化覆盖状态。所有 Agent 可读。",
+    "pipeline_path": "~/Documents/YM_Capital/YM-data-pipeline",
+    "import": "from ym_stock_data import fetch"
+  },
+
+  "legend": {
+    "auto": "管道已自动获取，不需要人工提供",
+    "iwencai": "问财可查（15min/5000次，建议盘后或关键时点调用）",
+    "manual": "必须人工提供（主观判断或仅本人知道）",
+    "review_note": "从复盘笔记 Appendix 解析（稳米填写后 gen 自动提取）"
+  },
+
+  "fields": {
+
+    "market": {
+      "上证指数":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s","note":"零鉴权TCP，实时"},
+
+      "上证涨幅":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s"},
+      "深证指数":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s"},
+      "深证涨幅":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s"},
+      "创业指数":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s"},
+      "创业涨幅":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s"},
+      "市场量能":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s","note":"成交额字段"},
+      "涨停家数":    {"status":"auto","source":"ths_hot","fetch":"ths_hot.zt_count","freq":"每日","note":"盘中可用，零鉴权HTTP"},
+      "跌停家数":    {"status":"iwencai","source":"iwencai","fetch":"iwencai query=跌停家数","freq":"盘后","note":"问财独家，有限额"},
+      "炸板率":      {"status":"iwencai","source":"iwencai","fetch":"iwencai query=炸板率","freq":"盘后","note":"问财独家"},
+      "封板率":      {"status":"iwencai","source":"iwencai","fetch":"iwencai query=封板率","freq":"盘后","note":"问财独家"},
+      "涨跌比":      {"status":"auto","source":"pytdx","fetch":"index.上涨家数/下跌家数","freq":"5s","note":"实时计算"}
+    },
+
+    "sentiment": {
+      "情绪值":      {"status":"auto","source":"pytdx","fetch":"index.上涨/(上涨+下跌)","freq":"5s","note":"store.js 已自动反推"},
+      "情绪区间":    {"status":"auto","source":"pytdx","fetch":"index","freq":"5s","note":"<20冰点 20-40低迷 40-60主升 60-80强势 >80高潮"},
+      "昨日情绪":    {"status":"iwencai","source":"iwencai","fetch":"iwencai query=昨日情绪","freq":"盘后","note":"可从昨日数据推算"},
+      "赚钱效应":    {"status":"manual","source":"人工","note":"主观定性判定"},
+      "昨日涨停收益":{"status":"iwencai","source":"iwencai","fetch":"iwencai query=昨日涨停收益","freq":"盘后","note":"问财可查"},
+      "昨日炸板收益":{"status":"iwencai","source":"iwencai","fetch":"iwencai query=昨日炸板收益","freq":"盘后"},
+      "连板收益":    {"status":"iwencai","source":"iwencai","fetch":"iwencai query=昨日连板收益","freq":"盘后","note":"待验证"},
+      "连板风险值":  {"status":"manual","source":"人工","note":"iwencai返回非数值字段"},
+      "晋级率":      {"status":"iwencai","source":"iwencai","fetch":"iwencai query=涨停晋级率","freq":"盘后"},
+      "一进二晋级率":{"status":"iwencai","source":"iwencai","fetch":"iwencai query=一进二晋级率","freq":"盘后","note":"待验证字段名"},
+      "二进三晋级率":{"status":"iwencai","source":"iwencai","fetch":"iwencai","freq":"盘后","note":"待验证"},
+      "三进四晋级率":{"status":"iwencai","source":"iwencai","fetch":"iwencai","freq":"盘后","note":"待验证"},
+      "最高板":      {"status":"iwencai","source":"iwencai","fetch":"iwencai query=最高连板高度","freq":"盘后"},
+      "次高板":      {"status":"iwencai","source":"iwencai","fetch":"iwencai query=次高连板高度","freq":"盘后"},
+      "连板梯队":    {"status":"manual","source":"人工","note":"iwencai不直接返回汇总字段"},
+      "竞价情绪值":  {"status":"auto","source":"iwencai","fetch":"snapshot_auction.py","freq":"9:26一次","note":"已自动化"}
+    },
+
+    "live_index": {
+      "上证指数":    {"status":"auto","source":"pytdx","freq":"5s"},
+      "深证指数":    {"status":"auto","source":"pytdx","freq":"5s"},
+      "创业指数":    {"status":"auto","source":"pytdx","freq":"5s"},
+      "成交额":      {"status":"auto","source":"pytdx","freq":"5s"},
+      "成交额差":    {"status":"auto","source":"pytdx","freq":"5s","note":"15min累计对比昨日"},
+      "上涨家数":    {"status":"auto","source":"pytdx","freq":"30s"},
+      "下跌家数":    {"status":"auto","source":"pytdx","freq":"30s"},
+      "量比":        {"status":"auto","source":"pytdx","freq":"5s","note":"15min volume ratio"}
+    },
+
+    "live_quotes": {
+      "_desc":       "每只个股的实时行情",
+      "最新价":      {"status":"auto","source":"pytdx","freq":"5s"},
+      "涨幅":        {"status":"auto","source":"pytdx","freq":"5s"},
+      "量比":        {"status":"auto","source":"pytdx","freq":"5s"},
+      "换手":        {"status":"auto","source":"pytdx","freq":"5s"},
+      "MA5_d":       {"status":"auto","source":"pytdx","freq":"每日计算一次"},
+      "MA10_d":      {"status":"auto","source":"pytdx","freq":"每日计算一次"},
+      "MA20_d":      {"status":"auto","source":"pytdx","freq":"每日计算一次"},
+      "MA10_60m":    {"status":"auto","source":"pytdx","freq":"盘中计算","note":"60分钟MA10，W09回踩判定核心"},
+      "MA10_60m_dir":{"status":"auto","source":"pytdx","freq":"盘中计算","note":"向上/向下/走平"},
+      "is_strong":   {"status":"auto","source":"pytdx","freq":"每日计算一次","note":"近5日收盘从未跌破MA5"}
+    },
+
+    "live_sectors": {
+      "_desc":       "板块指数实时数据",
+      "涨跌幅":      {"status":"auto","source":"pytdx","freq":"30s"},
+      "最新价":      {"status":"auto","source":"pytdx","freq":"30s"},
+      "MA5":         {"status":"auto","source":"pytdx","freq":"每日计算"},
+      "MA20":        {"status":"auto","source":"pytdx","freq":"每日计算"},
+      "MA5方向":     {"status":"auto","source":"pytdx","freq":"每日计算"},
+      "站上MA5":     {"status":"auto","source":"pytdx","freq":"30s"},
+      "距MA5":       {"status":"auto","source":"pytdx","freq":"30s","note":"距离MA5百分比"},
+      "成交额趋势":  {"status":"auto","source":"pytdx","freq":"每日计算","note":"放量/缩量/持平"},
+      "今日涨停数":  {"status":"manual","source":"暂无","note":"东财push2海外被封，暂不可用"}
+    },
+
+    "pipeline_new": {
+      "_desc":       "管道新增数据（老系统没有的维度）",
+      "sector_inflow":{"status":"auto","source":"ths_industry","freq":"按需","note":"50个同花顺行业净流入，零鉴权"},
+      "northbound":   {"status":"auto","source":"northbound","freq":"分钟级","note":"262分钟点北向资金"},
+      "hot_list":     {"status":"auto","source":"ths_hot","freq":"每日","note":"80+只强势股+题材归因"},
+      "research":     {"status":"auto","source":"research","freq":"按需","note":"东财研报，评级/目标价/EPS"},
+      "filings":      {"status":"auto","source":"filings","freq":"按需","note":"巨潮公告，PDF可下载"},
+      "news":         {"status":"auto","source":"news","freq":"按需","note":"财联社实时电报"}
+    },
+
+    "review_note_ssot": {
+      "_desc":       "复盘笔记独有的 SSOT 数据（稳米需填写）",
+      "positions":   {"status":"review_note","note":"持仓明细，只有弈沐哥知道"},
+      "lianban_pool":{"status":"review_note","note":"连板自选池标的，弈沐哥选定"},
+      "trend_pool":  {"status":"review_note","note":"趋势自选池标的，弈沐哥选定"},
+      "sectors":     {"status":"review_note","note":"板块定性（主线/支线/退潮），弈沐哥判断"},
+      "锚定股状态":  {"status":"review_note","note":"锚定股+影响方向，弈沐哥判断"},
+      "今日操作":    {"status":"review_note","note":"实际买卖操作记录"},
+      "总资产":      {"status":"manual","note":"只有弈沐哥知道"},
+      "可用资金":    {"status":"manual","note":"只有弈沐哥知道"},
+      "早盘决策":    {"status":"review_note","note":"W1条件判定结果"},
+      "午盘决策":    {"status":"review_note","note":"V反/双冰判定"},
+      "风格判定":    {"status":"auto","source":"style_detect.py","note":"每日自动跑，走管道iwencai"},
+      "竞价5维":     {"status":"auto","source":"snapshot_auction.py","freq":"9:26一次","note":"iwencai快照"}
+    },
+
+    "15min_bars": {
+      "_desc":       "三大指数15分钟K线（同比昨日）",
+      "上证15min":   {"status":"auto","source":"pytdx","freq":"5s"},
+      "深证15min":   {"status":"auto","source":"pytdx","freq":"5s"},
+      "创业15min":   {"status":"auto","source":"pytdx","freq":"5s"}
+    },
+
+    "yesterday_baseline": {
+      "_desc":       "昨日收盘基线",
+      "上证昨收":    {"status":"auto","source":"pytdx","freq":"30s"},
+      "上证昨涨幅":  {"status":"auto","source":"pytdx","freq":"30s"},
+      "上证昨成交额":{"status":"auto","source":"pytdx","freq":"30s"},
+      "上证昨上涨":  {"status":"auto","source":"pytdx","freq":"30s"},
+      "上证昨下跌":  {"status":"auto","source":"pytdx","freq":"30s"}
+    }
+
+  },
+
+  "rate_limits": {
+    "pytdx":     {"limit": "无", "freq_max": "5s", "note": "TCP长连接，零鉴权"},
+    "ths_hot":   {"limit": "无", "freq_max": "分钟级", "note": "HTTP零鉴权，同花顺公共页面"},
+    "ths_industry":{"limit":"无", "freq_max": "分钟级", "note": "HTTP零鉴权"},
+    "tencent":   {"limit": "无", "freq_max": "不限", "note": "HTTP零鉴权，qt.gtimg.cn"},
+    "northbound":{"limit": "无", "freq_max": "分钟级", "note": "HTTP零鉴权，同花顺hsgtApi"},
+    "eastmoney": {"limit": "3次/分钟", "freq_max": "盘后一次", "note": "需Referer头"},
+    "cls_news":  {"limit": "无", "freq_max": "分钟级", "note": "HTTP零鉴权"},
+    "cninfo":    {"limit": "低", "freq_max": "按需", "note": "巨潮公告，无鉴权"},
+    "iwencai":   {"limit": "15min/5000次", "freq_max": "关键时点", "note": "API KEY，建议9:26+盘后用"}
+  }
+}
