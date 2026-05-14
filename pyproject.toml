@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ym-stock-data"
+version = "0.1.0"
+description = "弈沐资本 A 股数据平台 — 统一数据获取基座"
+requires-python = ">=3.10"
+dependencies = [
+    "pytdx>=0.3",
+    "requests>=2.28",
+    "akshare>=1.18",
+]
+
+[project.scripts]
+ym-data = "ym_stock_data.__main__:main"
