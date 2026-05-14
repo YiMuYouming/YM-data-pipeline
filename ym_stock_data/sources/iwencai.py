@@ -21,7 +21,7 @@ _API_KEY = None
 
 
 def _load_api_key() -> str:
-    """读取 IWENCAI_API_KEY: 环境变量 → .zshrc → .bash_profile"""
+    """读取 IWENCAI_API_KEY: 环境变量 → .zshrc → .bash_profile → .bashrc"""
     global _API_KEY
     if _API_KEY:
         return _API_KEY
@@ -29,11 +29,11 @@ def _load_api_key() -> str:
     if key:
         _API_KEY = key
         return key
-    for rc in [os.path.expanduser("~/.zshrc"), os.path.expanduser("~/.bash_profile")]:
+    for rc in [os.path.expanduser(p) for p in ["~/.zshrc", "~/.bash_profile", "~/.bashrc"]]:
         try:
             with open(rc, encoding="utf-8") as f:
                 for line in f:
-                    m = re.match(r'export\s+IWENCAI_API_KEY=["\'](.+?)["\']', line)
+                    m = re.match(r'export\s+IWENCAI_API_KEY=["\']?(.+?)["\']?\s*$', line)
                     if m:
                         _API_KEY = m.group(1)
                         return _API_KEY
