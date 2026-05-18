@@ -151,6 +151,7 @@ def build_live(include_extras: bool = True) -> dict:
                 "total": r.get("total", 0),
                 "zt_count": r.get("zt_count", 0),
                 "reason_stats": r.get("reason_stats", {}),
+                "zt_stocks": r.get("zt_stocks", []),
             }
         except Exception:
             pass
