@@ -27,3 +27,6 @@ HTTP_TIMEOUT = 15
 
 # 问财 API KEY 路径
 IWENCAI_API_KEY_PATH = Path.home() / ".zshrc"
+
+# pywencai venv（OpenAPI 额度耗尽时自动降级）
+PYWENCAI_VENV = str(Path.home() / "WorkBuddy/Tools/iwencai-venv/lib/python3.14/site-packages")

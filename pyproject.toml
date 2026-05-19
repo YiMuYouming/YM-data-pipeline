@@ -13,5 +13,8 @@ dependencies = [
     "akshare>=1.18",
 ]
 
+[project.optional-dependencies]
+pywencai = ["pywencai>=0.13", "pandas"]
+
 [project.scripts]
 ym-data = "ym_stock_data.__main__:main"
