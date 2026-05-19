@@ -18,6 +18,7 @@ _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "�
 
 _API_KEY = None
 _PYWENCAI = None  # 惰性加载
+_OPENAPI_DOWN_AT = 0  # OpenAPI 被拒绝的时间戳，5min 内不再尝试
 
 
 def _load_api_key() -> str:
@@ -48,7 +49,7 @@ def _iwencai_headers() -> dict:
         "User-Agent": "Mozilla/5.0",
         "X-Claw-Call-Type": "normal",
         "X-Claw-Skill-Id": "hithink-astock-selector",
-        "X-Claw-Skill-Version": "1.0.0",
+        "X-Claw-Skill-Version": "2.0.0",
         "X-Claw-Plugin-Id": "none",
         "X-Claw-Plugin-Version": "none",
         "X-Claw-Trace-Id": secrets.token_hex(32),
@@ -119,6 +120,11 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     if not key:
         return _pywencai_query(query_str, limit)
 
+    # OpenAPI 被拒绝后 5min 内直接走 pywencai，不再浪费请求
+    global _OPENAPI_DOWN_AT
+    if _OPENAPI_DOWN_AT and (__import__("time").time() - _OPENAPI_DOWN_AT) < 300:
+        return _pywencai_query(query_str, limit)
+
     req = urllib.request.Request(
         f"{IWENCAI_BASE}/v1/query2data",
         data=json.dumps({
@@ -132,10 +138,13 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             result["_source"] = "openapi"
+            _OPENAPI_DOWN_AT = 0  # 恢复
             return result
     except urllib.request.HTTPError as e:
-        # 401/429/403 → 降级 pywencai
+        # 401/429/403 → 标记不可用，降级 pywencai
         if e.code in (401, 403, 429):
+            import time as _t
+            _OPENAPI_DOWN_AT = _t.time()
             fallback = _pywencai_query(query_str, limit)
             if "error" not in fallback:
                 return fallback
