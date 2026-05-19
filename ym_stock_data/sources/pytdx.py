@@ -11,12 +11,14 @@ TCP 长连接通达信行情服务器 (7709)，零鉴权，高稳定性。
 """
 
 import time
+import threading
 from datetime import datetime
 
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
 
-# === 连接池 ===
+# === 连接池（线程安全）===
 _api = None
+_lock = threading.Lock()
 _connected_at = 0
 _fail_count = 0
 _using_fallback = False
@@ -27,31 +29,32 @@ _vol_cache = {}
 
 
 def _get_api():
-    """获取 PyTDX 连接（自动重连）"""
+    """获取 PyTDX 连接（自动重连，线程安全）"""
     global _api, _connected_at, _fail_count
 
-    if _api and (time.time() - _connected_at) < PYTDX_MAX_AGE:
-        return _api
+    with _lock:
+        if _api and (time.time() - _connected_at) < PYTDX_MAX_AGE:
+            return _api
 
-    if _api:
-        try:
-            _api.disconnect()
-        except Exception:
-            pass
+        if _api:
+            try:
+                _api.disconnect()
+            except Exception:
+                pass
 
-    from pytdx.hq import TdxHq_API
-    for ip, port in PYTDX_SERVERS:
-        try:
-            api = TdxHq_API()
-            if api.connect(ip, port, time_out=PYTDX_CONNECT_TIMEOUT):
-                _api = api
-                _connected_at = time.time()
-                _fail_count = 0
-                return api
-        except Exception:
-            continue
+        from pytdx.hq import TdxHq_API
+        for ip, port in PYTDX_SERVERS:
+            try:
+                api = TdxHq_API()
+                if api.connect(ip, port, time_out=PYTDX_CONNECT_TIMEOUT):
+                    _api = api
+                    _connected_at = time.time()
+                    _fail_count = 0
+                    return api
+            except Exception:
+                continue
 
-    _fail_count += 1
+        _fail_count += 1
     return None
 
 
