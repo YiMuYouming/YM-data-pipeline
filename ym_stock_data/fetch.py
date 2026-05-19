@@ -105,6 +105,7 @@ def fetch(data_type: str, **kwargs) -> dict:
     except Exception as e:
         return {
             "error": str(e),
+            "error_type": type(e).__name__,
             "_meta": {
                 "data_type": data_type,
                 "source": module_name,

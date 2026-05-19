@@ -119,10 +119,12 @@ def fetch_quotes(codes: list) -> dict:
         if not raw:
             return _fallback_quotes(codes)
     except Exception:
-        _fail_count += 1
+        with _lock:
+            _fail_count += 1
         return _fallback_quotes(codes)
 
-    _fail_count = 0
+    with _lock:
+        _fail_count = 0
 
     now = datetime.now()
     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
