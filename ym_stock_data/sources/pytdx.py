@@ -211,66 +211,7 @@ def _fallback_breadth() -> dict:
             "_total": up + down + flat,
             "_source": "eastmoney_index_fallback",
         }
-
-    cats = {"涨停": 0, ">7%": 0, "5~7%": 0, "3~5%": 0, "0~3%": 0,
-            "-0~-3%": 0, "-3~-5%": 0, "-5~-7%": 0, "<-7%": 0, "跌停": 0}
-    base = "https://push2.eastmoney.com/api/qt/clist/get"
-    page = 1
-    total = 0
-    while page <= 80:
-        qs = urllib.parse.urlencode({
-            "pn": page,
-            "pz": 100,
-            "po": 1,
-            "np": 1,
-            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-            "fltt": 2,
-            "invt": 2,
-            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
-            "fields": "f12,f14,f2,f3,f18",
-        })
-        try:
-            payload = _eastmoney_json(f"{base}?{qs}")
-        except Exception:
-            break
-        rows = (((payload or {}).get("data") or {}).get("diff") or [])
-        if not rows:
-            break
-        for row in rows:
-            pct_raw = row.get("f3")
-            if pct_raw in (None, "", "-"):
-                continue
-            pct = _number(pct_raw)
-            total += 1
-            if pct >= 9.9:
-                cats["涨停"] += 1
-            elif pct > 7:
-                cats[">7%"] += 1
-            elif pct > 5:
-                cats["5~7%"] += 1
-            elif pct > 3:
-                cats["3~5%"] += 1
-            elif pct >= 0:
-                cats["0~3%"] += 1
-            elif pct >= -3:
-                cats["-0~-3%"] += 1
-            elif pct >= -5:
-                cats["-3~-5%"] += 1
-            elif pct >= -7:
-                cats["-5~-7%"] += 1
-            elif pct > -9.9:
-                cats["<-7%"] += 1
-            else:
-                cats["跌停"] += 1
-        data_total = int(_number(((payload or {}).get("data") or {}).get("total")))
-        if page * 100 >= data_total:
-            break
-        page += 1
-
-    if total:
-        cats["_total"] = total
-        cats["_source"] = "eastmoney_fallback"
-    return cats
+    return {}
 
 
 # ==================== 个股报价 ====================
