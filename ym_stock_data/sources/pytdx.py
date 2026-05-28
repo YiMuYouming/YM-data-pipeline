@@ -10,6 +10,7 @@ TCP 长连接通达信行情服务器 (7709)，零鉴权，高稳定性。
     breadth = pytdx.fetch_breadth()
 """
 
+import os
 import time
 import threading
 from datetime import datetime
@@ -31,6 +32,9 @@ _vol_cache = {}
 def _get_api():
     """获取 PyTDX 连接（自动重连，线程安全）"""
     global _api, _connected_at, _fail_count
+
+    if os.getenv("YIMU_DISABLE_PYTDX", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
 
     with _lock:
         if _api and (time.time() - _connected_at) < PYTDX_MAX_AGE:

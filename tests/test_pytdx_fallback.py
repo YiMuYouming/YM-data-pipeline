@@ -48,6 +48,31 @@ class PytdxFallbackQuotesTest(unittest.TestCase):
 
         self.assertEqual(result["002436"]["最新价"], 37.02)
 
+    def test_fetch_quotes_falls_back_when_pytdx_disabled(self):
+        tencent_payload = {
+            "002436": {
+                "price": 37.02,
+                "change_pct": -1.23,
+                "turnover_pct": 2.34,
+                "vol_ratio": 1.56,
+            }
+        }
+
+        real_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("pytdx"):
+                raise AssertionError("pytdx should not be imported when disabled")
+            return real_import(name, *args, **kwargs)
+
+        with patch.dict("os.environ", {"YIMU_DISABLE_PYTDX": "1"}), \
+             patch("builtins.__import__", side_effect=fake_import), \
+             patch("ym_stock_data.sources.tencent.fetch_quotes", return_value=tencent_payload):
+            result = pytdx.fetch_quotes(["002436"])
+
+        self.assertEqual(result["002436"]["最新价"], 37.02)
+        self.assertEqual(result["002436"]["_source"], "tencent_fallback")
+
 
 if __name__ == "__main__":
     unittest.main()
