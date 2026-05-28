@@ -112,22 +112,24 @@ class PytdxFallbackQuotesTest(unittest.TestCase):
         self.assertEqual(result["_source"], "eastmoney_fallback")
 
     def test_fetch_breadth_falls_back_to_eastmoney_when_pytdx_disabled(self):
-        pages = [
-            {"data": {"total": 3, "diff": [
-                {"f3": 10.01}, {"f3": 6.2}, {"f3": -10.0},
-            ]}},
-            {"data": {"total": 3, "diff": []}},
-        ]
+        payload = {
+            "data": {
+                "diff": [
+                    {"f12": "000001", "f104": 830, "f105": 1450, "f106": 68},
+                    {"f12": "399001", "f104": 1068, "f105": 1772, "f106": 81},
+                ]
+            }
+        }
 
         with patch.dict("os.environ", {"YIMU_DISABLE_PYTDX": "1"}), \
-             patch("urllib.request.urlopen", side_effect=[FakeResponse(p) for p in pages]):
+             patch("urllib.request.urlopen", return_value=FakeResponse(payload)):
             result = pytdx.fetch_breadth()
 
-        self.assertEqual(result["涨停"], 1)
-        self.assertEqual(result["5~7%"], 1)
-        self.assertEqual(result["跌停"], 1)
-        self.assertEqual(result["_total"], 3)
-        self.assertEqual(result["_source"], "eastmoney_fallback")
+        self.assertEqual(result["0~3%"], 1898)
+        self.assertEqual(result["-0~-3%"], 3222)
+        self.assertEqual(result["_flat"], 149)
+        self.assertEqual(result["_total"], 5269)
+        self.assertEqual(result["_source"], "eastmoney_index_fallback")
 
 
 if __name__ == "__main__":

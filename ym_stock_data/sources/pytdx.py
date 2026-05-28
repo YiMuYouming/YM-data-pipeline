@@ -175,6 +175,43 @@ def _fallback_index() -> dict:
 
 
 def _fallback_breadth() -> dict:
+    index = _fallback_index()
+    up = int(_number(index.get("上涨家数")))
+    down = int(_number(index.get("下跌家数")))
+    flat = 0
+    if up or down:
+        # Eastmoney index rows expose market-wide up/down/flat counts. Keep this
+        # fallback lightweight for cloud nodes; hot_list/iwencai provide exact
+        # limit-up/down counts elsewhere.
+        try:
+            url = (
+                "https://push2.eastmoney.com/api/qt/ulist.np/get?"
+                + urllib.parse.urlencode({
+                    "fltt": "2",
+                    "secids": "1.000001,0.399001",
+                    "fields": "f12,f104,f105,f106",
+                })
+            )
+            rows = (((_eastmoney_json(url) or {}).get("data") or {}).get("diff") or [])
+            flat = sum(int(_number(row.get("f106"))) for row in rows)
+        except Exception:
+            flat = 0
+        return {
+            "涨停": 0,
+            ">7%": 0,
+            "5~7%": 0,
+            "3~5%": 0,
+            "0~3%": up,
+            "-0~-3%": down,
+            "-3~-5%": 0,
+            "-5~-7%": 0,
+            "<-7%": 0,
+            "跌停": 0,
+            "_flat": flat,
+            "_total": up + down + flat,
+            "_source": "eastmoney_index_fallback",
+        }
+
     cats = {"涨停": 0, ">7%": 0, "5~7%": 0, "3~5%": 0, "0~3%": 0,
             "-0~-3%": 0, "-3~-5%": 0, "-5~-7%": 0, "<-7%": 0, "跌停": 0}
     base = "https://push2.eastmoney.com/api/qt/clist/get"
