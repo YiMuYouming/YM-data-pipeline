@@ -1,8 +1,23 @@
 """PyTDX quote fallback tests."""
+import json
 import unittest
 from unittest.mock import patch
 
 from ym_stock_data.sources import pytdx
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
 
 
 class PytdxFallbackQuotesTest(unittest.TestCase):
@@ -72,6 +87,47 @@ class PytdxFallbackQuotesTest(unittest.TestCase):
 
         self.assertEqual(result["002436"]["最新价"], 37.02)
         self.assertEqual(result["002436"]["_source"], "tencent_fallback")
+
+    def test_fetch_index_falls_back_to_eastmoney_when_pytdx_disabled(self):
+        payload = {
+            "data": {
+                "diff": [
+                    {"f12": "000001", "f14": "上证指数", "f2": 4079.39, "f3": -0.35, "f6": 597243329048.4, "f15": 4093.0, "f16": 4070.25, "f18": 4093.73, "f104": 830, "f105": 1450},
+                    {"f12": "399001", "f14": "深证成指", "f2": 15575.62, "f3": -1.02, "f6": 695029456727.1, "f15": 15696.68, "f16": 15504.79, "f18": 15736.47, "f104": 1068, "f105": 1772},
+                    {"f12": "399006", "f14": "创业板指", "f2": 3998.71, "f3": -1.16, "f6": 318347611231.2, "f15": 4042.74, "f16": 3971.72, "f18": 4045.77, "f104": 449, "f105": 918},
+                ]
+            }
+        }
+
+        with patch.dict("os.environ", {"YIMU_DISABLE_PYTDX": "1"}), \
+             patch("urllib.request.urlopen", return_value=FakeResponse(payload)):
+            result = pytdx.fetch_index()
+
+        self.assertEqual(result["上证指数"], 4079.39)
+        self.assertEqual(result["上证指数涨幅"], "-0.35%")
+        self.assertEqual(result["深证指数"], 15575.62)
+        self.assertEqual(result["创业指数"], 3998.71)
+        self.assertEqual(result["上涨家数"], 1898)
+        self.assertEqual(result["下跌家数"], 3222)
+        self.assertEqual(result["_source"], "eastmoney_fallback")
+
+    def test_fetch_breadth_falls_back_to_eastmoney_when_pytdx_disabled(self):
+        pages = [
+            {"data": {"total": 3, "diff": [
+                {"f3": 10.01}, {"f3": 6.2}, {"f3": -10.0},
+            ]}},
+            {"data": {"total": 3, "diff": []}},
+        ]
+
+        with patch.dict("os.environ", {"YIMU_DISABLE_PYTDX": "1"}), \
+             patch("urllib.request.urlopen", side_effect=[FakeResponse(p) for p in pages]):
+            result = pytdx.fetch_breadth()
+
+        self.assertEqual(result["涨停"], 1)
+        self.assertEqual(result["5~7%"], 1)
+        self.assertEqual(result["跌停"], 1)
+        self.assertEqual(result["_total"], 3)
+        self.assertEqual(result["_source"], "eastmoney_fallback")
 
 
 if __name__ == "__main__":

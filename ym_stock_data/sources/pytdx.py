@@ -10,9 +10,12 @@ TCP 长连接通达信行情服务器 (7709)，零鉴权，高稳定性。
     breadth = pytdx.fetch_breadth()
 """
 
+import json
 import os
 import time
 import threading
+import urllib.parse
+import urllib.request
 from datetime import datetime
 
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
@@ -94,6 +97,143 @@ def _format_amount(amt: float) -> str:
         return "—"
     yi = amt / 1e8
     return f"{yi:.2f}亿" if yi < 10000 else f"{yi/10000:.2f}万亿"
+
+
+def _number(value, default=0.0) -> float:
+    try:
+        if value in (None, "", "-"):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _eastmoney_json(url: str) -> dict:
+    req = urllib.request.Request(url)
+    req.add_header("User-Agent", "Mozilla/5.0")
+    req.add_header("Referer", "https://quote.eastmoney.com/")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fallback_index() -> dict:
+    """HTTP fallback for cloud nodes where PyTDX TCP is unavailable."""
+    url = (
+        "https://push2.eastmoney.com/api/qt/ulist.np/get?"
+        + urllib.parse.urlencode({
+            "fltt": "2",
+            "secids": "1.000001,0.399001,0.399006",
+            "fields": "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18,f104,f105,f106",
+        })
+    )
+    try:
+        payload = _eastmoney_json(url)
+    except Exception:
+        return {}
+
+    rows = (((payload or {}).get("data") or {}).get("diff") or [])
+    name_map = {
+        "000001": "上证指数",
+        "399001": "深证指数",
+        "399006": "创业指数",
+    }
+    result = {}
+    amount_total = 0
+    up_total = 0
+    down_total = 0
+
+    for row in rows:
+        code = str(row.get("f12", ""))
+        name = name_map.get(code)
+        if not name:
+            continue
+        price = _number(row.get("f2"))
+        pct = _number(row.get("f3"))
+        amount = _number(row.get("f6"))
+        high = _number(row.get("f15"))
+        low = _number(row.get("f16"))
+        last_close = _number(row.get("f18"))
+
+        result[name] = round(price, 2) if price else 0
+        result[f"{name}涨幅"] = f"{pct:+.2f}%"
+        result[f"{name}成交额"] = _format_amount(amount)
+        if high and low and last_close:
+            result[f"{name}振幅"] = f"{round((high - low) / last_close * 100, 2):.2f}%"
+        if code in ("000001", "399001"):
+            amount_total += amount
+            up_total += int(_number(row.get("f104")))
+            down_total += int(_number(row.get("f105")))
+
+    if amount_total:
+        result["成交额"] = _format_amount(amount_total)
+    if up_total or down_total:
+        result["上涨家数"] = up_total
+        result["下跌家数"] = down_total
+    if result:
+        result["_source"] = "eastmoney_fallback"
+    return result
+
+
+def _fallback_breadth() -> dict:
+    cats = {"涨停": 0, ">7%": 0, "5~7%": 0, "3~5%": 0, "0~3%": 0,
+            "-0~-3%": 0, "-3~-5%": 0, "-5~-7%": 0, "<-7%": 0, "跌停": 0}
+    base = "https://push2.eastmoney.com/api/qt/clist/get"
+    page = 1
+    total = 0
+    while page <= 80:
+        qs = urllib.parse.urlencode({
+            "pn": page,
+            "pz": 100,
+            "po": 1,
+            "np": 1,
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": 2,
+            "invt": 2,
+            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+            "fields": "f12,f14,f2,f3,f18",
+        })
+        try:
+            payload = _eastmoney_json(f"{base}?{qs}")
+        except Exception:
+            break
+        rows = (((payload or {}).get("data") or {}).get("diff") or [])
+        if not rows:
+            break
+        for row in rows:
+            pct_raw = row.get("f3")
+            if pct_raw in (None, "", "-"):
+                continue
+            pct = _number(pct_raw)
+            total += 1
+            if pct >= 9.9:
+                cats["涨停"] += 1
+            elif pct > 7:
+                cats[">7%"] += 1
+            elif pct > 5:
+                cats["5~7%"] += 1
+            elif pct > 3:
+                cats["3~5%"] += 1
+            elif pct >= 0:
+                cats["0~3%"] += 1
+            elif pct >= -3:
+                cats["-0~-3%"] += 1
+            elif pct >= -5:
+                cats["-3~-5%"] += 1
+            elif pct >= -7:
+                cats["-5~-7%"] += 1
+            elif pct > -9.9:
+                cats["<-7%"] += 1
+            else:
+                cats["跌停"] += 1
+        data_total = int(_number(((payload or {}).get("data") or {}).get("total")))
+        if page * 100 >= data_total:
+            break
+        page += 1
+
+    if total:
+        cats["_total"] = total
+        cats["_source"] = "eastmoney_fallback"
+    return cats
 
 
 # ==================== 个股报价 ====================
@@ -315,7 +455,7 @@ def fetch_index() -> dict:
     """
     api = _get_api()
     if not api:
-        return {}
+        return _fallback_index()
 
     idx_map = {
         "000001": "上证指数", "399001": "深证指数", "399006": "创业指数",
@@ -395,7 +535,7 @@ def fetch_breadth() -> dict:
     """
     api = _get_api()
     if not api:
-        return {}
+        return _fallback_breadth()
 
     codes = _all_share_codes()
     batch_size = 200
