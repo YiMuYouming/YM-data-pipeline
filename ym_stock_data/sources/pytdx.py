@@ -42,7 +42,12 @@ def _get_api():
             except Exception:
                 pass
 
-        from pytdx.hq import TdxHq_API
+        try:
+            from pytdx.hq import TdxHq_API
+        except ImportError:
+            _fail_count += 1
+            return None
+
         for ip, port in PYTDX_SERVERS:
             try:
                 api = TdxHq_API()
@@ -244,7 +249,36 @@ def _get_mas(api, code, current_price):
 
 
 def _fallback_quotes(codes):
-    """easyquotation 兜底"""
+    """HTTP quote fallback for environments where PyTDX TCP is unavailable."""
+    try:
+        from . import tencent
+        all_data = tencent.fetch_quotes(codes)
+        result = {}
+        for code in codes:
+            d = all_data.get(code, {})
+            if d:
+                price = d.get("price", 0)
+                change_pct = d.get("change_pct")
+                turnover_pct = d.get("turnover_pct")
+                vol_ratio = d.get("vol_ratio")
+                result[code] = {
+                    "最新价": price,
+                    "涨幅": f"{change_pct:+.2f}%" if isinstance(change_pct, (int, float)) else "—",
+                    "量比": f"{vol_ratio:.2f}" if isinstance(vol_ratio, (int, float)) else "—",
+                    "换手": f"{turnover_pct:.2f}" if isinstance(turnover_pct, (int, float)) else "—",
+                    "MA5_d": None,
+                    "MA10_d": None,
+                    "MA20_d": None,
+                    "MA10_60m": None,
+                    "MA10_60m_dir": "—",
+                    "is_strong": False,
+                    "_source": "tencent_fallback",
+                }
+        if result:
+            return result
+    except Exception:
+        pass
+
     try:
         from easyquotation import use
         eq = use("sina")
