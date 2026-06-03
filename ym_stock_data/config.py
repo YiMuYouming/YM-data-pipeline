@@ -29,4 +29,7 @@ HTTP_TIMEOUT = 15
 IWENCAI_API_KEY_PATH = Path.home() / ".zshrc"
 
 # pywencai venv（OpenAPI 额度耗尽时自动降级）
-PYWENCAI_VENV = str(Path.home() / "WorkBuddy/Tools/iwencai-venv/lib/python3.14/site-packages")
+PYWENCAI_VENV = str(Path.home() / ".workbuddy/binaries/python/envs/default/lib/python3.13/site-packages")
+
+# pywencai + pytdx 降级 Python 路径（data-venv python3.12，已装 pywencai）
+PYWENCAI_PYTHON = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")

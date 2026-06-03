@@ -12,6 +12,7 @@
 """
 
 import os, re, json, urllib.request, secrets, sys
+from pathlib import Path
 
 IWENCAI_BASE = "https://openapi.iwencai.com"
 _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "收盘价"]
@@ -80,32 +81,90 @@ def _get_pywencai():
 
 
 def _pywencai_query(query_str: str, limit: int = 50) -> dict:
-    """pywencai 查询 → OpenAPI 兼容格式"""
-    pw_pd = _get_pywencai()
-    if not pw_pd:
-        return {"error": "pywencai not available", "query": query_str}
-    pw, pd = pw_pd
+    """pywencai 查询 → OpenAPI 兼容格式（subprocess 调用 data-venv Python，绕过代码签名冲突）"""
+    import subprocess as _sp
+    import json as _json
+    
     try:
-        df = pw.get(query=query_str, loop_first=True)
-        if df is None or df.empty:
-            return {"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}
-        datas = df.to_dict(orient="records")
-        # numpy → native
-        def native(v):
-            if v is None: return None
-            try:
-                import numpy as np
+        from ..config import PYWENCAI_PYTHON as _py
+    except ImportError:
+        _py = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")
+    
+    _code = f"""
+import sys, json, numpy as np
+sys.path.insert(0, '{str(Path(__file__).parent.parent)}')
+try:
+    import pywencai as pw
+    import pandas as pd
+    result = pw.get(query={_json.dumps(query_str)}, loop_first=True)
+    if result is None:
+        print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+    elif isinstance(result, pd.DataFrame):
+        if result.empty:
+            print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+        else:
+            datas = result.to_dict(orient="records")
+            def native(v):
+                if v is None: return None
                 if isinstance(v, (np.integer,)): return int(v)
                 if isinstance(v, (np.floating,)): return float(v) if v == v else None
                 if isinstance(v, np.ndarray): return v.tolist()
-            except ImportError: pass
-            if isinstance(v, float) and (v != v): return None
-            return v
-        for row in datas:
-            for k in row:
-                row[k] = native(row[k])
-        return {"datas": datas, "columns": [{"index_name": c} for c in df.columns],
-                "row_count": len(datas), "_source": "pywencai"}
+                if isinstance(v, float) and (v != v): return None
+                return v
+            for row in datas:
+                for k in row:
+                    row[k] = native(row[k])
+            print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in result.columns],
+                    "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+    elif isinstance(result, dict):
+        # 个股查询可能返回 dict 或 内含 DataFrame
+        import pandas as _pd
+        nested_df = None
+        for _v in result.values():
+            if isinstance(_v, _pd.DataFrame):
+                nested_df = _v
+                break
+        if nested_df is not None:
+            # dict 内含 DataFrame → 降级为 DataFrame 路径
+            if nested_df.empty:
+                print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+            else:
+                datas = nested_df.to_dict(orient="records")
+                def native(v):
+                    if v is None: return None
+                    if isinstance(v, (np.integer,)): return int(v)
+                    if isinstance(v, (np.floating,)): return float(v) if v == v else None
+                    if isinstance(v, np.ndarray): return v.tolist()
+                    if isinstance(v, float) and (v != v): return None
+                    return v
+                for row in datas:
+                    for k in row:
+                        row[k] = native(row[k])
+                print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in nested_df.columns],
+                        "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+        else:
+            # 纯 dict（个股单行数据）
+            datas = [result]
+            has_nested = any(isinstance(v, (list, dict, _pd.DataFrame, _pd.Series)) for v in result.values())
+            if has_nested:
+                print(json.dumps({{"error": f"dict有嵌套:{{{{k:type(v).__name__ for k,v in result.items()}}}}",
+                        "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+            else:
+                print(json.dumps({{"datas": datas, "columns": [{{"index_name": k}} for k in result.keys()],
+                        "row_count": 1, "_source": "pywencai"}}, ensure_ascii=False))
+    else:
+        print(json.dumps({{"error": f"未知类型: {{type(result).__name__}}", "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+except Exception as e:
+    print(json.dumps({{"error": str(e), "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+"""
+    try:
+        r = _sp.run([_py, "-c", _code], capture_output=True, text=True, timeout=45)
+        out = r.stdout.strip()
+        if out:
+            return _json.loads(out)
+        return {"error": r.stderr[:200], "query": query_str, "_source": "pywencai"}
+    except _sp.TimeoutExpired:
+        return {"error": "timeout", "query": query_str, "_source": "pywencai"}
     except Exception as e:
         return {"error": str(e), "query": query_str, "_source": "pywencai"}
 

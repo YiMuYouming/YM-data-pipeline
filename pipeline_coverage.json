@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "version": "0.1.0",
-    "updated": "2026-05-14",
+    "version": "2.0.0",
+    "updated": "2026-06-03",
     "description": "弈沐资本全部数据字段的自动化覆盖状态。所有 Agent 可读。",
     "pipeline_path": "~/Documents/YM_Capital/YM-data-pipeline",
     "import": "from ym_stock_data import fetch"
