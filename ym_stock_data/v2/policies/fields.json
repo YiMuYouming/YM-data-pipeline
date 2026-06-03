@@ -79,7 +79,7 @@
   {
     "field": "涨停家数",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "涨停 非st"},
+    "primary": {"source": "iwencai", "query": "涨停 跌停 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -90,7 +90,7 @@
   {
     "field": "跌停家数",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "跌停 非st"},
+    "primary": {"source": "iwencai", "query": "涨停 跌停 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -101,7 +101,7 @@
   {
     "field": "封板率",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "今日涨停 炸板 封板率 非st"},
+    "primary": {"source": "iwencai", "query": "昨日首板 今日连板 晋级率 封板率 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -112,7 +112,7 @@
   {
     "field": "炸板率",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "今日炸板 炸板率 非st"},
+    "primary": {"source": "iwencai", "query": "昨日炸板 今日涨跌幅 炸板率 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -145,7 +145,7 @@
   {
     "field": "炸板收益",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "昨日炸板 今日涨跌幅 非st"},
+    "primary": {"source": "iwencai", "query": "昨日炸板 今日涨跌幅 炸板率 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -156,7 +156,7 @@
   {
     "field": "晋级率",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "昨日首板 今日连板 晋级率 非st"},
+    "primary": {"source": "iwencai", "query": "昨日首板 今日连板 晋级率 封板率 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -167,7 +167,7 @@
   {
     "field": "最高板",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "今日连板 最高板 非st"},
+    "primary": {"source": "iwencai", "query": "今日连板 股票简称 连板数 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -178,7 +178,7 @@
   {
     "field": "次高板",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "今日连板 次高板 非st"},
+    "primary": {"source": "iwencai", "query": "今日连板 股票简称 连板数 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",
@@ -200,7 +200,7 @@
   {
     "field": "个股最新价",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "昨日涨停 今日最新价 非st"},
+    "primary": {"source": "iwencai", "query": "昨日涨停 今日涨跌幅 非st"},
     "fallback": [{"source": "pywencai"}],
     "freq": "盘后/10min",
     "data_scope": "问财口径",

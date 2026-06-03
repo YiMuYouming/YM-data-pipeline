@@ -57,10 +57,38 @@ def _intent_trade_usage(intent: str) -> str:
 
 def _source_chain(source: str, raw: dict) -> list[str]:
     chain = [source]
+    raw_meta = raw.get("_meta", {}) if isinstance(raw, dict) else {}
+    for key in ("fallback_from", "fallback_to"):
+        fallback_source = raw_meta.get(key)
+        if fallback_source and fallback_source not in chain:
+            chain.append(fallback_source)
     raw_source = raw.get("_source") if isinstance(raw, dict) else None
     if raw_source and raw_source not in chain:
         chain.append(raw_source)
     return chain
+
+
+def _review_queries(query: str | None = None) -> list[str]:
+    if query:
+        return [query]
+
+    queries = []
+    seen = set()
+    for policy in _intent_policies("review_sentiment"):
+        policy_query = (policy.get("primary") or {}).get("query")
+        if policy_query and policy_query not in seen:
+            queries.append(policy_query)
+            seen.add(policy_query)
+    return queries or [DEFAULT_REVIEW_SENTIMENT_QUERY]
+
+
+def _merge_source_chains(chains: list[list[str]]) -> list[str]:
+    merged = []
+    for chain in chains:
+        for source in chain:
+            if source and source not in merged:
+                merged.append(source)
+    return merged
 
 
 def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
@@ -84,19 +112,46 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
         )
 
     if intent == "review_sentiment":
-        query = kwargs.get("query") or DEFAULT_REVIEW_SENTIMENT_QUERY
+        queries = _review_queries(kwargs.get("query"))
         limit = int(kwargs.get("limit", 50))
-        raw = adapters.fetch_v1("iwencai", query=query, limit=limit)
-        source = raw.get("_meta", {}).get("source", "iwencai") if isinstance(raw, dict) else "iwencai"
+        rows = []
+        chains = []
+        fetched_at = None
+        has_error = False
+        for query in queries:
+            raw = adapters.fetch_v1("iwencai", query=query, limit=limit)
+            raw_dict = raw if isinstance(raw, dict) else {"data": raw}
+            raw_meta = raw_dict.get("_meta", {})
+            source = raw_meta.get("source", "iwencai")
+            chains.append(_source_chain(source, raw_dict))
+            if raw_meta.get("fetched_at"):
+                fetched_at = raw_meta["fetched_at"]
+            if raw_dict.get("error") or raw_meta.get("error"):
+                has_error = True
+            rows.append({
+                "query": query,
+                "result": {key: value for key, value in raw_dict.items() if key != "_meta"},
+            })
+
+        raw = {
+            "queries": rows,
+            "query_count": len(rows),
+            "_meta": {
+                "data_type": "iwencai",
+                "source": "iwencai",
+                "fetched_at": fetched_at,
+                "error": has_error,
+            },
+        }
         return normalize_result(
             intent=intent,
             raw=raw,
-            source=source,
-            source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
+            source="iwencai",
+            source_chain=_merge_source_chains(chains) or ["iwencai"],
             data_scope=_intent_data_scope(intent, "问财口径"),
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
-            query=query,
+            query=queries,
             now=_now,
         )
 

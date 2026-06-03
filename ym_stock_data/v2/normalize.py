@@ -34,7 +34,7 @@ def normalize_result(
     data_scope: str,
     staleness_sec: int,
     trade_usage: str,
-    query: str | None = None,
+    query: str | list[str] | None = None,
     now: datetime | None = None,
 ) -> dict:
     raw_meta = raw.get("_meta", {}) if isinstance(raw, dict) else {}
@@ -77,7 +77,9 @@ def normalize_result(
         "confidence": confidence,
         "error": error,
     }
-    if query is not None:
+    if isinstance(query, list):
+        meta["queries"] = query
+    elif query is not None:
         meta["query"] = query
     if warn:
         meta["warn"] = warn

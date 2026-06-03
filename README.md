@@ -41,13 +41,14 @@ v2.0 新增 `ym_stock_data.v2.resolve()`，当前只用于 Agent 验证、红方
 from ym_stock_data.v2 import resolve
 
 resolve("realtime_market")    # 包装 v1 fetch("index")，补 source_chain/data_scope/staleness
-resolve("review_sentiment")   # 固定问财模板：昨日涨停 今日涨跌幅 非st
+resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财模板
 ```
 
 边界：
 - 生产脚本继续使用 `from ym_stock_data import fetch`。
 - v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
+- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
 ## 架构（5 层）

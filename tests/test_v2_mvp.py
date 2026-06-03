@@ -63,7 +63,37 @@ class V2MvpTests(unittest.TestCase):
         self.assertIn("超过阈值", result["_meta"]["warn"])
         self.assertGreater(result["_meta"]["age_sec"], result["_meta"]["staleness_sec"])
 
-    def test_review_sentiment_uses_fixed_iwencai_query(self):
+    def test_review_sentiment_runs_unique_policy_queries(self):
+        from ym_stock_data.v2 import resolve
+
+        def fake_fetch(data_type, **kwargs):
+            return {
+                "datas": [{"query": kwargs["query"], "value": 1}],
+                "row_count": 1,
+                "_source": "openapi",
+                "_meta": {
+                    "data_type": data_type,
+                    "source": "iwencai",
+                    "fetched_at": "2026-06-03T15:10:00+08:00",
+                },
+            }
+
+        with patch("ym_stock_data.v2.adapters.fetch", side_effect=fake_fetch) as fetch:
+            result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
+
+        queries = [call.kwargs["query"] for call in fetch.call_args_list]
+        self.assertGreaterEqual(len(queries), 5)
+        self.assertEqual(len(queries), len(set(queries)))
+        self.assertIn("昨日涨停 今日涨跌幅 非st", queries)
+        self.assertIn("今日连板 股票简称 连板数 非st", queries)
+        self.assertEqual(result["data"]["query_count"], len(queries))
+        self.assertEqual(result["_meta"]["intent"], "review_sentiment")
+        self.assertEqual(result["_meta"]["source"], "iwencai")
+        self.assertEqual(result["_meta"]["source_chain"], ["iwencai", "openapi"])
+        self.assertEqual(result["_meta"]["data_scope"], "问财口径")
+        self.assertEqual(result["_meta"]["queries"], queries)
+
+    def test_review_sentiment_allows_single_query_override(self):
         from ym_stock_data.v2 import resolve
 
         raw = {
@@ -78,15 +108,31 @@ class V2MvpTests(unittest.TestCase):
         }
 
         with patch("ym_stock_data.v2.adapters.fetch", return_value=raw) as fetch:
-            result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
+            result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
 
         fetch.assert_called_once_with("iwencai", query="昨日涨停 今日涨跌幅 非st", limit=50)
-        self.assertEqual(result["data"]["row_count"], 1)
-        self.assertEqual(result["_meta"]["intent"], "review_sentiment")
-        self.assertEqual(result["_meta"]["source"], "iwencai")
-        self.assertEqual(result["_meta"]["source_chain"], ["iwencai", "openapi"])
-        self.assertEqual(result["_meta"]["data_scope"], "问财口径")
-        self.assertEqual(result["_meta"]["query"], "昨日涨停 今日涨跌幅 非st")
+        self.assertEqual(result["data"]["query_count"], 1)
+        self.assertEqual(result["_meta"]["queries"], ["昨日涨停 今日涨跌幅 非st"])
+
+    def test_source_chain_captures_fallback_metadata(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "上证指数": {"最新价": 3020.1},
+            "_source": "eastmoney_fallback",
+            "_meta": {
+                "data_type": "index",
+                "source": "pytdx",
+                "fallback_from": "pytdx",
+                "fallback_to": "eastmoney",
+                "fetched_at": "2026-06-03T09:30:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw):
+            result = resolve("realtime_market", _now=ts("2026-06-03T09:30:20+08:00"))
+
+        self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "eastmoney", "eastmoney_fallback"])
 
     def test_fields_policy_covers_critical_fields(self):
         fields_path = Path(__file__).resolve().parents[1] / "ym_stock_data/v2/policies/fields.json"
