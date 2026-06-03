@@ -7,6 +7,7 @@
 v2.0 的目标是从“统一数据源路由”升级为“统一入口、统一策略、统一口径、按场景调用”。详细方案见：
 
 - [YM-data-pipeline-2.0-数据源治理方案.md](docs/YM-data-pipeline-2.0-数据源治理方案.md)
+- [YM-data-pipeline-v2.0-MVP-试运行记录.md](docs/YM-data-pipeline-v2.0-MVP-试运行记录.md)
 
 ## 用法
 
