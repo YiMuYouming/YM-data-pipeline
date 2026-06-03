@@ -21,3 +21,6 @@ ym-data = "ym_stock_data.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["ym_stock_data", "ym_stock_data.*"]
+
+[tool.setuptools.package-data]
+"ym_stock_data.v2" = ["policies/*.json"]

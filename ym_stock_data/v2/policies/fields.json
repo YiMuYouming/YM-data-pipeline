@@ -1,0 +1,222 @@
+[
+  {
+    "field": "上证指数最新价",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "深证指数最新价",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "创业板指数最新价",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "指数涨跌幅",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "成交额",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "上涨家数",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "下跌家数",
+    "intent": "realtime_market",
+    "primary": {"source": "pytdx", "data_type": "index"},
+    "fallback": [{"source": "eastmoney"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "涨停家数",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "涨停 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "跌停家数",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "跌停 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "封板率",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "今日涨停 炸板 封板率 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "炸板率",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "今日炸板 炸板率 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "昨日涨停收益",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日涨停 今日涨跌幅 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "连板收益",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日连板 今日涨跌幅 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "炸板收益",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日炸板 今日涨跌幅 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "晋级率",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日首板 今日连板 晋级率 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "最高板",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "今日连板 最高板 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "次高板",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "今日连板 次高板 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "连板股列表",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "今日连板 股票简称 连板数 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "个股最新价",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日涨停 今日最新价 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "个股涨幅",
+    "intent": "review_sentiment",
+    "primary": {"source": "iwencai", "query": "昨日涨停 今日涨跌幅 非st"},
+    "fallback": [{"source": "pywencai"}],
+    "freq": "盘后/10min",
+    "data_scope": "问财口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  }
+]

@@ -10,6 +10,8 @@ v2.0 的目标是从“统一数据源路由”升级为“统一入口、统一
 
 ## 用法
 
+### v1 生产入口
+
 ```python
 from ym_stock_data import fetch
 
@@ -30,6 +32,23 @@ fetch("northbound")                         # 北向资金分钟级
 fetch("dragon_tiger")                       # 龙虎榜
 fetch("sector_inflow", top_n=20)            # 行业板块净流入
 ```
+
+### v2.0 MVP 旁路入口
+
+v2.0 新增 `ym_stock_data.v2.resolve()`，当前只用于 Agent 验证、红方草稿和方案调试，不切 live-dashboard、不切正式复盘、不用于盘中交易决策。
+
+```python
+from ym_stock_data.v2 import resolve
+
+resolve("realtime_market")    # 包装 v1 fetch("index")，补 source_chain/data_scope/staleness
+resolve("review_sentiment")   # 固定问财模板：昨日涨停 今日涨跌幅 非st
+```
+
+边界：
+- 生产脚本继续使用 `from ym_stock_data import fetch`。
+- v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
+- 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
+- v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
 ## 架构（5 层）
 
@@ -78,6 +97,7 @@ YM-data-pipeline/
 │   ├── fetch.py               # 统一路由 → 15 种 data_type
 │   ├── config.py              # 全局配置
 │   ├── sources/               # 10 个数据源适配器
+│   ├── v2/                    # v2.0 MVP 旁路 resolve()
 │   ├── utils/                 # 缓存 + 重试
 │   └── consumer/              # 看板适配器
 ├── tests/                     # 17 项测试
