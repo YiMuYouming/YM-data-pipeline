@@ -77,6 +77,20 @@
 | Tushare | Skill | 历史和专题数据广 | 鉴权/积分/非实时 | 特殊历史专题 |
 | 联网搜索 | Web | 新闻、政策、官网资料 | 不稳定、不可直接量化 | 高风险事实核验 |
 
+### 2.3 TDX MCP 升级标准
+
+TDX MCP 默认角色是投研补充和问财补盲，不进入生产实时链路。
+
+从“投研补充”升级为“备源”必须同时满足：
+- 20 个以上 sample query 覆盖行情、K 线、选股、公告、研报等核心场景。
+- 连续 5 个交易日与 PyTDX、问财或权威源对账，关键字段一致或差异可解释。
+- 常用查询延迟小于 2 秒。
+- 交易时段可用率大于 99%。
+- 字段口径已写入 `data_scope`，不能只凭工具名判断可信度。
+- OAuth、登录态、失败重试和错误信息可观测。
+
+未达到以上标准前，TDX MCP 不作为盘中交易决策数据源。
+
 ---
 
 ## 3. 目标架构
@@ -88,8 +102,9 @@ v2.0 采用“旁路重搭新核心，不接生产消费端”的边界。
 v2.0 要做：
 - 在当前仓库内新增 `ym_stock_data/v2/`。
 - 复用已验证的旧 `sources/` 和 `fetch()`，但不修改它们的返回契约。
-- 新增 policy、intent router、normalize、doctor、compare 等 v2 能力。
-- 新增 v2 测试和样例。
+- 只实现 MVP：`realtime_market`、`review_sentiment` 两个 intent，20 个关键字段策略，标准 `_meta`。
+- 把数据新鲜度检查写进 `resolve()`，超出阈值必须标注 `confidence: "stale"`。
+- 新增 v2 MVP 测试和少量样例。
 - 保持 live-dashboard 和复盘脚本继续走当前链路。
 
 v2.0 不做：
@@ -97,10 +112,11 @@ v2.0 不做：
 - 不删除或替换 `fetch()`。
 - 不把 live-dashboard collector 直接切到 v2。
 - 不把复盘生成链路直接切到 v2。
+- 不在 v2.0 强制完成完整动态路由、全量 query case、Skill 全量同步、compare 平台。
 - 不承诺新电脑 `git pull` 后无配置即完整运行，portable 工程化放到 v2.1。
 
 后续版本：
-- **v2.1 portable**：清理硬编码本机路径，补 `.env.example`、`.[all]` 依赖、`ym-data doctor`、安装文档和 smoke test。
+- **v2.1 portable + 扩展验证**：清理硬编码本机路径，补 `.env.example`、`.[all]` 依赖、`ym-data doctor`、安装文档、smoke test、v1/v2 compare、query cases。
 - **v2.2 消费端迁移**：live-dashboard 和复盘逐模块切到 v2，切换前必须双轨对比。
 
 ### 3.2 旁路双轨架构
@@ -114,7 +130,7 @@ fetch() / sources / 当前 collector
 现有 dashboard_live.json / dashboard_data.json
 
 旁路链路 v2（新增，不接生产）
-Agent / 测试 / compare 脚本
+Agent 验证 / 测试 / smoke 脚本 / v2.1 compare 脚本
         ↓
 ym_stock_data.v2.resolve()
         ↓
@@ -125,35 +141,34 @@ V2 Adapter 包装旧 fetch()/sources/MCP/外部源
 Normalized Result + source_chain + data_scope
 ```
 
-### 3.3 推荐目录结构
+### 3.3 v2.0 MVP 推荐目录结构
 
-新增目录只放 v2 逻辑，旧代码继续保留：
+新增目录只放 v2 逻辑，旧代码继续保留。v2.0 先控制在约 6 个文件，避免为了当前规模建立过重框架。
 
 ```text
 ym_stock_data/
 ├── fetch.py                 # v1 物理源入口，保持兼容
 ├── sources/                 # v1 已验证 source，保持兼容
 └── v2/
-    ├── __init__.py          # 导出 resolve / list_intents
-    ├── resolve.py           # v2 intent router
-    ├── policy.py            # 策略读取与校验
+    ├── __init__.py          # 导出 resolve
+    ├── resolve.py           # v2 MVP intent router，先硬编码 2 个 intent
     ├── normalize.py         # 统一返回结构
     ├── adapters.py          # 包装 v1 fetch/sources，不直接复制 source
-    ├── doctor.py            # v2 环境体检，v2.1 扩展
     └── policies/
-        ├── intents.json     # intent 到字段/数据源策略
-        └── fields.json      # 字段级主源、备源、口径、频率
+        └── fields.json      # 20 个关键字段的主源、备源、口径、频率
 
 tests/
-├── test_v2_policy.py
-├── test_v2_resolve.py
-├── test_v2_normalize.py
+├── test_v2_mvp.py
 └── fixtures/
-    └── v2_query_cases.json
-
-scripts/
-└── compare_v1_v2.py         # v1/v2 双轨对比，不影响生产
+    └── v2_mvp_cases.json
 ```
+
+v2.1 再扩展：
+- `policy.py`
+- `doctor.py`
+- `policies/intents.json`
+- `scripts/compare_v1_v2.py`
+- 完整 query cases 和 Skill 同步。
 
 ### 3.4 新增概念
 
@@ -213,12 +228,28 @@ scripts/
 }
 ```
 
+#### Staleness Check
+
+`resolve()` 必须按字段策略检查新鲜度。只要上游返回带 `fetched_at` 或可推导查询时间，就必须计算 `age_sec`：
+
+```python
+if age_sec > policy["staleness_sec"]:
+    meta["confidence"] = "stale"
+    meta["warn"] = f"数据距今 {age_sec}s，超过阈值 {policy['staleness_sec']}s"
+```
+
+规则：
+- `confidence: "normal"` 表示未超过字段阈值。
+- `confidence: "stale"` 表示数据可展示但不能直接用于盘中交易决策。
+- 无法取得 `fetched_at` 时，`confidence` 至少为 `"unknown"`，并在 `_meta.warn` 说明原因。
+- 对实时字段，过期数据不能静默当成最新数据返回。
+
 ### 3.5 生产保护规则
 
 v2.0 的所有实现必须满足：
 - 新增文件为主，除导出入口和文档外，不改旧 source 的行为。
 - `from ym_stock_data import fetch` 的旧调用必须继续可用。
-- v2 默认只由测试、CLI 或 compare 脚本调用。
+- v2.0 默认只由 Agent 验证、测试或 smoke 脚本调用。
 - live-dashboard 和复盘脚本没有明确迁移任务时，不 import `ym_stock_data.v2`。
 - v2 输出和 v1 输出不一致时，以 v1 生产链路为准，v2 记录差异。
 
@@ -295,7 +326,7 @@ v2.0 的所有实现必须满足：
 
 ### 4.5 Agent 临时问数
 
-统一口径：
+v2.0 前统一口径：
 
 1. 先问 `ym_stock_data` 是否覆盖。
 2. 覆盖则用 `from ym_stock_data import fetch`。
@@ -308,11 +339,27 @@ v2.0 的所有实现必须满足：
 - 手工估算涨停数、板块涨停数。
 - 混用主力资金口径不标注来源。
 
+v2.0 MVP 完成后的使用边界：
+
+| 场景 | 用 v1 `fetch()` | 用 v2 `resolve()` |
+|---|---:|---:|
+| live-dashboard collector | 是 | 否，v2.2 才切 |
+| 复盘脚本生成 | 是 | 否，v2.2 才切 |
+| Agent 临时查票 | 当前默认 | 推荐用于非交易验证 |
+| 红方对抗数据 Q1-Q6 | 当前默认 | 推荐用于非交易验证 |
+| 盘中交易决策 | 是 | 否，v2 验证期禁用于交易 |
+| 盘后方案设计/工具调试 | 可用 | 推荐 |
+
+边界解释：
+- “生产场景”指会写入 live-dashboard、复盘正式产物、交易决策记录或自动化脚本的链路。
+- “验证场景”指 Agent 临时查询、方案设计、红方对抗草稿、对比实验，不直接触发交易动作。
+- 同一结论如果用于交易，当日必须回到 v1 生产链路或权威源复核。
+
 ---
 
 ## 5. 实施路线
 
-### Phase 0：冻结边界和清点入口
+### Phase 0：冻结边界和入口审计
 
 **目标**：先把现在有哪些入口、字段、调用路径查清楚，并明确 v2.0 不切生产链路。
 
@@ -337,66 +384,26 @@ v2.0 的所有实现必须满足：
 - 每个关键字段有主源/备源/频率/口径。
 - 文档明确：v2.0 不修改 live-dashboard 和复盘消费端。
 
-### Phase 1：建立 v2 目录骨架
+### Phase 1：v2.0 MVP 闭环
 
-**目标**：在当前仓库旁路新增 `ym_stock_data/v2/`，不接入生产。
+**目标**：用最小代码实现一个可验证的 v2 旁路入口，不做完整平台化。
 
-负责人建议：欧米设计，黑米或稳米落地。
+负责人建议：欧米设计并验收，黑米或洋米落地。
 
 建议新增：
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/__init__.py`
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/resolve.py`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/policy.py`
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/normalize.py`
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/adapters.py`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/doctor.py`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/policies/intents.json`
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/ym_stock_data/v2/policies/fields.json`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_policy.py`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_normalize.py`
+- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_mvp.py`
 
-规则：
-- v2 只能包装旧 `fetch()` 或 source，不复制旧 source 实现。
-- 旧 `fetch()`、旧 `sources/` 不因 Phase 1 变化。
-- `ym_stock_data.v2` 可以单独 import。
-
-验收：
-- `python3 -m py_compile ym_stock_data/v2/*.py` 通过。
-- `python3 -c "from ym_stock_data.v2 import resolve"` 通过。
-- `git diff -- ym_stock_data/fetch.py ym_stock_data/sources` 为空或仅包含明确无行为变化的注释。
-
-### Phase 2：建立 Field Policy v2
-
-**目标**：新增 v2 字段策略，不替换 `pipeline_coverage.json`。
-
-负责人建议：欧米设计，黑米或稳米落地。
-
-策略内容：
-- 字段名。
-- 所属 intent。
-- 主源。
-- 备源。
-- 刷新频率。
-- 数据口径 `data_scope`。
-- 限流等级。
-- 是否可盘中使用。
-- 是否可直接参与交易判断。
-- 是否允许空值覆盖旧值。
-
-验收：
-- `python3 -m pytest tests/test_v2_policy.py -v` 通过。
-- 任意字段能查到来源策略。
-- 找不到策略的字段返回明确错误，不静默猜测。
-- `pipeline_coverage.json` 保持 v1 覆盖说明，不被 v2 自动改写。
-
-### Phase 3：实现 v2 Intent Router
-
-**目标**：新增旁路场景入口，不让 v2 使用者直接记物理源。
-
-负责人建议：欧米设计，黑米落地，欧米验收。
-
-建议新增：
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_resolve.py`
+MVP 功能：
+- `resolve("realtime_market")`：包装 `fetch("index")`，补标准 `_meta`。
+- `resolve("review_sentiment")`：包装固定问财 query，保留原始 query。
+- `fields.json`：覆盖 20 个关键字段，含 `data_scope`、`trade_usage`、`staleness_sec`、`rate_class`。
+- `normalize.py`：统一返回 `data` 和 `_meta`。
+- `resolve()`：检查 `staleness_sec`，过期时标注 `confidence: "stale"` 和 `warn`。
 
 建议 API：
 
@@ -404,11 +411,7 @@ v2.0 的所有实现必须满足：
 from ym_stock_data.v2 import resolve
 
 resolve("realtime_market")
-resolve("realtime_quotes", codes=["600519"])
-resolve("sentiment_intraday")
 resolve("review_sentiment")
-resolve("single_stock_research", code="600519", name="贵州茅台")
-resolve("topic_screening", query="机器人概念 近5日涨幅为正 非涨停")
 ```
 
 规则：
@@ -416,81 +419,37 @@ resolve("topic_screening", query="机器人概念 近5日涨幅为正 非涨停"
 - `ym_stock_data.v2.resolve()` 是 v2 优先入口。
 - v2.0 阶段不从 `ym_stock_data.__init__` 顶层导出 `resolve`，避免旧脚本误用。
 - `resolve()` 返回标准 `_meta.intent`、`source_chain`、`data_scope`、`confidence`。
+- v2 只能包装旧 `fetch()` 或 source，不复制旧 source 实现。
+- 旧 `fetch()`、旧 `sources/` 不因 Phase 1 变化。
+- 先用硬编码路由实现 2 个 intent，不急于抽象动态路由。
 
 验收：
-- 每个核心 intent 有测试。
-- 问财失败时会按策略降级。
-- 高频 intent 不调用问财。
+- `python3 -m py_compile ym_stock_data/v2/*.py` 通过。
+- `python3 -c "from ym_stock_data.v2 import resolve; resolve('realtime_market')"` 可运行。
+- `python3 -m pytest tests/test_v2_mvp.py -v` 通过；如果本机没有 pytest，至少用 `python3 -m py_compile` 和 smoke command 替代。
+- 20 个关键字段能查到来源策略。
+- `realtime_market` 不调用问财、TDX MCP、联网搜索。
+- 新鲜度超过阈值时 `_meta.confidence` 不是 `"normal"`。
 - v1 旧调用不受影响：`from ym_stock_data import fetch` 仍然可用。
+- live-dashboard 和复盘没有新增 v2 import。
 
-### Phase 4：新增 v1/v2 双轨对比
+### Phase 2：v2.0 收口
 
-**目标**：让 v2 在后台跑，并和 v1 输出比对，不接入生产。
+**目标**：只把 MVP 交给各米试用，不扩大改造面。
 
-负责人建议：欧米设计，稳米或黑米落地。
+负责人建议：欧米主导。
 
-建议新增：
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/scripts/compare_v1_v2.py`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/fixtures/v2_query_cases.json`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_query_cases.py`
-
-原则：
-- compare 脚本读 v1 `fetch()` 和 v2 `resolve()`。
-- 对比字段包括值、source、data_scope、staleness。
-- 不写 live-dashboard 数据文件。
-- 不启动 bridge。
+产出：
+- README 或方案文档中补充 v1/v2 使用边界。
+- 给稳米/洋米的试用说明。
+- 明确 v2.0 不迁移 production consumer。
 
 验收：
-- `python3 scripts/compare_v1_v2.py --intent realtime_market` 可运行。
-- 对比报告能显示一致/不一致/无法比较。
-- 差异默认只输出报告，不修改 v1 数据。
+- `git diff -- ym_stock_data/fetch.py ym_stock_data/sources` 为空或仅包含明确无行为变化的注释。
+- 给各米的说明明确“验证可用、交易禁用、生产不切”。
+- 后续事项进入 v2.1/v2.2 backlog。
 
-### Phase 5：规范 Skill 和 Agent 使用
-
-**目标**：让各米查询数据时遵循统一规则。
-
-负责人建议：欧米写规范，稳米同步 WorkBuddy，洋米同步 Claude，黑米同步 Cursor。
-
-需要更新：
-- `/Users/yimu/.agents/skills/ym-a-stock-pipeline/SKILL.md`
-- `/Users/yimu/.codex/skills/ym-a-stock-pipeline/SKILL.md`
-- `/Users/yimu/Documents/Mi_Agents/skills/registry.md`
-- WorkBuddy 对应 skill。
-
-规则：
-- Skill 中保留“什么时候用什么”，不复制大量实现细节。
-- v2 验证期：Agent 临时查询可用 `ym_stock_data.v2.resolve()`，生产脚本继续使用 v1。
-- 问财作为 v2 `resolve()` 的一个策略源，不再让每个 Skill 自己写降级链。
-- TDX MCP 标注为“交互补盲/投研补充”，不默认替代实时管道。
-
-验收：
-- 各 Agent 的 A 股查询说明口径一致。
-- 不再出现“NeoData 优先覆盖所有金融数据”的旧口径。
-- 红方、复盘、监控类 Skill 明确哪些字段必须走统一管道。
-
-### Phase 6：样例库和回归测试
-
-**目标**：用固定样例防止后续工具越加越乱。
-
-负责人建议：稳米整理样例，欧米设计测试，黑米补测试。
-
-建议新增：
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/fixtures/query_cases.json`
-- `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_query_cases.py`
-
-样例类型：
-- 实时行情：指数、自选股、板块。
-- 情绪：昨日涨停收益、连板收益、封板率、炸板率。
-- 复盘：连板梯队、龙虎榜、涨停原因。
-- 单票：600519、688017、300476。
-- 补盲：问财查不到时 TDX MCP/NeoData 的用法记录。
-
-验收：
-- 样例可重复跑。
-- 输出带 `_meta`。
-- 字段口径不变时测试稳定。
-
-### Phase 7：v2.1 portable 工程化
+### v2.1 Backlog：portable + 扩展验证
 
 **目标**：让新电脑 `git pull` 后能按文档安装和体检。
 
@@ -501,13 +460,18 @@ resolve("topic_screening", query="机器人概念 近5日涨幅为正 非涨停"
 - `ym-data doctor`
 - `docs/INSTALL.md`
 - smoke tests
+- `scripts/compare_v1_v2.py`
+- 完整 query cases
+- Skill 全量同步
+- TDX MCP 样例库
 
 验收：
 - 新环境按 `docs/INSTALL.md` 能安装。
 - 没有凭证时输出明确缺项，不崩溃。
 - 没有 PyTDX TCP 时能显示 fallback 状态。
+- v1/v2 compare 覆盖 `realtime_market`、`realtime_quotes`、`review_sentiment`。
 
-### Phase 8：v2.2 live-dashboard / 复盘迁移
+### v2.2 Backlog：live-dashboard / 复盘迁移
 
 **目标**：消费端逐模块切换到 v2。
 
@@ -626,126 +590,59 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 - 清单覆盖 `YM-data-pipeline`、`live-dashboard`、相关 Skill。
 - 没有把审计任务变成直接迁移任务。
 
-### 任务 B：v2 旁路骨架
+### 任务 B：v2.0 MVP 闭环
 
 执行者：欧米设计，黑米或洋米落地。
 
 目标：
 - 新增 `ym_stock_data/v2/`。
 - 只包装旧 `fetch()` / `sources/`，不复制旧数据源实现。
-- 提供 `ym_stock_data.v2.resolve()`、`list_intents()`、标准 `_meta`。
+- 提供 `ym_stock_data.v2.resolve()` 和标准 `_meta`。
+- 先实现 `realtime_market` 和 `review_sentiment`，不急于实现全量 intent。
+- 实现新鲜度检查，超阈值返回 `confidence: "stale"`。
 
 建议文件：
 - `ym_stock_data/v2/__init__.py`
 - `ym_stock_data/v2/resolve.py`
 - `ym_stock_data/v2/adapters.py`
 - `ym_stock_data/v2/normalize.py`
-- `ym_stock_data/v2/doctor.py`
+- `ym_stock_data/v2/policies/fields.json`
+- `tests/test_v2_mvp.py`
 
 验收：
-- `python3 -c "from ym_stock_data.v2 import resolve, list_intents"` 通过。
+- `python3 -c "from ym_stock_data.v2 import resolve; resolve('realtime_market')"` 通过。
 - `from ym_stock_data import fetch` 旧入口不受影响。
 - live-dashboard 和复盘没有新增 v2 import。
-
-### 任务 C：Field Policy v2
-
-执行者：欧米设计，黑米落地。
-
-目标：
-- 建立 `ym_stock_data/v2/policies/fields.json` 和读取 API。
-- 字段策略只服务 v2，不覆盖 `pipeline_coverage.json`。
-
-关键字段必须覆盖：
-- 指数、成交额、上涨家数、下跌家数。
-- 涨停家数、跌停家数、封板率、炸板率。
-- 昨日涨停收益、连板收益、炸板收益、晋级率。
-- 最高板、次高板、连板股列表。
-- 个股最新价、涨幅、量比、换手、MA5/MA10/MA20。
-- 板块涨跌幅、板块资金、北向资金。
-- 研报、公告、新闻。
-
-验收：
-- 每个字段都有主源、备源、口径、刷新频率。
-- 每个字段都有 `data_scope`、`trade_usage`、`staleness_sec`、`rate_class`。
+- `fields.json` 覆盖 20 个关键字段。
 - 高频字段的主源不能是问财、TDX MCP、联网搜索。
+- 过期数据不会以 `confidence: "normal"` 返回。
 
-### 任务 D：Intent Router v2
-
-执行者：黑米执行，欧米验收。
-
-目标：
-- 新增 `ym_stock_data.v2.resolve()`。
-- 根据 intent 选择字段策略、源策略和 normalize 逻辑。
-
-必须支持：
-- `realtime_market`
-- `realtime_quotes`
-- `realtime_sectors`
-- `sentiment_intraday`
-- `auction_snapshot`
-- `review_sentiment`
-- `single_stock_research`
-- `topic_screening`
-
-验收：
-- 核心 intent 的测试通过。
-- 低频 intent 可以调用问财。
-- 高频 intent 不调用问财。
-- v2.0 阶段不从 `ym_stock_data.__init__` 顶层导出 `resolve`。
-
-### 任务 E：v1/v2 双轨对比
-
-执行者：洋米或稳米执行，欧米验收。
-
-目标：
-- 新增 `scripts/compare_v1_v2.py`。
-- 对比 v1 `fetch()` 和 v2 `resolve()` 的关键字段，不写生产数据文件。
-- 发现差异时输出字段、v1 值、v2 值、source_chain、data_scope。
-
-验收：
-- `realtime_market`、`realtime_quotes`、`review_sentiment` 至少有对比样例。
-- compare 脚本失败不会影响 live-dashboard。
-- v2 与 v1 不一致时，文档明确以 v1 生产链路为准。
-
-### 任务 F：Skill 同步
+### 任务 C：v2.0 使用边界同步
 
 执行者：稳米主导，欧米审。
 
 目标：
-- 各 Agent Skill 统一数据源规则，但只声明 v2 验证入口，不要求生产脚本切换。
+- 各 Agent 先同步 v1/v2 使用边界，不做 Skill 全量改造。
 
 验收：
-- `ym-a-stock-pipeline` 成为 A 股查询总入口说明。
-- `iwencai-data` 被定义为问财专项，不再承担全局路由。
-- `tushare` 明确为最后补盲。
+- live-dashboard 和复盘脚本继续走 v1。
+- Agent 临时查票、红方草稿、方案验证可试用 v2。
+- 盘中交易决策禁用 v2 验证期结果。
 - TDX MCP 明确为投研补充和问财补盲。
-- Skill 中明确：盘中生产看板和正式复盘未迁移前继续走 v1。
 
-### 任务 G：样例和回归
-
-执行者：稳米整理，黑米补测试。
-
-目标：
-- 建立 query cases。
-
-验收：
-- 每个核心场景有样例。
-- 输出能标注 source、query、口径。
-- v2 policy、resolve、normalize 的单测或 smoke test 可运行。
-
-### 任务 H：v2.1 portable 预研
+### Backlog：v2.1 portable / 扩展验证
 
 执行者：洋米主导，欧米审。
 
 目标：
-- 只列问题和改造清单，不在 v2.0 中混做。
-- 检查硬编码路径、环境变量、可选依赖、安装说明、doctor 能力。
+- 清理硬编码路径、环境变量、可选依赖、安装说明、doctor 能力。
+- 增加 v1/v2 compare 脚本、完整 query cases、Skill 全量同步。
 
 验收：
 - 输出 v2.1 portable issue 清单。
 - 明确哪些能力 `git pull` 后可用，哪些需要凭证或本机服务。
 
-### 任务 I：v2.2 消费端迁移预案
+### Backlog：v2.2 消费端迁移
 
 执行者：欧米设计，稳米/黑米后续执行。
 
@@ -765,7 +662,7 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 
 控制：
 - TDX MCP 短期只作为投研补充。
-- 进入实时链路前必须有 20 个以上样例验证。
+- 升级为备源前必须满足 2.3 的毕业标准：20 个以上样例、连续 5 个交易日对账、延迟和可用率达标、口径已标注。
 
 ### 风险 2：问财 query 被各 Agent 改写
 
@@ -799,19 +696,19 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 
 第一优先级：
 1. 数据入口审计。
-2. v2 旁路骨架。
-3. Field Policy v2。
-4. Intent Router v2。
+2. v2.0 MVP 闭环：`realtime_market`、`review_sentiment`、20 个字段、标准 `_meta`。
+3. 新鲜度检查：`confidence: "stale"` 和 `_meta.warn`。
+4. v1/v2 使用边界同步。
 
 第二优先级：
-5. v1/v2 双轨对比脚本。
-6. query cases 和回归测试。
-7. Skill 口径同步。
+5. TDX MCP 样例库和毕业评估。
+6. v2.1 portable 工程化。
+7. v1/v2 双轨对比脚本。
 
 第三优先级：
-8. TDX MCP 样例库。
-9. NeoData/Tushare 补盲规范。
-10. v2.1 portable 工程化。
+8. query cases 和回归测试扩展。
+9. Skill 全量同步。
+10. NeoData/Tushare 补盲规范。
 11. v2.2 live-dashboard / 复盘迁移。
 
 ---
@@ -824,6 +721,9 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 2. 新增 `resolve("realtime_market")`，内部只包装 `fetch("index")`，并返回标准 `_meta`。
 3. 新增 `resolve("review_sentiment")`，内部走固定问财 query 模板，并保留原始 query。
 4. 新增 `ym_stock_data/v2/policies/fields.json`，覆盖 20 个最关键字段。
+
+同时必须补一个非功能要求：
+- `resolve()` 按 `staleness_sec` 检查数据新鲜度，超时返回 `confidence: "stale"`。
 
 这个版本不影响看板和复盘现有运行，只让 v2 具备可验证的旁路入口。Skill 可以提示各米在非生产验证时使用 `ym_stock_data.v2.resolve()`，但不能要求 live-dashboard 或正式复盘无缝切换。
 
@@ -838,13 +738,13 @@ v2.0 完成的标准：
 - Agent 在验证场景查询 A 股数据时能先判断 intent，而不是凭经验选工具。
 - 看板实时链路不依赖问财、MCP、联网搜索。
 - 复盘情绪相关的 v2 intent 固定问财 query，并保留原始 query 和 source。
-- 单票调研能组合多个源，但每个字段有来源和口径。
 - 所有关键字段可从策略表查到主源和备源。
-- 各 Skill 的 v2 口径不再互相冲突。
+- 每个 v2 返回都带 `_meta.source_chain`、`data_scope`、`fetched_at`、`confidence`。
+- 新鲜度超出字段阈值时能明确标注 stale，不静默当成实时数据。
+- Agent v1/v2 使用边界已写清楚。
 - 失败时暴露事实：哪个源失败、用了哪个降级、数据新鲜度多少。
-- `scripts/compare_v1_v2.py` 能输出关键 intent 的差异报告。
 
-v2.0 不以“live-dashboard 已切换”或“复盘已切换”为验收标准；这些属于 v2.2。
+v2.0 不以“live-dashboard 已切换”“复盘已切换”“compare 平台完成”“Skill 全量同步”为验收标准；这些属于 v2.1/v2.2。
 
 ---
 
@@ -866,9 +766,12 @@ v2.0 不以“live-dashboard 已切换”或“复盘已切换”为验收标准
 - v2.0 只在 YM-data-pipeline 内新增旁路核心，默认不改 live-dashboard 和复盘生产消费端。
 - 不从 ym_stock_data 顶层导出 resolve；v2 入口必须是 ym_stock_data.v2.resolve。
 - 不删除、不替换、不破坏现有 fetch() 和 sources 返回契约。
+- v2.0 MVP 只实现 realtime_market 和 review_sentiment；不要扩成全量平台。
+- resolve() 必须按 staleness_sec 检查新鲜度，过期数据标注 stale。
 - 高频看板链路不接问财、TDX MCP、联网搜索。
 - 问财 query 要固定模板并保留原始 query。
 - 涉及主力资金、板块涨停数、情绪指标必须标注口径。
 - v2 与 v1 数据冲突时，以 v1 当前生产链路为准，v2 只记录差异。
+- TDX MCP 未达到毕业标准前只能做投研补充和问财补盲。
 - 改完必须跑相关测试或本地验证，失败要如实汇报。
 ```
