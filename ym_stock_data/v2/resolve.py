@@ -8,11 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import adapters
+from .aggregates import aggregate_review_sentiment
 from .normalize import normalize_result
 
 
 DEFAULT_REVIEW_SENTIMENT_QUERY = "昨日涨停 今日涨跌幅 非st"
-SUPPORTED_INTENTS = ["realtime_market", "review_sentiment", "stock_snapshot", "stock_kline"]
+SUPPORTED_INTENTS = ["realtime_market", "sector_index", "review_sentiment", "stock_snapshot", "stock_kline"]
 SUPPORTED_KLINE_PERIODS = {"daily", "weekly", "monthly", "60m", "15m", "5m"}
 
 
@@ -133,6 +134,32 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             now=_now,
         )
 
+    if intent == "sector_index":
+        codes = kwargs.get("codes")
+        names = kwargs.get("names")
+        if isinstance(codes, str):
+            codes = [codes]
+        if isinstance(names, str):
+            names = [names]
+        if not codes and not names:
+            raise ValueError("sector_index 需要提供 codes 或 names，例如 codes=['881124']")
+        invalid_codes = [str(code) for code in codes or [] if not str(code).startswith("881")]
+        if invalid_codes:
+            raise ValueError(f"sector_index 只接受同花顺 881xxx 代码，不接受: {invalid_codes}")
+
+        raw = adapters.fetch_sector_index(codes=codes, names=names)
+        source = raw.get("_meta", {}).get("source", "ths_industry") if isinstance(raw, dict) else "ths_industry"
+        return normalize_result(
+            intent=intent,
+            raw=raw,
+            source=source,
+            source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
+            data_scope=_intent_data_scope(intent, "同花顺881行业板块口径"),
+            staleness_sec=_intent_staleness(intent),
+            trade_usage=_intent_trade_usage(intent),
+            now=_now,
+        )
+
     if intent == "stock_kline":
         code = kwargs.get("code")
         if not code:
@@ -143,8 +170,13 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
                 "stock_kline period 仅支持 "
                 f"{sorted(SUPPORTED_KLINE_PERIODS)}"
             )
+        count = kwargs.get("count")
+        if count is not None:
+            count = int(count)
+            if count <= 0:
+                raise ValueError("stock_kline count 必须大于 0")
 
-        raw = adapters.fetch_kline(str(code), period=period)
+        raw = adapters.fetch_kline(str(code), period=period, count=count)
         source = raw.get("_meta", {}).get("source", "pytdx") if isinstance(raw, dict) else "pytdx"
         return normalize_result(
             intent=intent,
@@ -188,6 +220,15 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
                 "fetched_at": fetched_at,
                 "error": has_error,
             },
+        }
+        aggregates = aggregate_review_sentiment(rows)
+        raw.update({key: value for key, value in aggregates.items() if key in ("涨停收益均值", "红盘率", "炸板率", "最高板")})
+        for key in ("涨停收益均值", "红盘率", "炸板率", "最高板"):
+            raw.setdefault(key, None)
+        raw["aggregates"] = {
+            key: value
+            for key, value in aggregates.items()
+            if key not in ("涨停收益均值", "红盘率", "炸板率", "最高板")
         }
         return normalize_result(
             intent=intent,

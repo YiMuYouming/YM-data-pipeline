@@ -42,9 +42,11 @@ v2.0 新增 `ym_stock_data.v2.resolve()`，当前只用于 Agent 验证、红方
 from ym_stock_data.v2 import resolve
 
 resolve("realtime_market")    # 直连 sources.pytdx.fetch_index，补 source_chain/data_scope/staleness
+resolve("sector_index", codes=["881124"])  # 直连同花顺 881 行业板块，返回涨跌幅/主力净流入
+resolve("sector_index", names=["消费电子", "通信设备"])  # 名称查询同样映射到 881xxx
 resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fetch_quotes
-resolve("stock_kline", code="002475", period="daily")  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
-resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财模板
+resolve("stock_kline", code="002475", period="15m", count=20)  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
+resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶层补聚合字段
 ```
 
 边界：
@@ -52,9 +54,10 @@ resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财�
 - v2 直接复用 `sources/*`，不再经过 v1 `fetch()` 路由。
 - v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
+- `sector_index` 只使用同花顺行业 881xxx 口径，不使用中证 931xxx，也不复用 V1 的 TDX 880xxx 板块线。
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
-- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，TDX MCP 暂作为交叉校验和备源毕业候选。
-- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试。
+- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，支持 `count` 截断；TDX MCP 暂作为交叉校验和备源毕业候选。
+- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试；顶层会输出 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 等聚合字段。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
 ## 架构（5 层）

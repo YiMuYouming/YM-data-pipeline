@@ -7,7 +7,7 @@ modules, but does not route through v1 fetch().
 from datetime import datetime
 from typing import Any
 
-from ym_stock_data.sources import iwencai, pytdx
+from ym_stock_data.sources import iwencai, pytdx, ths_industry
 
 
 def _now_iso() -> str:
@@ -34,10 +34,24 @@ def fetch_quotes(codes: list[str]) -> dict:
     return _with_meta(pytdx.fetch_quotes(codes), data_type="quotes", source="pytdx")
 
 
-def fetch_kline(code: str, *, period: str = "daily") -> dict:
+def fetch_kline(code: str, *, period: str = "daily", count: int | None = None) -> dict:
     result = _with_meta(pytdx.fetch_kline(code, period=period), data_type="kline", source="pytdx")
     result.setdefault("period", period)
+    if count is not None:
+        bars = result.get("bars", [])
+        if isinstance(bars, list):
+            result["bars"] = bars[-count:]
+            result["requested_count"] = count
+            result["returned_bars"] = len(result["bars"])
     return result
+
+
+def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None = None) -> dict:
+    return _with_meta(
+        ths_industry.fetch_sector_index(codes=codes, names=names),
+        data_type="sector_index",
+        source="ths_industry",
+    )
 
 
 def query_iwencai(query_str: str, *, limit: int = 50) -> dict:

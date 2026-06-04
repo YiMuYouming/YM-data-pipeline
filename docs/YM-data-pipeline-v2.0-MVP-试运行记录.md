@@ -40,8 +40,10 @@ from ym_stock_data.v2 import resolve
 
 cases = [
     ("realtime_market", {}),
+    ("sector_index", {"codes": ["881124"]}),
+    ("sector_index", {"names": ["消费电子", "通信设备"]}),
     ("stock_snapshot", {"codes": ["002475", "002281"]}),
-    ("stock_kline", {"code": "002475", "period": "daily"}),
+    ("stock_kline", {"code": "002475", "period": "15m", "count": 20}),
     ("review_sentiment", {}),
 ]
 
@@ -77,16 +79,24 @@ PY
 - 是否出现 `confidence: "unknown"`。
 - `source_chain` 是否真实反映来源和降级。
 - `data_scope` 是否足够清楚，尤其是问财/同花顺/东财口径。
+- `sector_index` 是否严格返回同花顺 881xxx，尤其是 `消费电子=881124`，不能出现中证 931xxx 或 TDX 880xxx。
 - `stock_snapshot` 个股字段是否满足临时查票，尤其是最新价、涨幅、量比、换手、MA5/MA10/MA20。
-- `stock_kline` 是否满足技术分析基础需求，尤其是 bars、last_close、MA5/MA10/MA20 和 `period` 参数。
-- `review_sentiment` 的 6 组问财 query 是否够用。
+- `stock_kline` 是否满足技术分析基础需求，尤其是 bars、last_close、MA5/MA10/MA20、`period` 和 `count` 参数。
+- `review_sentiment` 的 6 组问财 query 是否够用，顶层 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 是否合理。
 - 和原来 `fetch("index")` / `fetch("quotes")` / `fetch("iwencai")` 直接查有没有明显差异。
+
+### sector_index 当前边界
+
+- 主源：`sources.ths_industry.fetch_sector_index()`，不经过 v1 `fetch()` 路由。
+- 只接受同花顺行业 `881xxx` 代码；传 `931xxx` 必须报错。
+- 支持名称查询：`消费电子 -> 881124`，`通信设备 -> 881129`。
+- 返回重点：`items`、`by_code`、`by_name`、`missing`，字段包含 `change_pct` 和 `main_net_inflow_yi`。
 
 ### stock_kline 当前边界
 
 - 主源：`sources.pytdx.fetch_kline()`，不经过 v1 `fetch()` 路由。
 - 支持周期：`daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`。
-- 返回重点：`bars`、`last_close`、`mas.MA5`、`mas.MA10`、`mas.MA20`。
+- 返回重点：`bars`、`last_close`、`mas.MA5`、`mas.MA10`、`mas.MA20`、`requested_count`、`returned_bars`。
 - TDX MCP 暂不作为默认主源；先用于真实数据交叉校验，稳定后再按备源毕业标准纳入生产候选。
 
 ### review_sentiment 当前 6 组 query
@@ -141,7 +151,7 @@ _meta：
 
 2. `scripts/compare_v1_v2.py`
    - 对比 v1 `fetch()` 和 v2 `resolve()` 的关键字段。
-   - 先覆盖 `realtime_market`、`stock_snapshot`、`stock_kline`、`review_sentiment`。
+   - 先覆盖 `realtime_market`、`sector_index`、`stock_snapshot`、`stock_kline`、`review_sentiment`。
    - 输出 source、data_scope、confidence、差异字段。
 
 3. `ym-data doctor`

@@ -330,6 +330,28 @@
     "rate_class": "zero_auth"
   },
   {
+    "field": "板块涨跌幅",
+    "intent": "sector_index",
+    "primary": {"source": "ths_industry", "data_type": "sector_index", "code_prefix": "881"},
+    "fallback": [],
+    "freq": "盘中/5min",
+    "data_scope": "同花顺881行业板块口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 300,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "板块主力净流入",
+    "intent": "sector_index",
+    "primary": {"source": "ths_industry", "data_type": "sector_index", "code_prefix": "881"},
+    "fallback": [],
+    "freq": "盘中/5min",
+    "data_scope": "同花顺881行业板块口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 300,
+    "rate_class": "zero_auth"
+  },
+  {
     "field": "K线开盘价",
     "intent": "stock_kline",
     "primary": {"source": "pytdx", "data_type": "kline"},
