@@ -19,7 +19,7 @@ def ts(value: str) -> datetime:
 
 
 class V2MvpTests(unittest.TestCase):
-    def test_realtime_market_wraps_v1_fetch_and_adds_meta(self):
+    def test_realtime_market_calls_source_directly_and_adds_meta(self):
         from ym_stock_data.v2 import resolve
 
         raw = {
@@ -32,10 +32,11 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw) as fetch:
+        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw) as fetch_index, \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("realtime_market", _now=ts("2026-06-03T09:30:20+08:00"))
 
-        fetch.assert_called_once_with("index")
+        fetch_index.assert_called_once_with()
         self.assertEqual(result["data"]["上证指数"]["最新价"], 3020.1)
         self.assertEqual(result["_meta"]["intent"], "realtime_market")
         self.assertEqual(result["_meta"]["source"], "pytdx")
@@ -56,7 +57,8 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw):
+        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw), \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("realtime_market", _now=ts("2026-06-03T09:31:10+08:00"))
 
         self.assertEqual(result["_meta"]["confidence"], "stale")
@@ -66,22 +68,23 @@ class V2MvpTests(unittest.TestCase):
     def test_review_sentiment_runs_unique_policy_queries(self):
         from ym_stock_data.v2 import resolve
 
-        def fake_fetch(data_type, **kwargs):
+        def fake_fetch(query_str, limit=50):
             return {
-                "datas": [{"query": kwargs["query_str"], "value": 1}],
+                "datas": [{"query": query_str, "limit": limit, "value": 1}],
                 "row_count": 1,
                 "_source": "openapi",
                 "_meta": {
-                    "data_type": data_type,
+                    "data_type": "iwencai",
                     "source": "iwencai",
                     "fetched_at": "2026-06-03T15:10:00+08:00",
                 },
             }
 
-        with patch("ym_stock_data.v2.adapters.fetch", side_effect=fake_fetch) as fetch:
+        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_fetch) as query, \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        queries = [call.kwargs["query_str"] for call in fetch.call_args_list]
+        queries = [call.args[0] for call in query.call_args_list]
         self.assertGreaterEqual(len(queries), 5)
         self.assertEqual(len(queries), len(set(queries)))
         self.assertIn("昨日涨停 今日涨跌幅 非st", queries)
@@ -107,10 +110,11 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw) as fetch:
+        with patch("ym_stock_data.sources.iwencai.query", return_value=raw) as query, \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        fetch.assert_called_once_with("iwencai", query_str="昨日涨停 今日涨跌幅 非st", limit=50)
+        query.assert_called_once_with("昨日涨停 今日涨跌幅 非st", limit=50)
         self.assertEqual(result["data"]["query_count"], 1)
         self.assertEqual(result["_meta"]["queries"], ["昨日涨停 今日涨跌幅 非st"])
 
@@ -124,14 +128,15 @@ class V2MvpTests(unittest.TestCase):
                 "_source": "openapi",
             }
 
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_iwencai_query):
+        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_iwencai_query), \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
 
         first = result["data"]["queries"][0]["result"]
         self.assertNotIn("error", first)
         self.assertEqual(first["datas"][0]["query"], "昨日涨停 今日涨跌幅 非st")
 
-    def test_stock_snapshot_wraps_v1_quotes_and_adds_meta(self):
+    def test_stock_snapshot_calls_source_directly_and_adds_meta(self):
         from ym_stock_data.v2 import resolve
 
         raw = {
@@ -154,10 +159,11 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw) as fetch:
+        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw) as fetch_quotes, \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T09:45:20+08:00"))
 
-        fetch.assert_called_once_with("quotes", codes=["002475"])
+        fetch_quotes.assert_called_once_with(["002475"])
         self.assertEqual(result["data"]["002475"]["最新价"], 31.2)
         self.assertEqual(result["_meta"]["intent"], "stock_snapshot")
         self.assertEqual(result["_meta"]["source"], "pytdx")
@@ -184,7 +190,8 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw):
+        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw), \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T09:46:10+08:00"))
 
         self.assertEqual(result["_meta"]["confidence"], "stale")
@@ -205,7 +212,8 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.adapters.fetch", return_value=raw):
+        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw), \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("realtime_market", _now=ts("2026-06-03T09:30:20+08:00"))
 
         self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "eastmoney", "eastmoney_fallback"])

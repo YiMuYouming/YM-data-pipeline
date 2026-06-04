@@ -101,7 +101,7 @@ v2.0 采用“旁路重搭新核心，不接生产消费端”的边界。
 
 v2.0 要做：
 - 在当前仓库内新增 `ym_stock_data/v2/`。
-- 复用已验证的旧 `sources/` 和 `fetch()`，但不修改它们的返回契约。
+- 复用已验证的旧 `sources/`，但 v2 `resolve()` 不再经过 v1 `fetch()` 路由。
 - 只实现 MVP：`realtime_market`、`stock_snapshot`、`review_sentiment` 三个 intent，30 个关键字段策略，标准 `_meta`。
 - 把数据新鲜度检查写进 `resolve()`，超出阈值必须标注 `confidence: "stale"`。
 - 新增 v2 MVP 测试和少量样例。
@@ -136,7 +136,7 @@ ym_stock_data.v2.resolve()
         ↓
 Field Policy + Intent Router
         ↓
-V2 Adapter 包装旧 fetch()/sources/MCP/外部源
+V2 Adapter 直连 sources/MCP/外部源
         ↓
 Normalized Result + source_chain + data_scope
 ```
@@ -153,7 +153,7 @@ ym_stock_data/
     ├── __init__.py          # 导出 resolve
     ├── resolve.py           # v2 MVP intent router，先硬编码 3 个 intent
     ├── normalize.py         # 统一返回结构
-    ├── adapters.py          # 包装 v1 fetch/sources，不直接复制 source
+    ├── adapters.py          # 直连 sources，不经过 v1 fetch 路由
     └── policies/
         └── fields.json      # 30 个关键字段的主源、备源、口径、频率
 
@@ -400,8 +400,8 @@ v2.0 MVP 完成后的使用边界：
 - `/Users/yimu/Documents/YM_Capital/YM-data-pipeline/tests/test_v2_mvp.py`
 
 MVP 功能：
-- `resolve("realtime_market")`：包装 `fetch("index")`，补标准 `_meta`。
-- `resolve("stock_snapshot")`：包装 `fetch("quotes")`，补个股行情 `_meta`。
+- `resolve("realtime_market")`：直连 `sources.pytdx.fetch_index()`，补标准 `_meta`。
+- `resolve("stock_snapshot")`：直连 `sources.pytdx.fetch_quotes()`，补个股行情 `_meta`。
 - `resolve("review_sentiment")`：按字段策略批量执行问财 query，保留原始 query。
 - `fields.json`：覆盖 30 个关键字段，含 `data_scope`、`trade_usage`、`staleness_sec`、`rate_class`。
 - `normalize.py`：统一返回 `data` 和 `_meta`。
@@ -418,11 +418,11 @@ resolve("review_sentiment")
 ```
 
 规则：
-- `fetch()` 保留为 v1 底层兼容入口。
+- `fetch()` 保留为 v1 底层兼容入口，v2 `resolve()` 不依赖它。
 - `ym_stock_data.v2.resolve()` 是 v2 优先入口。
 - v2.0 阶段不从 `ym_stock_data.__init__` 顶层导出 `resolve`，避免旧脚本误用。
 - `resolve()` 返回标准 `_meta.intent`、`source_chain`、`data_scope`、`confidence`。
-- v2 只能包装旧 `fetch()` 或 source，不复制旧 source 实现。
+- v2 只能直连旧 source，不复制旧 source 实现。
 - 旧 `fetch()`、旧 `sources/` 不因 Phase 1 变化。
 - 先用硬编码路由实现 3 个 intent，不急于抽象动态路由。
 
@@ -721,8 +721,8 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 如果先做一个小闭环，建议只做这 4 件：
 
 1. 新增 `ym_stock_data/v2/`，导出 `ym_stock_data.v2.resolve()`。
-2. 新增 `resolve("realtime_market")`，内部只包装 `fetch("index")`，并返回标准 `_meta`。
-3. 新增 `resolve("stock_snapshot")`，内部只包装 `fetch("quotes")`，用于真实个股查票试运行。
+2. 新增 `resolve("realtime_market")`，内部直连 `sources.pytdx.fetch_index()`，并返回标准 `_meta`。
+3. 新增 `resolve("stock_snapshot")`，内部直连 `sources.pytdx.fetch_quotes()`，用于真实个股查票试运行。
 4. 新增 `resolve("review_sentiment")`，内部按字段策略批量执行问财 query，并保留原始 query。
 5. 新增 `ym_stock_data/v2/policies/fields.json`，覆盖 30 个最关键字段。
 

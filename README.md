@@ -41,13 +41,14 @@ v2.0 新增 `ym_stock_data.v2.resolve()`，当前只用于 Agent 验证、红方
 ```python
 from ym_stock_data.v2 import resolve
 
-resolve("realtime_market")    # 包装 v1 fetch("index")，补 source_chain/data_scope/staleness
-resolve("stock_snapshot", codes=["002475", "002281"])  # 包装 v1 fetch("quotes")
+resolve("realtime_market")    # 直连 sources.pytdx.fetch_index，补 source_chain/data_scope/staleness
+resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fetch_quotes
 resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财模板
 ```
 
 边界：
 - 生产脚本继续使用 `from ym_stock_data import fetch`。
+- v2 直接复用 `sources/*`，不再经过 v1 `fetch()` 路由。
 - v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。

@@ -95,11 +95,11 @@ def _merge_source_chains(chains: list[list[str]]) -> list[str]:
 def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
     """Resolve a business intent through the v2 sidecar.
 
-    v2.0 MVP intentionally supports only two intents. Production consumers
-    continue using v1 fetch() until v2.2 migration work.
+    v2.0 MVP intentionally supports a small intent set. Production consumers
+    continue using v1 until v2.2 migration work.
     """
     if intent == "realtime_market":
-        raw = adapters.fetch_v1("index")
+        raw = adapters.fetch_index()
         source = raw.get("_meta", {}).get("source", "pytdx") if isinstance(raw, dict) else "pytdx"
         return normalize_result(
             intent=intent,
@@ -119,7 +119,7 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
         if not codes:
             raise ValueError("stock_snapshot 需要提供 codes，例如 codes=['002475']")
 
-        raw = adapters.fetch_v1("quotes", codes=codes)
+        raw = adapters.fetch_quotes(codes)
         source = raw.get("_meta", {}).get("source", "pytdx") if isinstance(raw, dict) else "pytdx"
         return normalize_result(
             intent=intent,
@@ -140,7 +140,7 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
         fetched_at = None
         has_error = False
         for query in queries:
-            raw = adapters.fetch_v1("iwencai", query_str=query, limit=limit)
+            raw = adapters.query_iwencai(query, limit=limit)
             raw_dict = raw if isinstance(raw, dict) else {"data": raw}
             raw_meta = raw_dict.get("_meta", {})
             source = raw_meta.get("source", "iwencai")
