@@ -20,6 +20,7 @@ _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "�
 _API_KEY = None
 _PYWENCAI = None  # 惰性加载
 _OPENAPI_DOWN_AT = 0  # OpenAPI 被拒绝的时间戳，5min 内不再尝试
+_PYWENCAI_DOWN_AT = 0  # pywencai 降级失败的时间戳，5min 内不再尝试
 
 
 def _load_api_key() -> str:
@@ -169,6 +170,29 @@ except Exception as e:
         return {"error": str(e), "query": query_str, "_source": "pywencai"}
 
 
+def _pywencai_or_all_dead(query_str: str, limit: int = 50, openapi_error: str = None) -> dict:
+    """Run pywencai fallback once, then cache failure for the current process."""
+    import time as _t
+
+    global _PYWENCAI_DOWN_AT
+    fallback = _pywencai_query(query_str, limit)
+    if "error" not in fallback:
+        _PYWENCAI_DOWN_AT = 0
+        return fallback
+
+    _PYWENCAI_DOWN_AT = _t.time()
+    result = {
+        "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
+        "error_type": "all_paths_dead",
+        "pywencai": fallback.get("error", "unknown"),
+        "query": query_str,
+        "_source": "none",
+    }
+    if openapi_error:
+        result["openapi"] = openapi_error
+    return result
+
+
 def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     """问财查询 → OpenAPI 优先，失败自动降级 pywencai
 
@@ -180,9 +204,16 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
         return _pywencai_query(query_str, limit)
 
     # OpenAPI 被拒绝后 5min 内直接走 pywencai，不再浪费请求
-    global _OPENAPI_DOWN_AT
+    # pywencai 也挂了则直接返回诊断，不重试
+    global _OPENAPI_DOWN_AT, _PYWENCAI_DOWN_AT
     if _OPENAPI_DOWN_AT and (__import__("time").time() - _OPENAPI_DOWN_AT) < 300:
-        return _pywencai_query(query_str, limit)
+        if _PYWENCAI_DOWN_AT and (__import__("time").time() - _PYWENCAI_DOWN_AT) < 300:
+            return {
+                "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
+                "error_type": "all_paths_dead",
+                "query": query_str, "_source": "none",
+            }
+        return _pywencai_or_all_dead(query_str, limit)
 
     req = urllib.request.Request(
         f"{IWENCAI_BASE}/v1/query2data",
@@ -204,9 +235,14 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
         if e.code in (401, 403, 429):
             import time as _t
             _OPENAPI_DOWN_AT = _t.time()
-            fallback = _pywencai_query(query_str, limit)
-            if "error" not in fallback:
-                return fallback
+            # pywencai 最近也挂了 → 跳过重试，返回完整诊断
+            if _PYWENCAI_DOWN_AT and (_t.time() - _PYWENCAI_DOWN_AT) < 300:
+                return {
+                    "error": f"OpenAPI {e.code} + pywencai 均不可用（已缓存），额度明日重置",
+                    "error_type": "all_paths_dead",
+                    "query": query_str, "_source": "none",
+                }
+            return _pywencai_or_all_dead(query_str, limit, openapi_error=f"HTTP {e.code}")
         return {"error": f"HTTP {e.code}: {e.reason}", "query": query_str}
     except Exception as e:
         return {"error": str(e), "query": query_str}
