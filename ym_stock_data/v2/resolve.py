@@ -12,7 +12,8 @@ from .normalize import normalize_result
 
 
 DEFAULT_REVIEW_SENTIMENT_QUERY = "昨日涨停 今日涨跌幅 非st"
-SUPPORTED_INTENTS = ["realtime_market", "review_sentiment", "stock_snapshot"]
+SUPPORTED_INTENTS = ["realtime_market", "review_sentiment", "stock_snapshot", "stock_kline"]
+SUPPORTED_KLINE_PERIODS = {"daily", "weekly", "monthly", "60m", "15m", "5m"}
 
 
 @lru_cache(maxsize=1)
@@ -127,6 +128,30 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             source=source,
             source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
             data_scope=_intent_data_scope(intent, "PyTDX个股实时行情口径"),
+            staleness_sec=_intent_staleness(intent),
+            trade_usage=_intent_trade_usage(intent),
+            now=_now,
+        )
+
+    if intent == "stock_kline":
+        code = kwargs.get("code")
+        if not code:
+            raise ValueError("stock_kline 需要提供 code，例如 code='002475'")
+        period = kwargs.get("period", "daily")
+        if period not in SUPPORTED_KLINE_PERIODS:
+            raise ValueError(
+                "stock_kline period 仅支持 "
+                f"{sorted(SUPPORTED_KLINE_PERIODS)}"
+            )
+
+        raw = adapters.fetch_kline(str(code), period=period)
+        source = raw.get("_meta", {}).get("source", "pytdx") if isinstance(raw, dict) else "pytdx"
+        return normalize_result(
+            intent=intent,
+            raw=raw,
+            source=source,
+            source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
+            data_scope=_intent_data_scope(intent, "PyTDX个股K线口径"),
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
             now=_now,

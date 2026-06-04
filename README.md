@@ -43,6 +43,7 @@ from ym_stock_data.v2 import resolve
 
 resolve("realtime_market")    # 直连 sources.pytdx.fetch_index，补 source_chain/data_scope/staleness
 resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fetch_quotes
+resolve("stock_kline", code="002475", period="daily")  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
 resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财模板
 ```
 
@@ -52,6 +53,7 @@ resolve("review_sentiment")   # 按 fields.json 去重执行复盘情绪问财�
 - v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
+- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，TDX MCP 暂作为交叉校验和备源毕业候选。
 - `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 

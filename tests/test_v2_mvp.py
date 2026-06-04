@@ -197,6 +197,75 @@ class V2MvpTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["confidence"], "stale")
         self.assertIn("超过阈值", result["_meta"]["warn"])
 
+    def test_stock_kline_calls_source_directly_and_adds_meta(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "code": "002475",
+            "total_bars": 3,
+            "last_close": 31.2,
+            "mas": {"MA5": 30.4, "MA10": 29.9, "MA20": 28.7},
+            "bars": [
+                {"time": "2026-06-02 15:00", "open": 30.1, "high": 31.0, "low": 29.8, "close": 30.8, "vol": 1000},
+                {"time": "2026-06-03 15:00", "open": 30.8, "high": 31.5, "low": 30.5, "close": 31.0, "vol": 1200},
+                {"time": "2026-06-04 15:00", "open": 31.0, "high": 31.8, "low": 30.9, "close": 31.2, "vol": 1300},
+            ],
+            "_meta": {
+                "data_type": "kline",
+                "source": "pytdx",
+                "fetched_at": "2026-06-04T15:01:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw) as fetch_kline, \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+            result = resolve("stock_kline", code="002475", period="daily", _now=ts("2026-06-04T15:01:20+08:00"))
+
+        fetch_kline.assert_called_once_with("002475", period="daily")
+        self.assertEqual(result["data"]["code"], "002475")
+        self.assertEqual(result["data"]["period"], "daily")
+        self.assertEqual(result["data"]["last_close"], 31.2)
+        self.assertEqual(result["data"]["mas"]["MA10"], 29.9)
+        self.assertEqual(result["_meta"]["intent"], "stock_kline")
+        self.assertEqual(result["_meta"]["source"], "pytdx")
+        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
+        self.assertEqual(result["_meta"]["data_scope"], "PyTDX个股K线口径")
+        self.assertEqual(result["_meta"]["confidence"], "normal")
+        self.assertFalse(result["_meta"]["error"])
+
+    def test_stock_kline_requires_code(self):
+        from ym_stock_data.v2 import resolve
+
+        with self.assertRaisesRegex(ValueError, "code"):
+            resolve("stock_kline")
+
+    def test_stock_kline_rejects_unknown_period(self):
+        from ym_stock_data.v2 import resolve
+
+        with self.assertRaisesRegex(ValueError, "period"):
+            resolve("stock_kline", code="002475", period="1m")
+
+    def test_stock_kline_marks_stale_bars(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "code": "002475",
+            "last_close": 31.2,
+            "bars": [],
+            "_meta": {
+                "data_type": "kline",
+                "source": "pytdx",
+                "fetched_at": "2026-06-04T15:01:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw), \
+             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+            result = resolve("stock_kline", code="002475", period="daily", _now=ts("2026-06-04T15:07:00+08:00"))
+
+        self.assertEqual(result["_meta"]["confidence"], "stale")
+        self.assertIn("超过阈值", result["_meta"]["warn"])
+
     def test_source_chain_captures_fallback_metadata(self):
         from ym_stock_data.v2 import resolve
 
@@ -236,6 +305,12 @@ class V2MvpTests(unittest.TestCase):
         stock_fields = [item for item in fields if item["intent"] == "stock_snapshot"]
         self.assertGreaterEqual(len(stock_fields), 8)
         for item in stock_fields:
+            self.assertNotIn(item["primary"]["source"], forbidden)
+
+        kline_fields = [item for item in fields if item["intent"] == "stock_kline"]
+        self.assertGreaterEqual(len(kline_fields), 6)
+        for item in kline_fields:
+            self.assertEqual(item["primary"]["source"], "pytdx")
             self.assertNotIn(item["primary"]["source"], forbidden)
 
 

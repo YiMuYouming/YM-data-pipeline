@@ -34,6 +34,12 @@ def fetch_quotes(codes: list[str]) -> dict:
     return _with_meta(pytdx.fetch_quotes(codes), data_type="quotes", source="pytdx")
 
 
+def fetch_kline(code: str, *, period: str = "daily") -> dict:
+    result = _with_meta(pytdx.fetch_kline(code, period=period), data_type="kline", source="pytdx")
+    result.setdefault("period", period)
+    return result
+
+
 def query_iwencai(query_str: str, *, limit: int = 50) -> dict:
     return _with_meta(iwencai.query(query_str, limit=limit), data_type="iwencai", source="iwencai")
 

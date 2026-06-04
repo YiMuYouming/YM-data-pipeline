@@ -41,6 +41,7 @@ from ym_stock_data.v2 import resolve
 cases = [
     ("realtime_market", {}),
     ("stock_snapshot", {"codes": ["002475", "002281"]}),
+    ("stock_kline", {"code": "002475", "period": "daily"}),
     ("review_sentiment", {}),
 ]
 
@@ -77,8 +78,16 @@ PY
 - `source_chain` 是否真实反映来源和降级。
 - `data_scope` 是否足够清楚，尤其是问财/同花顺/东财口径。
 - `stock_snapshot` 个股字段是否满足临时查票，尤其是最新价、涨幅、量比、换手、MA5/MA10/MA20。
+- `stock_kline` 是否满足技术分析基础需求，尤其是 bars、last_close、MA5/MA10/MA20 和 `period` 参数。
 - `review_sentiment` 的 6 组问财 query 是否够用。
 - 和原来 `fetch("index")` / `fetch("quotes")` / `fetch("iwencai")` 直接查有没有明显差异。
+
+### stock_kline 当前边界
+
+- 主源：`sources.pytdx.fetch_kline()`，不经过 v1 `fetch()` 路由。
+- 支持周期：`daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`。
+- 返回重点：`bars`、`last_close`、`mas.MA5`、`mas.MA10`、`mas.MA20`。
+- TDX MCP 暂不作为默认主源；先用于真实数据交叉校验，稳定后再按备源毕业标准纳入生产候选。
 
 ### review_sentiment 当前 6 组 query
 
@@ -132,7 +141,7 @@ _meta：
 
 2. `scripts/compare_v1_v2.py`
    - 对比 v1 `fetch()` 和 v2 `resolve()` 的关键字段。
-   - 先覆盖 `realtime_market`、`stock_snapshot`、`review_sentiment`。
+   - 先覆盖 `realtime_market`、`stock_snapshot`、`stock_kline`、`review_sentiment`。
    - 输出 source、data_scope、confidence、差异字段。
 
 3. `ym-data doctor`
