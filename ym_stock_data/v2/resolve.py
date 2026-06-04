@@ -12,6 +12,7 @@ from .normalize import normalize_result
 
 
 DEFAULT_REVIEW_SENTIMENT_QUERY = "昨日涨停 今日涨跌幅 非st"
+SUPPORTED_INTENTS = ["realtime_market", "review_sentiment", "stock_snapshot"]
 
 
 @lru_cache(maxsize=1)
@@ -111,6 +112,26 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             now=_now,
         )
 
+    if intent == "stock_snapshot":
+        codes = kwargs.get("codes")
+        if isinstance(codes, str):
+            codes = [codes]
+        if not codes:
+            raise ValueError("stock_snapshot 需要提供 codes，例如 codes=['002475']")
+
+        raw = adapters.fetch_v1("quotes", codes=codes)
+        source = raw.get("_meta", {}).get("source", "pytdx") if isinstance(raw, dict) else "pytdx"
+        return normalize_result(
+            intent=intent,
+            raw=raw,
+            source=source,
+            source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
+            data_scope=_intent_data_scope(intent, "PyTDX个股实时行情口径"),
+            staleness_sec=_intent_staleness(intent),
+            trade_usage=_intent_trade_usage(intent),
+            now=_now,
+        )
+
     if intent == "review_sentiment":
         queries = _review_queries(kwargs.get("query"))
         limit = int(kwargs.get("limit", 50))
@@ -157,5 +178,5 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
 
     raise ValueError(
         f"v2.0 MVP 暂不支持 intent: {intent}. "
-        "当前支持: ['realtime_market', 'review_sentiment']"
+        f"当前支持: {SUPPORTED_INTENTS}"
     )

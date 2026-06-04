@@ -102,7 +102,7 @@ v2.0 采用“旁路重搭新核心，不接生产消费端”的边界。
 v2.0 要做：
 - 在当前仓库内新增 `ym_stock_data/v2/`。
 - 复用已验证的旧 `sources/` 和 `fetch()`，但不修改它们的返回契约。
-- 只实现 MVP：`realtime_market`、`review_sentiment` 两个 intent，20 个关键字段策略，标准 `_meta`。
+- 只实现 MVP：`realtime_market`、`stock_snapshot`、`review_sentiment` 三个 intent，30 个关键字段策略，标准 `_meta`。
 - 把数据新鲜度检查写进 `resolve()`，超出阈值必须标注 `confidence: "stale"`。
 - 新增 v2 MVP 测试和少量样例。
 - 保持 live-dashboard 和复盘脚本继续走当前链路。
@@ -151,11 +151,11 @@ ym_stock_data/
 ├── sources/                 # v1 已验证 source，保持兼容
 └── v2/
     ├── __init__.py          # 导出 resolve
-    ├── resolve.py           # v2 MVP intent router，先硬编码 2 个 intent
+    ├── resolve.py           # v2 MVP intent router，先硬编码 3 个 intent
     ├── normalize.py         # 统一返回结构
     ├── adapters.py          # 包装 v1 fetch/sources，不直接复制 source
     └── policies/
-        └── fields.json      # 20 个关键字段的主源、备源、口径、频率
+        └── fields.json      # 30 个关键字段的主源、备源、口径、频率
 
 tests/
 ├── test_v2_mvp.py
@@ -179,7 +179,8 @@ v2.1 再扩展：
 | intent | 用途 | 首选源 | 备源 |
 |---|---|---|---|
 | `realtime_market` | 看板指数、涨跌家数、成交额 | PyTDX | 东财 fallback |
-| `realtime_quotes` | 自选股实时行情 | PyTDX | 腾讯/easyquotation |
+| `stock_snapshot` | 个股临时查票、快速技术快照 | PyTDX | 腾讯/easyquotation |
+| `realtime_quotes` | 自选股实时行情，后续可由 `stock_snapshot` 扩展 | PyTDX | 腾讯/easyquotation |
 | `realtime_sectors` | 板块实时涨跌和均线 | PyTDX | baseline |
 | `sentiment_intraday` | 盘中情绪节点 | 问财固定 query | 东财涨跌停池 |
 | `auction_snapshot` | 竞价 5 维 | 问财固定 query | baseline |
@@ -400,8 +401,9 @@ v2.0 MVP 完成后的使用边界：
 
 MVP 功能：
 - `resolve("realtime_market")`：包装 `fetch("index")`，补标准 `_meta`。
-- `resolve("review_sentiment")`：包装固定问财 query，保留原始 query。
-- `fields.json`：覆盖 20 个关键字段，含 `data_scope`、`trade_usage`、`staleness_sec`、`rate_class`。
+- `resolve("stock_snapshot")`：包装 `fetch("quotes")`，补个股行情 `_meta`。
+- `resolve("review_sentiment")`：按字段策略批量执行问财 query，保留原始 query。
+- `fields.json`：覆盖 30 个关键字段，含 `data_scope`、`trade_usage`、`staleness_sec`、`rate_class`。
 - `normalize.py`：统一返回 `data` 和 `_meta`。
 - `resolve()`：检查 `staleness_sec`，过期时标注 `confidence: "stale"` 和 `warn`。
 
@@ -411,6 +413,7 @@ MVP 功能：
 from ym_stock_data.v2 import resolve
 
 resolve("realtime_market")
+resolve("stock_snapshot", codes=["002475", "002281"])
 resolve("review_sentiment")
 ```
 
@@ -421,13 +424,13 @@ resolve("review_sentiment")
 - `resolve()` 返回标准 `_meta.intent`、`source_chain`、`data_scope`、`confidence`。
 - v2 只能包装旧 `fetch()` 或 source，不复制旧 source 实现。
 - 旧 `fetch()`、旧 `sources/` 不因 Phase 1 变化。
-- 先用硬编码路由实现 2 个 intent，不急于抽象动态路由。
+- 先用硬编码路由实现 3 个 intent，不急于抽象动态路由。
 
 验收：
 - `python3 -m py_compile ym_stock_data/v2/*.py` 通过。
 - `python3 -c "from ym_stock_data.v2 import resolve; resolve('realtime_market')"` 可运行。
 - `python3 -m pytest tests/test_v2_mvp.py -v` 通过；如果本机没有 pytest，至少用 `python3 -m py_compile` 和 smoke command 替代。
-- 20 个关键字段能查到来源策略。
+- 30 个关键字段能查到来源策略。
 - `realtime_market` 不调用问财、TDX MCP、联网搜索。
 - 新鲜度超过阈值时 `_meta.confidence` 不是 `"normal"`。
 - v1 旧调用不受影响：`from ym_stock_data import fetch` 仍然可用。
@@ -469,7 +472,7 @@ resolve("review_sentiment")
 - 新环境按 `docs/INSTALL.md` 能安装。
 - 没有凭证时输出明确缺项，不崩溃。
 - 没有 PyTDX TCP 时能显示 fallback 状态。
-- v1/v2 compare 覆盖 `realtime_market`、`realtime_quotes`、`review_sentiment`。
+- v1/v2 compare 覆盖 `realtime_market`、`stock_snapshot`、`review_sentiment`。
 
 ### v2.2 Backlog：live-dashboard / 复盘迁移
 
@@ -613,7 +616,7 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 - `python3 -c "from ym_stock_data.v2 import resolve; resolve('realtime_market')"` 通过。
 - `from ym_stock_data import fetch` 旧入口不受影响。
 - live-dashboard 和复盘没有新增 v2 import。
-- `fields.json` 覆盖 20 个关键字段。
+- `fields.json` 覆盖 30 个关键字段。
 - 高频字段的主源不能是问财、TDX MCP、联网搜索。
 - 过期数据不会以 `confidence: "normal"` 返回。
 
@@ -696,7 +699,7 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 
 第一优先级：
 1. 数据入口审计。
-2. v2.0 MVP 闭环：`realtime_market`、`review_sentiment`、20 个字段、标准 `_meta`。
+2. v2.0 MVP 闭环：`realtime_market`、`stock_snapshot`、`review_sentiment`、30 个字段、标准 `_meta`。
 3. 新鲜度检查：`confidence: "stale"` 和 `_meta.warn`。
 4. v1/v2 使用边界同步。
 
@@ -719,8 +722,9 @@ rg -n "ym_stock_data|iwencai|pywencai|PyTDX|pytdx|tdx|NeoData|Tushare|akshare|ea
 
 1. 新增 `ym_stock_data/v2/`，导出 `ym_stock_data.v2.resolve()`。
 2. 新增 `resolve("realtime_market")`，内部只包装 `fetch("index")`，并返回标准 `_meta`。
-3. 新增 `resolve("review_sentiment")`，内部走固定问财 query 模板，并保留原始 query。
-4. 新增 `ym_stock_data/v2/policies/fields.json`，覆盖 20 个最关键字段。
+3. 新增 `resolve("stock_snapshot")`，内部只包装 `fetch("quotes")`，用于真实个股查票试运行。
+4. 新增 `resolve("review_sentiment")`，内部按字段策略批量执行问财 query，并保留原始 query。
+5. 新增 `ym_stock_data/v2/policies/fields.json`，覆盖 30 个最关键字段。
 
 同时必须补一个非功能要求：
 - `resolve()` 按 `staleness_sec` 检查数据新鲜度，超时返回 `confidence: "stale"`。
@@ -737,7 +741,7 @@ v2.0 完成的标准：
 - live-dashboard 和复盘生产链路没有被 v2.0 改动。
 - Agent 在验证场景查询 A 股数据时能先判断 intent，而不是凭经验选工具。
 - 看板实时链路不依赖问财、MCP、联网搜索。
-- 复盘情绪相关的 v2 intent 固定问财 query，并保留原始 query 和 source。
+- 复盘情绪相关的 v2 intent 按字段策略批量执行固定问财 query，并保留原始 query 和 source。
 - 所有关键字段可从策略表查到主源和备源。
 - 每个 v2 返回都带 `_meta.source_chain`、`data_scope`、`fetched_at`、`confidence`。
 - 新鲜度超出字段阈值时能明确标注 stale，不静默当成实时数据。
@@ -766,7 +770,7 @@ v2.0 不以“live-dashboard 已切换”“复盘已切换”“compare 平台�
 - v2.0 只在 YM-data-pipeline 内新增旁路核心，默认不改 live-dashboard 和复盘生产消费端。
 - 不从 ym_stock_data 顶层导出 resolve；v2 入口必须是 ym_stock_data.v2.resolve。
 - 不删除、不替换、不破坏现有 fetch() 和 sources 返回契约。
-- v2.0 MVP 只实现 realtime_market 和 review_sentiment；不要扩成全量平台。
+- v2.0 MVP 只实现 realtime_market、stock_snapshot 和 review_sentiment；不要扩成全量平台。
 - resolve() 必须按 staleness_sec 检查新鲜度，过期数据标注 stale。
 - 高频看板链路不接问财、TDX MCP、联网搜索。
 - 问财 query 要固定模板并保留原始 query。

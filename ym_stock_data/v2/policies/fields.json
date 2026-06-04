@@ -218,5 +218,115 @@
     "trade_usage": "辅助，不单独触发交易",
     "staleness_sec": 1800,
     "rate_class": "limited"
+  },
+  {
+    "field": "个股最新价",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [{"source": "tencent"}, {"source": "easyquotation"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "个股涨幅",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [{"source": "tencent"}, {"source": "easyquotation"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "量比",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [{"source": "tencent"}, {"source": "easyquotation"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "换手",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [{"source": "tencent"}, {"source": "easyquotation"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "MA5_d",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "MA10_d",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "MA20_d",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "MA10_60m",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "MA10_60m_dir",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
+  },
+  {
+    "field": "is_strong",
+    "intent": "stock_snapshot",
+    "primary": {"source": "pytdx", "data_type": "quotes"},
+    "fallback": [],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX个股实时行情口径",
+    "trade_usage": "辅助，不单独触发交易",
+    "staleness_sec": 60,
+    "rate_class": "zero_auth"
   }
 ]
