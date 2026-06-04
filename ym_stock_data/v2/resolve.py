@@ -119,7 +119,7 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
         fetched_at = None
         has_error = False
         for query in queries:
-            raw = adapters.fetch_v1("iwencai", query=query, limit=limit)
+            raw = adapters.fetch_v1("iwencai", query_str=query, limit=limit)
             raw_dict = raw if isinstance(raw, dict) else {"data": raw}
             raw_meta = raw_dict.get("_meta", {})
             source = raw_meta.get("source", "iwencai")

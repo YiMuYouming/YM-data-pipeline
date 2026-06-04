@@ -68,7 +68,7 @@ class V2MvpTests(unittest.TestCase):
 
         def fake_fetch(data_type, **kwargs):
             return {
-                "datas": [{"query": kwargs["query"], "value": 1}],
+                "datas": [{"query": kwargs["query_str"], "value": 1}],
                 "row_count": 1,
                 "_source": "openapi",
                 "_meta": {
@@ -81,7 +81,7 @@ class V2MvpTests(unittest.TestCase):
         with patch("ym_stock_data.v2.adapters.fetch", side_effect=fake_fetch) as fetch:
             result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        queries = [call.kwargs["query"] for call in fetch.call_args_list]
+        queries = [call.kwargs["query_str"] for call in fetch.call_args_list]
         self.assertGreaterEqual(len(queries), 5)
         self.assertEqual(len(queries), len(set(queries)))
         self.assertIn("昨日涨停 今日涨跌幅 非st", queries)
@@ -110,9 +110,26 @@ class V2MvpTests(unittest.TestCase):
         with patch("ym_stock_data.v2.adapters.fetch", return_value=raw) as fetch:
             result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        fetch.assert_called_once_with("iwencai", query="昨日涨停 今日涨跌幅 非st", limit=50)
+        fetch.assert_called_once_with("iwencai", query_str="昨日涨停 今日涨跌幅 非st", limit=50)
         self.assertEqual(result["data"]["query_count"], 1)
         self.assertEqual(result["_meta"]["queries"], ["昨日涨停 今日涨跌幅 非st"])
+
+    def test_review_sentiment_matches_v1_iwencai_signature(self):
+        from ym_stock_data.v2 import resolve
+
+        def fake_iwencai_query(query_str, limit=50, page=1):
+            return {
+                "datas": [{"query": query_str, "limit": limit, "page": page}],
+                "row_count": 1,
+                "_source": "openapi",
+            }
+
+        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_iwencai_query):
+            result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
+
+        first = result["data"]["queries"][0]["result"]
+        self.assertNotIn("error", first)
+        self.assertEqual(first["datas"][0]["query"], "昨日涨停 今日涨跌幅 非st")
 
     def test_source_chain_captures_fallback_metadata(self):
         from ym_stock_data.v2 import resolve
