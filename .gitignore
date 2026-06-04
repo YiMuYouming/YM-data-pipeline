@@ -4,5 +4,9 @@ __pycache__/
 dist/
 build/
 .cache/
+.pytest_cache/
+.venv/
+venv/
 *.DS_Store
 outputs/*.json
+outputs/

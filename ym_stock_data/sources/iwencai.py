@@ -12,6 +12,7 @@
 """
 
 import os, re, json, urllib.request, secrets, sys
+from pathlib import Path
 
 IWENCAI_BASE = "https://openapi.iwencai.com"
 _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "收盘价"]
@@ -19,6 +20,7 @@ _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "�
 _API_KEY = None
 _PYWENCAI = None  # 惰性加载
 _OPENAPI_DOWN_AT = 0  # OpenAPI 被拒绝的时间戳，5min 内不再尝试
+_PYWENCAI_DOWN_AT = 0  # pywencai 降级失败的时间戳，5min 内不再尝试
 
 
 def _load_api_key() -> str:
@@ -80,34 +82,115 @@ def _get_pywencai():
 
 
 def _pywencai_query(query_str: str, limit: int = 50) -> dict:
-    """pywencai 查询 → OpenAPI 兼容格式"""
-    pw_pd = _get_pywencai()
-    if not pw_pd:
-        return {"error": "pywencai not available", "query": query_str}
-    pw, pd = pw_pd
+    """pywencai 查询 → OpenAPI 兼容格式（subprocess 调用 data-venv Python，绕过代码签名冲突）"""
+    import subprocess as _sp
+    import json as _json
+    
     try:
-        df = pw.get(query=query_str, loop_first=True)
-        if df is None or df.empty:
-            return {"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}
-        datas = df.to_dict(orient="records")
-        # numpy → native
-        def native(v):
-            if v is None: return None
-            try:
-                import numpy as np
+        from ..config import PYWENCAI_PYTHON as _py
+    except ImportError:
+        _py = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")
+    
+    _code = f"""
+import sys, json, numpy as np
+sys.path.insert(0, '{str(Path(__file__).parent.parent)}')
+try:
+    import pywencai as pw
+    import pandas as pd
+    result = pw.get(query={_json.dumps(query_str)}, loop_first=True)
+    if result is None:
+        print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+    elif isinstance(result, pd.DataFrame):
+        if result.empty:
+            print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+        else:
+            datas = result.to_dict(orient="records")
+            def native(v):
+                if v is None: return None
                 if isinstance(v, (np.integer,)): return int(v)
                 if isinstance(v, (np.floating,)): return float(v) if v == v else None
                 if isinstance(v, np.ndarray): return v.tolist()
-            except ImportError: pass
-            if isinstance(v, float) and (v != v): return None
-            return v
-        for row in datas:
-            for k in row:
-                row[k] = native(row[k])
-        return {"datas": datas, "columns": [{"index_name": c} for c in df.columns],
-                "row_count": len(datas), "_source": "pywencai"}
+                if isinstance(v, float) and (v != v): return None
+                return v
+            for row in datas:
+                for k in row:
+                    row[k] = native(row[k])
+            print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in result.columns],
+                    "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+    elif isinstance(result, dict):
+        # 个股查询可能返回 dict 或 内含 DataFrame
+        import pandas as _pd
+        nested_df = None
+        for _v in result.values():
+            if isinstance(_v, _pd.DataFrame):
+                nested_df = _v
+                break
+        if nested_df is not None:
+            # dict 内含 DataFrame → 降级为 DataFrame 路径
+            if nested_df.empty:
+                print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
+            else:
+                datas = nested_df.to_dict(orient="records")
+                def native(v):
+                    if v is None: return None
+                    if isinstance(v, (np.integer,)): return int(v)
+                    if isinstance(v, (np.floating,)): return float(v) if v == v else None
+                    if isinstance(v, np.ndarray): return v.tolist()
+                    if isinstance(v, float) and (v != v): return None
+                    return v
+                for row in datas:
+                    for k in row:
+                        row[k] = native(row[k])
+                print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in nested_df.columns],
+                        "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+        else:
+            # 纯 dict（个股单行数据）
+            datas = [result]
+            has_nested = any(isinstance(v, (list, dict, _pd.DataFrame, _pd.Series)) for v in result.values())
+            if has_nested:
+                print(json.dumps({{"error": f"dict有嵌套:{{{{k:type(v).__name__ for k,v in result.items()}}}}",
+                        "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+            else:
+                print(json.dumps({{"datas": datas, "columns": [{{"index_name": k}} for k in result.keys()],
+                        "row_count": 1, "_source": "pywencai"}}, ensure_ascii=False))
+    else:
+        print(json.dumps({{"error": f"未知类型: {{type(result).__name__}}", "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+except Exception as e:
+    print(json.dumps({{"error": str(e), "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+"""
+    try:
+        r = _sp.run([_py, "-c", _code], capture_output=True, text=True, timeout=45)
+        out = r.stdout.strip()
+        if out:
+            return _json.loads(out)
+        return {"error": r.stderr[:200], "query": query_str, "_source": "pywencai"}
+    except _sp.TimeoutExpired:
+        return {"error": "timeout", "query": query_str, "_source": "pywencai"}
     except Exception as e:
         return {"error": str(e), "query": query_str, "_source": "pywencai"}
+
+
+def _pywencai_or_all_dead(query_str: str, limit: int = 50, openapi_error: str = None) -> dict:
+    """Run pywencai fallback once, then cache failure for the current process."""
+    import time as _t
+
+    global _PYWENCAI_DOWN_AT
+    fallback = _pywencai_query(query_str, limit)
+    if "error" not in fallback:
+        _PYWENCAI_DOWN_AT = 0
+        return fallback
+
+    _PYWENCAI_DOWN_AT = _t.time()
+    result = {
+        "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
+        "error_type": "all_paths_dead",
+        "pywencai": fallback.get("error", "unknown"),
+        "query": query_str,
+        "_source": "none",
+    }
+    if openapi_error:
+        result["openapi"] = openapi_error
+    return result
 
 
 def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
@@ -121,9 +204,16 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
         return _pywencai_query(query_str, limit)
 
     # OpenAPI 被拒绝后 5min 内直接走 pywencai，不再浪费请求
-    global _OPENAPI_DOWN_AT
+    # pywencai 也挂了则直接返回诊断，不重试
+    global _OPENAPI_DOWN_AT, _PYWENCAI_DOWN_AT
     if _OPENAPI_DOWN_AT and (__import__("time").time() - _OPENAPI_DOWN_AT) < 300:
-        return _pywencai_query(query_str, limit)
+        if _PYWENCAI_DOWN_AT and (__import__("time").time() - _PYWENCAI_DOWN_AT) < 300:
+            return {
+                "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
+                "error_type": "all_paths_dead",
+                "query": query_str, "_source": "none",
+            }
+        return _pywencai_or_all_dead(query_str, limit)
 
     req = urllib.request.Request(
         f"{IWENCAI_BASE}/v1/query2data",
@@ -145,9 +235,14 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
         if e.code in (401, 403, 429):
             import time as _t
             _OPENAPI_DOWN_AT = _t.time()
-            fallback = _pywencai_query(query_str, limit)
-            if "error" not in fallback:
-                return fallback
+            # pywencai 最近也挂了 → 跳过重试，返回完整诊断
+            if _PYWENCAI_DOWN_AT and (_t.time() - _PYWENCAI_DOWN_AT) < 300:
+                return {
+                    "error": f"OpenAPI {e.code} + pywencai 均不可用（已缓存），额度明日重置",
+                    "error_type": "all_paths_dead",
+                    "query": query_str, "_source": "none",
+                }
+            return _pywencai_or_all_dead(query_str, limit, openapi_error=f"HTTP {e.code}")
         return {"error": f"HTTP {e.code}: {e.reason}", "query": query_str}
     except Exception as e:
         return {"error": str(e), "query": query_str}
