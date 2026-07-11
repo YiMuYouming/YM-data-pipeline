@@ -6,7 +6,7 @@ import sys
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -19,6 +19,58 @@ def ts(value: str) -> datetime:
 
 
 class V2MvpTests(unittest.TestCase):
+    def test_pytdx_retry_uses_disconnect_only_for_transient_errors(self):
+        from ym_stock_data.v2.adapters import _pytdx_call
+
+        fn = Mock(side_effect=[ConnectionError("tcp reset"), {"ok": True}])
+        with patch("ym_stock_data.v2.adapters.pytdx.disconnect") as disconnect, patch(
+            "ym_stock_data.v2.adapters.time.sleep"
+        ) as sleep:
+            result = _pytdx_call(fn)
+        self.assertEqual({"ok": True}, result)
+        self.assertEqual(2, fn.call_count)
+        disconnect.assert_called_once()
+        sleep.assert_called_once()
+
+    def test_pytdx_retry_reconnect_failure_does_not_mask_original_path(self):
+        from ym_stock_data.v2.adapters import _pytdx_call
+
+        fn = Mock(side_effect=[TimeoutError("timeout"), {"ok": True}])
+        with patch(
+            "ym_stock_data.v2.adapters.pytdx.disconnect",
+            side_effect=RuntimeError("disconnect failed"),
+        ), patch("ym_stock_data.v2.adapters.time.sleep"):
+            self.assertEqual({"ok": True}, _pytdx_call(fn))
+
+    def test_pytdx_retry_does_not_retry_deterministic_errors(self):
+        from ym_stock_data.v2.adapters import _pytdx_call
+
+        fn = Mock(side_effect=ValueError("bad code"))
+        with patch("ym_stock_data.v2.adapters.pytdx.disconnect") as disconnect, patch(
+            "ym_stock_data.v2.adapters.time.sleep"
+        ):
+            with self.assertRaisesRegex(ValueError, "bad code"):
+                _pytdx_call(fn)
+        self.assertEqual(1, fn.call_count)
+        disconnect.assert_not_called()
+
+    def test_pytdx_retry_raises_last_transient_error(self):
+        from ym_stock_data.v2.adapters import _pytdx_call
+
+        fn = Mock(
+            side_effect=[
+                ConnectionError("first"),
+                TimeoutError("second"),
+                OSError("final"),
+            ]
+        )
+        with patch("ym_stock_data.v2.adapters.pytdx.disconnect"), patch(
+            "ym_stock_data.v2.adapters.time.sleep"
+        ):
+            with self.assertRaisesRegex(OSError, "final"):
+                _pytdx_call(fn)
+        self.assertEqual(3, fn.call_count)
+
     def test_realtime_market_calls_source_directly_and_adds_meta(self):
         from ym_stock_data.v2 import resolve
 
@@ -199,6 +251,30 @@ class V2MvpTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["confidence"], "stale")
         self.assertIn("超过阈值", result["_meta"]["warn"])
 
+    def test_adapter_flattens_wrapped_quote_payloads(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "data": {
+                "002475": {"最新价": 31.2, "涨幅": "+1.20%"},
+            },
+            "_source": "tencent_fallback",
+            "_meta": {
+                "data_type": "quotes",
+                "source": "pytdx",
+                "fallback_from": "pytdx",
+                "fallback_to": "tencent",
+                "fetched_at": "2026-06-04T10:00:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw):
+            result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T10:00:20+08:00"))
+
+        self.assertEqual(result["data"]["002475"]["最新价"], 31.2)
+        self.assertNotIn("data", result["data"])
+        self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "tencent", "tencent_fallback"])
+
     def test_sector_index_calls_ths_881_source_by_code(self):
         from ym_stock_data.v2 import resolve
 
@@ -325,6 +401,35 @@ class V2MvpTests(unittest.TestCase):
         self.assertEqual([bar["time"] for bar in result["data"]["bars"]], ["2026-06-03 15:00", "2026-06-04 15:00"])
         self.assertEqual(result["data"]["requested_count"], 2)
         self.assertEqual(result["data"]["returned_bars"], 2)
+
+    def test_adapter_flattens_wrapped_kline_payload_before_counting(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "data": {
+                "code": "002475",
+                "total_bars": 3,
+                "last_close": 31.2,
+                "bars": [
+                    {"time": "2026-06-02 15:00", "close": 30.8},
+                    {"time": "2026-06-03 15:00", "close": 31.0},
+                    {"time": "2026-06-04 15:00", "close": 31.2},
+                ],
+            },
+            "_meta": {
+                "data_type": "kline",
+                "source": "pytdx",
+                "fetched_at": "2026-06-04T15:01:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw):
+            result = resolve("stock_kline", code="002475", period="daily", count=2, _now=ts("2026-06-04T15:01:20+08:00"))
+
+        self.assertEqual(result["data"]["code"], "002475")
+        self.assertEqual([bar["time"] for bar in result["data"]["bars"]], ["2026-06-03 15:00", "2026-06-04 15:00"])
+        self.assertEqual(result["data"]["returned_bars"], 2)
+        self.assertNotIn("data", result["data"])
 
     def test_stock_kline_requires_code(self):
         from ym_stock_data.v2 import resolve
