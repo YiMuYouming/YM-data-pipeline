@@ -11,7 +11,7 @@
     2. pywencai 网页抓取 → 无额度、稍慢（自动切换）
 """
 
-import os, re, json, urllib.request, secrets, sys
+import os, re, json, socket, urllib.error, urllib.request, secrets, sys, time
 from pathlib import Path
 
 IWENCAI_BASE = "https://openapi.iwencai.com"
@@ -21,6 +21,11 @@ _API_KEY = None
 _PYWENCAI = None  # 惰性加载
 _OPENAPI_DOWN_AT = 0  # OpenAPI 被拒绝的时间戳，5min 内不再尝试
 _PYWENCAI_DOWN_AT = 0  # pywencai 降级失败的时间戳，5min 内不再尝试
+_OPENAPI_BREAKER_AT = 0
+_OPENAPI_BREAKER_SECONDS = 300
+_OPENAPI_FAILURE_TYPE = "rate_limit"
+_OPENAPI_LAST_ERROR = None
+_PYWENCAI_LAST_ERROR = None
 
 
 def _load_api_key() -> str:
@@ -162,7 +167,7 @@ except Exception as e:
         r = _sp.run([_py, "-c", _code], capture_output=True, text=True, timeout=45)
         out = r.stdout.strip()
         if out:
-            return _json.loads(out)
+            return _limit_pywencai_rows(_json.loads(out), limit)
         return {"error": r.stderr[:200], "query": query_str, "_source": "pywencai"}
     except _sp.TimeoutExpired:
         return {"error": "timeout", "query": query_str, "_source": "pywencai"}
@@ -170,27 +175,129 @@ except Exception as e:
         return {"error": str(e), "query": query_str, "_source": "pywencai"}
 
 
-def _pywencai_or_all_dead(query_str: str, limit: int = 50, openapi_error: str = None) -> dict:
-    """Run pywencai fallback once, then cache failure for the current process."""
-    import time as _t
+def _limit_pywencai_rows(result: dict, limit: int) -> dict:
+    """Apply the public query limit to a pywencai-compatible payload."""
+    if not isinstance(result, dict):
+        return result
+    limited = dict(result)
+    datas = result.get("datas")
+    if isinstance(datas, list):
+        row_limit = max(0, int(limit))
+        limited["datas"] = datas[:row_limit]
+        limited["row_count"] = len(limited["datas"])
+    return limited
 
-    global _PYWENCAI_DOWN_AT
-    fallback = _pywencai_query(query_str, limit)
-    if "error" not in fallback:
-        _PYWENCAI_DOWN_AT = 0
-        return fallback
 
-    _PYWENCAI_DOWN_AT = _t.time()
+def _set_openapi_breaker(*, failure_type: str, error: str, seconds: int) -> dict:
+    global _OPENAPI_DOWN_AT, _OPENAPI_BREAKER_AT
+    global _OPENAPI_BREAKER_SECONDS, _OPENAPI_FAILURE_TYPE, _OPENAPI_LAST_ERROR
+
+    now = time.time()
+    _OPENAPI_DOWN_AT = now
+    _OPENAPI_BREAKER_AT = now
+    _OPENAPI_BREAKER_SECONDS = seconds
+    _OPENAPI_FAILURE_TYPE = failure_type
+    _OPENAPI_LAST_ERROR = error
+    return {
+        "failure_type": failure_type,
+        "openapi_error": error,
+        "breaker_seconds": seconds,
+    }
+
+
+def _active_openapi_breaker() -> dict | None:
+    if not _OPENAPI_DOWN_AT:
+        return None
+
+    if _OPENAPI_BREAKER_AT == _OPENAPI_DOWN_AT:
+        seconds = _OPENAPI_BREAKER_SECONDS
+        failure_type = _OPENAPI_FAILURE_TYPE
+        openapi_error = _OPENAPI_LAST_ERROR
+    else:
+        # Backward compatibility for callers/tests that set only
+        # _OPENAPI_DOWN_AT under the historical 300-second contract.
+        seconds = 300
+        failure_type = "rate_limit"
+        openapi_error = None
+
+    if time.time() - _OPENAPI_DOWN_AT >= seconds:
+        return None
+    return {
+        "failure_type": failure_type,
+        "openapi_error": openapi_error,
+        "breaker_seconds": seconds,
+    }
+
+
+def _fallback_meta(result: dict, context: dict) -> dict:
+    enriched = dict(result)
+    meta = dict(enriched.get("_meta", {}))
+    meta.update({
+        "fallback_from": "openapi",
+        "fallback_to": "pywencai",
+        "failure_type": context["failure_type"],
+    })
+    if context.get("openapi_error"):
+        meta["openapi_error"] = context["openapi_error"]
+    enriched["_meta"] = meta
+    return enriched
+
+
+def _all_paths_dead_result(
+    query_str: str,
+    *,
+    context: dict,
+    pywencai_error: str,
+) -> dict:
+    failure_type = context["failure_type"]
+    if failure_type == "rate_limit":
+        message = "OpenAPI 限流且 pywencai 不可用"
+    elif failure_type == "auth":
+        message = "OpenAPI 鉴权失败且 pywencai 不可用"
+    else:
+        message = "OpenAPI 不可用且 pywencai 不可用"
+
     result = {
-        "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
+        "error": message,
         "error_type": "all_paths_dead",
-        "pywencai": fallback.get("error", "unknown"),
+        "pywencai": pywencai_error,
         "query": query_str,
         "_source": "none",
     }
-    if openapi_error:
-        result["openapi"] = openapi_error
-    return result
+    if context.get("openapi_error"):
+        result["openapi"] = context["openapi_error"]
+    return _fallback_meta(result, context)
+
+
+def _pywencai_or_all_dead(
+    query_str: str,
+    limit: int = 50,
+    *,
+    context: dict | None = None,
+    openapi_error: str | None = None,
+) -> dict:
+    """Run pywencai fallback once, then cache failure for the current process."""
+    global _PYWENCAI_DOWN_AT, _PYWENCAI_LAST_ERROR
+    if context is None:
+        context = {
+            "failure_type": "rate_limit",
+            "openapi_error": openapi_error,
+            "breaker_seconds": 300,
+        }
+
+    fallback = _limit_pywencai_rows(_pywencai_query(query_str, limit), limit)
+    if "error" not in fallback:
+        _PYWENCAI_DOWN_AT = 0
+        _PYWENCAI_LAST_ERROR = None
+        return _fallback_meta(fallback, context)
+
+    _PYWENCAI_DOWN_AT = time.time()
+    _PYWENCAI_LAST_ERROR = fallback.get("error", "unknown")
+    return _all_paths_dead_result(
+        query_str,
+        context=context,
+        pywencai_error=_PYWENCAI_LAST_ERROR,
+    )
 
 
 def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
@@ -201,19 +308,21 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     """
     key = _load_api_key()
     if not key:
-        return _pywencai_query(query_str, limit)
+        return _limit_pywencai_rows(_pywencai_query(query_str, limit), limit)
 
-    # OpenAPI 被拒绝后 5min 内直接走 pywencai，不再浪费请求
+    # OpenAPI 熔断期间直接走 pywencai，不再浪费请求。
+    # 鉴权/限流保持历史 300s，5xx/网络错误使用 60s。
     # pywencai 也挂了则直接返回诊断，不重试
     global _OPENAPI_DOWN_AT, _PYWENCAI_DOWN_AT
-    if _OPENAPI_DOWN_AT and (__import__("time").time() - _OPENAPI_DOWN_AT) < 300:
-        if _PYWENCAI_DOWN_AT and (__import__("time").time() - _PYWENCAI_DOWN_AT) < 300:
-            return {
-                "error": "OpenAPI 额度耗尽 + pywencai 不可用，额度明日重置",
-                "error_type": "all_paths_dead",
-                "query": query_str, "_source": "none",
-            }
-        return _pywencai_or_all_dead(query_str, limit)
+    breaker = _active_openapi_breaker()
+    if breaker:
+        if _PYWENCAI_DOWN_AT and (time.time() - _PYWENCAI_DOWN_AT) < 300:
+            return _all_paths_dead_result(
+                query_str,
+                context=breaker,
+                pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
+            )
+        return _pywencai_or_all_dead(query_str, limit, context=breaker)
 
     req = urllib.request.Request(
         f"{IWENCAI_BASE}/v1/query2data",
@@ -230,20 +339,53 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
             result["_source"] = "openapi"
             _OPENAPI_DOWN_AT = 0  # 恢复
             return result
-    except urllib.request.HTTPError as e:
-        # 401/429/403 → 标记不可用，降级 pywencai
+    except urllib.error.HTTPError as e:
         if e.code in (401, 403, 429):
-            import time as _t
-            _OPENAPI_DOWN_AT = _t.time()
+            failure_type = "rate_limit" if e.code == 429 else "auth"
+            context = _set_openapi_breaker(
+                failure_type=failure_type,
+                error=f"HTTP {e.code}",
+                seconds=300,
+            )
             # pywencai 最近也挂了 → 跳过重试，返回完整诊断
-            if _PYWENCAI_DOWN_AT and (_t.time() - _PYWENCAI_DOWN_AT) < 300:
-                return {
-                    "error": f"OpenAPI {e.code} + pywencai 均不可用（已缓存），额度明日重置",
-                    "error_type": "all_paths_dead",
-                    "query": query_str, "_source": "none",
-                }
-            return _pywencai_or_all_dead(query_str, limit, openapi_error=f"HTTP {e.code}")
+            if _PYWENCAI_DOWN_AT and (time.time() - _PYWENCAI_DOWN_AT) < 300:
+                return _all_paths_dead_result(
+                    query_str,
+                    context=context,
+                    pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
+                )
+            return _pywencai_or_all_dead(query_str, limit, context=context)
+        if 500 <= e.code <= 599:
+            context = _set_openapi_breaker(
+                failure_type="http_5xx",
+                error=f"HTTP {e.code}: {e.reason}",
+                seconds=60,
+            )
+            return _pywencai_or_all_dead(query_str, limit, context=context)
         return {"error": f"HTTP {e.code}: {e.reason}", "query": query_str}
+    except (TimeoutError, socket.timeout) as e:
+        context = _set_openapi_breaker(
+            failure_type="timeout",
+            error=str(e) or "timeout",
+            seconds=60,
+        )
+        return _pywencai_or_all_dead(query_str, limit, context=context)
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        is_timeout = isinstance(reason, (TimeoutError, socket.timeout)) or "timed out" in str(reason).lower()
+        context = _set_openapi_breaker(
+            failure_type="timeout" if is_timeout else "network",
+            error=str(e),
+            seconds=60,
+        )
+        return _pywencai_or_all_dead(query_str, limit, context=context)
+    except OSError as e:
+        context = _set_openapi_breaker(
+            failure_type="network",
+            error=str(e),
+            seconds=60,
+        )
+        return _pywencai_or_all_dead(query_str, limit, context=context)
     except Exception as e:
         return {"error": str(e), "query": query_str}
 

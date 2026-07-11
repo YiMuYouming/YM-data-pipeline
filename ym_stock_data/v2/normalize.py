@@ -36,6 +36,7 @@ def normalize_result(
     trade_usage: str,
     query: str | list[str] | None = None,
     now: datetime | None = None,
+    quality: dict | None = None,
 ) -> dict:
     raw_meta = raw.get("_meta", {}) if isinstance(raw, dict) else {}
     fetched_at = raw_meta.get("fetched_at")
@@ -83,6 +84,8 @@ def normalize_result(
         meta["query"] = query
     if warn:
         meta["warn"] = warn
+    if quality is not None:
+        meta["quality"] = quality
 
     return {
         "data": strip_v1_meta(raw),
