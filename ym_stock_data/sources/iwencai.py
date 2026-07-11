@@ -34,6 +34,40 @@ class _InvalidOpenAPIResponse(ValueError):
     """OpenAPI returned valid JSON that does not satisfy its object contract."""
 
 
+def _rows_from_openapi_container(value) -> list[dict] | None:
+    if isinstance(value, list):
+        if all(isinstance(row, dict) for row in value):
+            return value
+        return None
+    if isinstance(value, dict):
+        for key in ("datas", "rows", "items", "list", "result", "data"):
+            if key in value:
+                rows = _rows_from_openapi_container(value[key])
+                if rows is not None:
+                    return rows
+    return None
+
+
+def _validate_openapi_result(result) -> dict:
+    if not isinstance(result, dict) or not result or result.get("error"):
+        raise _InvalidOpenAPIResponse(
+            f"expected non-error object with rows, got {type(result).__name__}"
+        )
+
+    rows = None
+    for key in ("datas", "data", "result"):
+        if key in result:
+            rows = _rows_from_openapi_container(result[key])
+            if rows is not None:
+                break
+    if rows is None:
+        raise _InvalidOpenAPIResponse("response has no parseable data/result rows")
+
+    result.setdefault("datas", rows)
+    result.setdefault("row_count", len(rows))
+    return result
+
+
 def _load_api_key() -> str:
     global _API_KEY
     if _API_KEY:
@@ -360,11 +394,9 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
 
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-            if not isinstance(result, dict) or not result:
-                raise _InvalidOpenAPIResponse(
-                    f"expected non-empty object, got {type(result).__name__}"
-                )
+            result = _validate_openapi_result(
+                json.loads(resp.read().decode("utf-8"))
+            )
             result["_source"] = "openapi"
             _OPENAPI_DOWN_AT = 0  # 恢复
             return result

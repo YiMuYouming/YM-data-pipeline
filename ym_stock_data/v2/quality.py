@@ -128,7 +128,9 @@ def assess_quality(
     source_error: bool = False,
 ) -> dict[str, object]:
     """Assess result semantics independently from transport freshness."""
-    normalized_rows = list(rows or [])
+    input_rows = list(rows or [])
+    normalized_rows = [row for row in input_rows if isinstance(row, Mapping)]
+    invalid_row_count = len(input_rows) - len(normalized_rows)
     missing_items = list(missing or [])
     returned_count = len(normalized_rows)
     row_shape, row_shape_issue = _rows_shape(normalized_rows)
@@ -136,6 +138,8 @@ def assess_quality(
 
     if expected_row_shape is None:
         semantic_equivalence = "unknown"
+    elif invalid_row_count and normalized_rows:
+        semantic_equivalence = "non_equivalent"
     elif row_shape_issue == "mixed_row_shapes":
         semantic_equivalence = "non_equivalent"
     elif row_shape == "unknown":
@@ -148,8 +152,12 @@ def assess_quality(
     reason_codes = []
     if source_error:
         reason_codes.append("source_error")
-    if not normalized_rows:
+    if not input_rows:
         reason_codes.append("empty_result")
+    if invalid_row_count:
+        reason_codes.append("invalid_row")
+        if normalized_rows:
+            reason_codes.append("mixed_row_types")
     if expected_row_shape is not None and row_shape_issue:
         reason_codes.append(row_shape_issue)
     elif semantic_equivalence == "non_equivalent":
@@ -161,8 +169,10 @@ def assess_quality(
 
     if source_error:
         status = "error"
-    elif not normalized_rows:
+    elif not input_rows:
         status = "empty"
+    elif invalid_row_count:
+        status = "semantic_degraded"
     elif expected_row_shape is not None and (
         row_shape_issue is not None or semantic_equivalence == "non_equivalent"
     ):

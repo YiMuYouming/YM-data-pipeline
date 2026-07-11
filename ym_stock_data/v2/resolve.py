@@ -292,6 +292,12 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             query_meta.setdefault("source", source)
             query_meta["source_chain"] = source_chain
             query_meta["quality"] = query_quality
+            if expected_count is not None:
+                query_meta["coverage"] = {
+                    "requested_count": query_quality["requested_count"],
+                    "returned_count": query_quality["returned_count"],
+                    "ratio": query_quality["coverage"],
+                }
             rows.append({
                 "query": query,
                 "result": {key: value for key, value in raw_dict.items() if key != "_meta"},

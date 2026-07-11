@@ -284,6 +284,20 @@ class IwencaiFallbackTests(unittest.TestCase):
                 self.assertEqual("invalid_response", meta["fallback_reason"])
                 self.assertEqual(60, iwencai._OPENAPI_BREAKER_SECONDS)
 
+    def test_message_only_openapi_error_object_falls_back(self):
+        fallback = {"datas": [{"股票代码": "600000"}], "row_count": 1, "_source": "pywencai"}
+        body = b'{"message":"temporary upstream failure"}'
+
+        with patch.object(iwencai.urllib.request, "urlopen", return_value=RawResponse(body)), \
+             patch.object(iwencai, "_pywencai_query", return_value=fallback) as pywencai_query:
+            result = iwencai.query("银行股", limit=2)
+
+        pywencai_query.assert_called_once_with("银行股", 2)
+        self.assertEqual("pywencai", result.get("_source"))
+        meta = self.fallback_meta(result)
+        self.assertEqual("invalid_response", meta["failure_type"])
+        self.assertEqual("invalid_response", meta["fallback_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -296,6 +296,25 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual("non_equivalent", quality["semantic_equivalence"])
         self.assertIn("mixed_row_shapes", quality["reason_codes"])
 
+    def test_non_mapping_row_degrades_shape_and_does_not_count_toward_coverage(self):
+        from ym_stock_data.v2.quality import assess_quality
+
+        quality = assess_quality(
+            [
+                {"板块代码": "881160", "板块名称": "国防军工"},
+                "garbage",
+            ],
+            expected_row_shape="sector_rows",
+            expected_count=2,
+        )
+
+        self.assertEqual("semantic_degraded", quality["status"])
+        self.assertEqual("sector_rows", quality["row_shape"])
+        self.assertEqual(1, quality["returned_count"])
+        self.assertEqual(0.5, quality["coverage"])
+        self.assertIn("invalid_row", quality["reason_codes"])
+        self.assertIn("mixed_row_types", quality["reason_codes"])
+
     def test_review_quality_rollup_uses_worst_status_and_merges_counts(self):
         from ym_stock_data.v2 import resolve
 
@@ -366,10 +385,10 @@ class V2QualityTests(unittest.TestCase):
         self.addCleanup(failure.close)
         fallback = {
             "datas": [
-                {"股票代码": "600000", "股票简称": "浦发银行"},
-                {"股票代码": "600001", "股票简称": "邯郸钢铁"},
+                {"股票代码": f"600{index:03d}", "股票简称": f"测试{index}"}
+                for index in range(20)
             ],
-            "row_count": 2,
+            "row_count": 20,
             "_source": "pywencai",
         }
 
@@ -381,9 +400,9 @@ class V2QualityTests(unittest.TestCase):
             result = resolve(
                 "review_sentiment",
                 query="银行股",
-                limit=2,
+                limit=50,
                 expected_row_shape="stock_rows",
-                expected_count=2,
+                expected_count=20,
             )
 
         query_meta = result["data"]["queries"][0]["_meta"]
@@ -393,12 +412,12 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual("http_5xx", query_meta["fallback_reason"])
         self.assertEqual(["iwencai", "openapi", "pywencai"], query_meta["source_chain"])
         self.assertEqual({
-            "requested_count": 2,
-            "returned_count": 2,
+            "requested_count": 20,
+            "returned_count": 20,
             "ratio": 1.0,
         }, query_meta["coverage"])
-        self.assertEqual(2, query_meta["quality"]["requested_count"])
-        self.assertEqual(2, query_meta["quality"]["returned_count"])
+        self.assertEqual(20, query_meta["quality"]["requested_count"])
+        self.assertEqual(20, query_meta["quality"]["returned_count"])
         self.assertEqual(1.0, query_meta["quality"]["coverage"])
 
 
