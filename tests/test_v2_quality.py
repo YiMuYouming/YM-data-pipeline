@@ -31,7 +31,26 @@ class RawResponse:
         return self.payload
 
 
+IWENCAI_TEST_STATE = {
+    "_API_KEY": "dummy",
+    "_OPENAPI_DOWN_AT": 0,
+    "_PYWENCAI_DOWN_AT": 0,
+    "_OPENAPI_BREAKER_AT": 0,
+    "_OPENAPI_BREAKER_SECONDS": 300,
+    "_OPENAPI_FAILURE_TYPE": "rate_limit",
+    "_OPENAPI_LAST_ERROR": None,
+    "_PYWENCAI_LAST_ERROR": None,
+}
+
+
 class V2QualityTests(unittest.TestCase):
+    def setUp(self):
+        from ym_stock_data.sources import iwencai
+
+        self.iwencai_state = patch.multiple(iwencai, **IWENCAI_TEST_STATE)
+        self.iwencai_state.start()
+        self.addCleanup(self.iwencai_state.stop)
+
     def quality(self, result):
         self.assertIn("quality", result["_meta"])
         return result["_meta"]["quality"]
@@ -392,10 +411,7 @@ class V2QualityTests(unittest.TestCase):
             "_source": "pywencai",
         }
 
-        with patch.object(iwencai, "_API_KEY", "dummy"), \
-             patch.object(iwencai, "_OPENAPI_DOWN_AT", 0), \
-             patch.object(iwencai, "_PYWENCAI_DOWN_AT", 0), \
-             patch.object(iwencai.urllib.request, "urlopen", side_effect=failure), \
+        with patch.object(iwencai.urllib.request, "urlopen", side_effect=failure), \
              patch.object(iwencai, "_pywencai_query", return_value=fallback):
             result = resolve(
                 "review_sentiment",

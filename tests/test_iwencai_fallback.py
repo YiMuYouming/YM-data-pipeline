@@ -14,6 +14,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ym_stock_data.sources import iwencai
 
 
+IWENCAI_TEST_STATE = {
+    "_API_KEY": "dummy",
+    "_OPENAPI_DOWN_AT": 0,
+    "_PYWENCAI_DOWN_AT": 0,
+    "_OPENAPI_BREAKER_AT": 0,
+    "_OPENAPI_BREAKER_SECONDS": 300,
+    "_OPENAPI_FAILURE_TYPE": "rate_limit",
+    "_OPENAPI_LAST_ERROR": None,
+    "_PYWENCAI_LAST_ERROR": None,
+}
+
+
 class JsonResponse:
     def __init__(self, payload):
         import json
@@ -36,13 +48,9 @@ class RawResponse(JsonResponse):
 
 
 def reset_breaker_state():
-    iwencai._OPENAPI_DOWN_AT = 0
-    iwencai._PYWENCAI_DOWN_AT = 0
-    iwencai._OPENAPI_BREAKER_AT = 0
-    iwencai._OPENAPI_BREAKER_SECONDS = 300
-    iwencai._OPENAPI_FAILURE_TYPE = "rate_limit"
-    iwencai._OPENAPI_LAST_ERROR = None
-    iwencai._PYWENCAI_LAST_ERROR = None
+    for name, value in IWENCAI_TEST_STATE.items():
+        if name != "_API_KEY":
+            setattr(iwencai, name, value)
 
 
 class IwencaiFallbackTests(unittest.TestCase):
@@ -51,11 +59,9 @@ class IwencaiFallbackTests(unittest.TestCase):
         return result["_meta"]
 
     def setUp(self):
-        iwencai._API_KEY = "dummy"
-        reset_breaker_state()
-
-    def tearDown(self):
-        reset_breaker_state()
+        self.iwencai_state = patch.multiple(iwencai, **IWENCAI_TEST_STATE)
+        self.iwencai_state.start()
+        self.addCleanup(self.iwencai_state.stop)
 
     def test_pywencai_failure_is_cached_when_openapi_already_down(self):
         iwencai._OPENAPI_DOWN_AT = time.time()
