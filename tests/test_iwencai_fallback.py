@@ -6,6 +6,7 @@ import time
 import unittest
 import urllib.error
 import http.client
+from datetime import datetime
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -105,6 +106,15 @@ class IwencaiFallbackTests(unittest.TestCase):
         self.assertEqual("openapi", meta["fallback_from"])
         self.assertEqual("pywencai", meta["fallback_to"])
         self.assertEqual("http_5xx", meta["failure_type"])
+        self.assertIn("provider", meta)
+        self.assertEqual("pywencai", meta["provider"])
+        datetime.fromisoformat(meta["query_time"])
+        self.assertEqual("http_5xx", meta["fallback_reason"])
+        self.assertEqual({
+            "requested_count": 2,
+            "returned_count": 2,
+            "ratio": 1.0,
+        }, meta["coverage"])
 
         openapi_result = {"datas": [], "row_count": 0}
         with patch("time.time", return_value=1_061.0), \
@@ -256,6 +266,23 @@ class IwencaiFallbackTests(unittest.TestCase):
 
         self.assertEqual("pywencai", result.get("_source"))
         self.assertEqual("invalid_response", self.fallback_meta(result)["failure_type"])
+
+    def test_valid_json_with_invalid_top_level_shape_falls_back(self):
+        fallback = {"datas": [{"股票代码": "600000"}], "row_count": 1, "_source": "pywencai"}
+
+        for body in (b"[]", b"null", b"{}"):
+            with self.subTest(body=body):
+                reset_breaker_state()
+                with patch.object(iwencai.urllib.request, "urlopen", return_value=RawResponse(body)), \
+                     patch.object(iwencai, "_pywencai_query", return_value=fallback) as pywencai_query:
+                    result = iwencai.query("银行股", limit=2)
+
+                pywencai_query.assert_called_once_with("银行股", 2)
+                self.assertEqual("pywencai", result.get("_source"))
+                meta = self.fallback_meta(result)
+                self.assertEqual("invalid_response", meta["failure_type"])
+                self.assertEqual("invalid_response", meta["fallback_reason"])
+                self.assertEqual(60, iwencai._OPENAPI_BREAKER_SECONDS)
 
 
 if __name__ == "__main__":

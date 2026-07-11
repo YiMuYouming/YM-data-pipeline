@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -14,6 +15,20 @@ TZ_SH = timezone(timedelta(hours=8))
 
 def ts(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(TZ_SH)
+
+
+class RawResponse:
+    def __init__(self, payload: bytes):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return self.payload
 
 
 class V2QualityTests(unittest.TestCase):
@@ -336,6 +351,55 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual(["商业航天"], rollup["missing"])
         for reason in ("missing_items", "coverage_shortfall", "source_error", "empty_result"):
             self.assertIn(reason, rollup["reason_codes"])
+
+    def test_review_query_retains_fallback_provenance_and_consistent_coverage(self):
+        from ym_stock_data.sources import iwencai
+        from ym_stock_data.v2 import resolve
+
+        failure = urllib.error.HTTPError(
+            iwencai.IWENCAI_BASE,
+            503,
+            "unavailable",
+            hdrs=None,
+            fp=None,
+        )
+        self.addCleanup(failure.close)
+        fallback = {
+            "datas": [
+                {"股票代码": "600000", "股票简称": "浦发银行"},
+                {"股票代码": "600001", "股票简称": "邯郸钢铁"},
+            ],
+            "row_count": 2,
+            "_source": "pywencai",
+        }
+
+        with patch.object(iwencai, "_API_KEY", "dummy"), \
+             patch.object(iwencai, "_OPENAPI_DOWN_AT", 0), \
+             patch.object(iwencai, "_PYWENCAI_DOWN_AT", 0), \
+             patch.object(iwencai.urllib.request, "urlopen", side_effect=failure), \
+             patch.object(iwencai, "_pywencai_query", return_value=fallback):
+            result = resolve(
+                "review_sentiment",
+                query="银行股",
+                limit=2,
+                expected_row_shape="stock_rows",
+                expected_count=2,
+            )
+
+        query_meta = result["data"]["queries"][0]["_meta"]
+        self.assertIn("provider", query_meta)
+        self.assertEqual("pywencai", query_meta["provider"])
+        datetime.fromisoformat(query_meta["query_time"])
+        self.assertEqual("http_5xx", query_meta["fallback_reason"])
+        self.assertEqual(["iwencai", "openapi", "pywencai"], query_meta["source_chain"])
+        self.assertEqual({
+            "requested_count": 2,
+            "returned_count": 2,
+            "ratio": 1.0,
+        }, query_meta["coverage"])
+        self.assertEqual(2, query_meta["quality"]["requested_count"])
+        self.assertEqual(2, query_meta["quality"]["returned_count"])
+        self.assertEqual(1.0, query_meta["quality"]["coverage"])
 
 
 if __name__ == "__main__":

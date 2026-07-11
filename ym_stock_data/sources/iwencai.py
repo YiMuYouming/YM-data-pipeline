@@ -13,6 +13,7 @@
 
 import http.client
 import os, re, json, socket, urllib.error, urllib.request, secrets, sys, time
+from datetime import datetime, timezone
 from pathlib import Path
 
 IWENCAI_BASE = "https://openapi.iwencai.com"
@@ -27,6 +28,10 @@ _OPENAPI_BREAKER_SECONDS = 300
 _OPENAPI_FAILURE_TYPE = "rate_limit"
 _OPENAPI_LAST_ERROR = None
 _PYWENCAI_LAST_ERROR = None
+
+
+class _InvalidOpenAPIResponse(ValueError):
+    """OpenAPI returned valid JSON that does not satisfy its object contract."""
 
 
 def _load_api_key() -> str:
@@ -230,13 +235,24 @@ def _active_openapi_breaker() -> dict | None:
     }
 
 
-def _fallback_meta(result: dict, context: dict) -> dict:
+def _fallback_meta(result: dict, context: dict, *, requested_count: int) -> dict:
     enriched = dict(result)
     meta = dict(enriched.get("_meta", {}))
+    requested_count = max(0, int(requested_count))
+    datas = enriched.get("datas")
+    returned_count = len(datas) if isinstance(datas, list) else 0
     meta.update({
         "fallback_from": "openapi",
         "fallback_to": "pywencai",
         "failure_type": context["failure_type"],
+        "provider": enriched.get("_source") or "none",
+        "query_time": datetime.fromtimestamp(time.time(), timezone.utc).isoformat(),
+        "coverage": {
+            "requested_count": requested_count,
+            "returned_count": returned_count,
+            "ratio": returned_count / requested_count if requested_count else None,
+        },
+        "fallback_reason": context["failure_type"],
     })
     if context.get("openapi_error"):
         meta["openapi_error"] = context["openapi_error"]
@@ -249,6 +265,7 @@ def _all_paths_dead_result(
     *,
     context: dict,
     pywencai_error: str,
+    requested_count: int,
 ) -> dict:
     failure_type = context["failure_type"]
     if failure_type == "rate_limit":
@@ -267,7 +284,7 @@ def _all_paths_dead_result(
     }
     if context.get("openapi_error"):
         result["openapi"] = context["openapi_error"]
-    return _fallback_meta(result, context)
+    return _fallback_meta(result, context, requested_count=requested_count)
 
 
 def _pywencai_or_all_dead(
@@ -290,7 +307,7 @@ def _pywencai_or_all_dead(
     if "error" not in fallback:
         _PYWENCAI_DOWN_AT = 0
         _PYWENCAI_LAST_ERROR = None
-        return _fallback_meta(fallback, context)
+        return _fallback_meta(fallback, context, requested_count=limit)
 
     _PYWENCAI_DOWN_AT = time.time()
     _PYWENCAI_LAST_ERROR = fallback.get("error", "unknown")
@@ -298,6 +315,7 @@ def _pywencai_or_all_dead(
         query_str,
         context=context,
         pywencai_error=_PYWENCAI_LAST_ERROR,
+        requested_count=limit,
     )
 
 
@@ -308,6 +326,7 @@ def _dispatch_pywencai_fallback(query_str: str, limit: int, *, context: dict) ->
             query_str,
             context=context,
             pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
+            requested_count=limit,
         )
     return _pywencai_or_all_dead(query_str, limit, context=context)
 
@@ -342,6 +361,10 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(result, dict) or not result:
+                raise _InvalidOpenAPIResponse(
+                    f"expected non-empty object, got {type(result).__name__}"
+                )
             result["_source"] = "openapi"
             _OPENAPI_DOWN_AT = 0  # 恢复
             return result
@@ -378,7 +401,7 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
             seconds=60,
         )
         return _dispatch_pywencai_fallback(query_str, limit, context=context)
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+    except (json.JSONDecodeError, UnicodeDecodeError, _InvalidOpenAPIResponse) as e:
         context = _set_openapi_breaker(
             failure_type="invalid_response",
             error=str(e),
