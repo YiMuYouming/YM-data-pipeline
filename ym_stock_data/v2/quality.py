@@ -94,15 +94,23 @@ def _row_shape(row: Mapping[str, object]) -> str:
     return "unknown"
 
 
-def _rows_shape(rows: list[object]) -> str:
-    shapes = {
+def _rows_shape(rows: list[object]) -> tuple[str, str | None]:
+    shapes = [
         _row_shape(row)
         for row in rows
         if isinstance(row, Mapping)
-    }
-    if len(shapes) == 1:
-        return next(iter(shapes))
-    return "unknown"
+    ]
+    if not shapes:
+        return "unknown", "row_shape_unknown" if rows else None
+
+    unique_shapes = set(shapes)
+    if len(unique_shapes) > 1:
+        return "unknown", "mixed_row_shapes"
+
+    row_shape = next(iter(unique_shapes))
+    if row_shape == "unknown":
+        return row_shape, "row_shape_unknown"
+    return row_shape, None
 
 
 def _coverage(returned_count: int, expected_count: int | None) -> float | None:
@@ -123,10 +131,14 @@ def assess_quality(
     normalized_rows = list(rows or [])
     missing_items = list(missing or [])
     returned_count = len(normalized_rows)
-    row_shape = _rows_shape(normalized_rows)
+    row_shape, row_shape_issue = _rows_shape(normalized_rows)
     coverage = _coverage(returned_count, expected_count)
 
-    if expected_row_shape is None or row_shape == "unknown":
+    if expected_row_shape is None:
+        semantic_equivalence = "unknown"
+    elif row_shape_issue == "mixed_row_shapes":
+        semantic_equivalence = "non_equivalent"
+    elif row_shape == "unknown":
         semantic_equivalence = "unknown"
     elif row_shape == expected_row_shape:
         semantic_equivalence = "exact"
@@ -138,7 +150,9 @@ def assess_quality(
         reason_codes.append("source_error")
     if not normalized_rows:
         reason_codes.append("empty_result")
-    if semantic_equivalence == "non_equivalent":
+    if expected_row_shape is not None and row_shape_issue:
+        reason_codes.append(row_shape_issue)
+    elif semantic_equivalence == "non_equivalent":
         reason_codes.append("row_shape_mismatch")
     if missing_items:
         reason_codes.append("missing_items")
@@ -149,7 +163,9 @@ def assess_quality(
         status = "error"
     elif not normalized_rows:
         status = "empty"
-    elif semantic_equivalence == "non_equivalent":
+    elif expected_row_shape is not None and (
+        row_shape_issue is not None or semantic_equivalence == "non_equivalent"
+    ):
         status = "semantic_degraded"
     elif missing_items or (coverage is not None and coverage < 1.0):
         status = "partial"

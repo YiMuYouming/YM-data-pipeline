@@ -252,6 +252,91 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual(1, quality["returned_count"])
         self.assertEqual(1 / 3, quality["coverage"])
 
+    def test_unknown_rows_with_shape_expectation_are_semantically_degraded(self):
+        from ym_stock_data.v2.quality import assess_quality
+
+        quality = assess_quality(
+            [{"排名": 1, "涨跌幅": 2.5}],
+            expected_row_shape="sector_rows",
+        )
+
+        self.assertEqual("semantic_degraded", quality["status"])
+        self.assertEqual("unknown", quality["row_shape"])
+        self.assertEqual("unknown", quality["semantic_equivalence"])
+        self.assertIn("row_shape_unknown", quality["reason_codes"])
+
+    def test_mixed_stock_and_sector_rows_are_semantically_degraded(self):
+        from ym_stock_data.v2.quality import assess_quality
+
+        quality = assess_quality(
+            [
+                {"股票代码": "600000", "股票简称": "浦发银行"},
+                {"板块代码": "881160", "板块名称": "国防军工"},
+            ],
+            expected_row_shape="sector_rows",
+        )
+
+        self.assertEqual("semantic_degraded", quality["status"])
+        self.assertEqual("unknown", quality["row_shape"])
+        self.assertEqual("non_equivalent", quality["semantic_equivalence"])
+        self.assertIn("mixed_row_shapes", quality["reason_codes"])
+
+    def test_review_quality_rollup_uses_worst_status_and_merges_counts(self):
+        from ym_stock_data.v2 import resolve
+
+        raw_results = {
+            "normal": {
+                "datas": [
+                    {"板块代码": "881160", "板块名称": "国防军工"},
+                    {"板块代码": "881164", "板块名称": "航天装备"},
+                ],
+                "row_count": 2,
+                "_source": "openapi",
+                "_meta": {"fetched_at": "2026-07-11T15:00:00+08:00"},
+            },
+            "partial": {
+                "datas": [{"板块代码": "881160", "板块名称": "国防军工"}],
+                "row_count": 1,
+                "missing": ["商业航天"],
+                "_source": "pywencai",
+                "_meta": {
+                    "fetched_at": "2026-07-11T15:00:00+08:00",
+                    "fallback_from": "openapi",
+                    "fallback_to": "pywencai",
+                },
+            },
+            "error": {
+                "error": "all paths dead",
+                "datas": [],
+                "row_count": 0,
+                "_source": "none",
+                "_meta": {
+                    "fetched_at": "2026-07-11T15:00:00+08:00",
+                    "error": True,
+                },
+            },
+        }
+
+        with patch("ym_stock_data.v2.resolve._review_queries", return_value=list(raw_results)), \
+             patch("ym_stock_data.sources.iwencai.query", side_effect=lambda query, limit=50: raw_results[query]):
+            result = resolve(
+                "review_sentiment",
+                expected_row_shape="sector_rows",
+                expected_count=2,
+                _now=ts("2026-07-11T15:00:20+08:00"),
+            )
+
+        qualities = [item["_meta"]["quality"] for item in result["data"]["queries"]]
+        self.assertEqual(["normal", "partial", "error"], [item["status"] for item in qualities])
+        rollup = self.quality(result)
+        self.assertEqual("error", rollup["status"])
+        self.assertEqual(6, rollup["requested_count"])
+        self.assertEqual(3, rollup["returned_count"])
+        self.assertEqual(0.5, rollup["coverage"])
+        self.assertEqual(["商业航天"], rollup["missing"])
+        for reason in ("missing_items", "coverage_shortfall", "source_error", "empty_result"):
+            self.assertIn(reason, rollup["reason_codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

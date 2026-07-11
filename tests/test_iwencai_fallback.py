@@ -5,6 +5,7 @@ import sys
 import time
 import unittest
 import urllib.error
+import http.client
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +29,21 @@ class JsonResponse:
         return self.payload
 
 
+class RawResponse(JsonResponse):
+    def __init__(self, payload):
+        self.payload = payload
+
+
+def reset_breaker_state():
+    iwencai._OPENAPI_DOWN_AT = 0
+    iwencai._PYWENCAI_DOWN_AT = 0
+    iwencai._OPENAPI_BREAKER_AT = 0
+    iwencai._OPENAPI_BREAKER_SECONDS = 300
+    iwencai._OPENAPI_FAILURE_TYPE = "rate_limit"
+    iwencai._OPENAPI_LAST_ERROR = None
+    iwencai._PYWENCAI_LAST_ERROR = None
+
+
 class IwencaiFallbackTests(unittest.TestCase):
     def fallback_meta(self, result):
         self.assertIn("_meta", result)
@@ -35,12 +51,10 @@ class IwencaiFallbackTests(unittest.TestCase):
 
     def setUp(self):
         iwencai._API_KEY = "dummy"
-        iwencai._OPENAPI_DOWN_AT = 0
-        iwencai._PYWENCAI_DOWN_AT = 0
+        reset_breaker_state()
 
     def tearDown(self):
-        iwencai._OPENAPI_DOWN_AT = 0
-        iwencai._PYWENCAI_DOWN_AT = 0
+        reset_breaker_state()
 
     def test_pywencai_failure_is_cached_when_openapi_already_down(self):
         iwencai._OPENAPI_DOWN_AT = time.time()
@@ -176,6 +190,72 @@ class IwencaiFallbackTests(unittest.TestCase):
         self.assertEqual("http_5xx", meta["failure_type"])
         self.assertEqual("openapi", meta["fallback_from"])
         self.assertEqual("pywencai", meta["fallback_to"])
+
+    def test_fresh_503_honors_recent_pywencai_failure_cache(self):
+        first_failure = urllib.error.HTTPError(
+            iwencai.IWENCAI_BASE,
+            503,
+            "unavailable",
+            hdrs=None,
+            fp=None,
+        )
+        second_failure = urllib.error.HTTPError(
+            iwencai.IWENCAI_BASE,
+            503,
+            "unavailable again",
+            hdrs=None,
+            fp=None,
+        )
+        self.addCleanup(first_failure.close)
+        self.addCleanup(second_failure.close)
+        fallback_failure = {"error": "anti bot", "query": "银行股", "_source": "pywencai"}
+
+        with patch("time.time", return_value=1_000.0), \
+             patch.object(iwencai.urllib.request, "urlopen", side_effect=first_failure), \
+             patch.object(iwencai, "_pywencai_query", return_value=fallback_failure):
+            first = iwencai.query("银行股", limit=1)
+        self.assertEqual("all_paths_dead", first["error_type"])
+
+        with patch("time.time", return_value=1_061.0), \
+             patch.object(
+                 iwencai.urllib.request,
+                 "urlopen",
+                 return_value=JsonResponse({"datas": [], "row_count": 0}),
+             ):
+            recovered = iwencai.query("银行股", limit=1)
+        self.assertEqual("openapi", recovered["_source"])
+
+        with patch("time.time", return_value=1_062.0), \
+             patch.object(iwencai.urllib.request, "urlopen", side_effect=second_failure), \
+             patch.object(iwencai, "_pywencai_query", return_value={"datas": [], "row_count": 0}) as pywencai_query:
+            second = iwencai.query("银行股", limit=1)
+
+        pywencai_query.assert_not_called()
+        self.assertEqual("all_paths_dead", second["error_type"])
+        self.assertEqual("anti bot", second["pywencai"])
+        self.assertEqual("http_5xx", second["_meta"]["failure_type"])
+
+    def test_incomplete_read_falls_back_as_network_failure(self):
+        response = RawResponse(b"")
+        response.read = lambda: (_ for _ in ()).throw(http.client.IncompleteRead(b"partial", 10))
+        fallback = {"datas": [{"股票代码": "600000"}], "row_count": 1, "_source": "pywencai"}
+
+        with patch.object(iwencai.urllib.request, "urlopen", return_value=response), \
+             patch.object(iwencai, "_pywencai_query", return_value=fallback):
+            result = iwencai.query("银行股", limit=1)
+
+        self.assertEqual("pywencai", result.get("_source"))
+        self.assertEqual("network", self.fallback_meta(result)["failure_type"])
+
+    def test_malformed_openapi_response_falls_back_as_invalid_response(self):
+        fallback = {"datas": [{"股票代码": "600000"}], "row_count": 1, "_source": "pywencai"}
+
+        with patch.object(iwencai.urllib.request, "urlopen", return_value=RawResponse(b"not-json")), \
+             patch.object(iwencai, "_pywencai_query", return_value=fallback):
+            result = iwencai.query("银行股", limit=1)
+
+        self.assertEqual("pywencai", result.get("_source"))
+        self.assertEqual("invalid_response", self.fallback_meta(result)["failure_type"])
 
 
 if __name__ == "__main__":

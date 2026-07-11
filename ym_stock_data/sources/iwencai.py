@@ -11,6 +11,7 @@
     2. pywencai 网页抓取 → 无额度、稍慢（自动切换）
 """
 
+import http.client
 import os, re, json, socket, urllib.error, urllib.request, secrets, sys, time
 from pathlib import Path
 
@@ -300,6 +301,17 @@ def _pywencai_or_all_dead(
     )
 
 
+def _dispatch_pywencai_fallback(query_str: str, limit: int, *, context: dict) -> dict:
+    """Honor the pywencai failure cache for every OpenAPI failure class."""
+    if _PYWENCAI_DOWN_AT and (time.time() - _PYWENCAI_DOWN_AT) < 300:
+        return _all_paths_dead_result(
+            query_str,
+            context=context,
+            pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
+        )
+    return _pywencai_or_all_dead(query_str, limit, context=context)
+
+
 def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     """问财查询 → OpenAPI 优先，失败自动降级 pywencai
 
@@ -316,13 +328,7 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     global _OPENAPI_DOWN_AT, _PYWENCAI_DOWN_AT
     breaker = _active_openapi_breaker()
     if breaker:
-        if _PYWENCAI_DOWN_AT and (time.time() - _PYWENCAI_DOWN_AT) < 300:
-            return _all_paths_dead_result(
-                query_str,
-                context=breaker,
-                pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
-            )
-        return _pywencai_or_all_dead(query_str, limit, context=breaker)
+        return _dispatch_pywencai_fallback(query_str, limit, context=breaker)
 
     req = urllib.request.Request(
         f"{IWENCAI_BASE}/v1/query2data",
@@ -347,21 +353,14 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
                 error=f"HTTP {e.code}",
                 seconds=300,
             )
-            # pywencai 最近也挂了 → 跳过重试，返回完整诊断
-            if _PYWENCAI_DOWN_AT and (time.time() - _PYWENCAI_DOWN_AT) < 300:
-                return _all_paths_dead_result(
-                    query_str,
-                    context=context,
-                    pywencai_error=_PYWENCAI_LAST_ERROR or "cached failure",
-                )
-            return _pywencai_or_all_dead(query_str, limit, context=context)
+            return _dispatch_pywencai_fallback(query_str, limit, context=context)
         if 500 <= e.code <= 599:
             context = _set_openapi_breaker(
                 failure_type="http_5xx",
                 error=f"HTTP {e.code}: {e.reason}",
                 seconds=60,
             )
-            return _pywencai_or_all_dead(query_str, limit, context=context)
+            return _dispatch_pywencai_fallback(query_str, limit, context=context)
         return {"error": f"HTTP {e.code}: {e.reason}", "query": query_str}
     except (TimeoutError, socket.timeout) as e:
         context = _set_openapi_breaker(
@@ -369,7 +368,7 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
             error=str(e) or "timeout",
             seconds=60,
         )
-        return _pywencai_or_all_dead(query_str, limit, context=context)
+        return _dispatch_pywencai_fallback(query_str, limit, context=context)
     except urllib.error.URLError as e:
         reason = getattr(e, "reason", e)
         is_timeout = isinstance(reason, (TimeoutError, socket.timeout)) or "timed out" in str(reason).lower()
@@ -378,14 +377,28 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
             error=str(e),
             seconds=60,
         )
-        return _pywencai_or_all_dead(query_str, limit, context=context)
+        return _dispatch_pywencai_fallback(query_str, limit, context=context)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        context = _set_openapi_breaker(
+            failure_type="invalid_response",
+            error=str(e),
+            seconds=60,
+        )
+        return _dispatch_pywencai_fallback(query_str, limit, context=context)
+    except http.client.HTTPException as e:
+        context = _set_openapi_breaker(
+            failure_type="network",
+            error=str(e),
+            seconds=60,
+        )
+        return _dispatch_pywencai_fallback(query_str, limit, context=context)
     except OSError as e:
         context = _set_openapi_breaker(
             failure_type="network",
             error=str(e),
             seconds=60,
         )
-        return _pywencai_or_all_dead(query_str, limit, context=context)
+        return _dispatch_pywencai_fallback(query_str, limit, context=context)
     except Exception as e:
         return {"error": str(e), "query": query_str}
 
