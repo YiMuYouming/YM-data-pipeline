@@ -17,10 +17,66 @@ fetch("northbound")                              # 北向资金实时
 fetch("ths_hot")                                 # 同花顺热榜+题材
 fetch("sector_inflow")                           # 行业板块净流入
 fetch("dragon_tiger")                            # 龙虎榜
-
-# 问财查询（auto-fallback）
-fetch("iwencai", query="昨日涨停 今日涨跌幅")     # OpenAPI→pywencai 自动降级
 ```
+
+## V2 调用入口
+
+V2 旁路入口用于 Agent 验证、投研查询、红方草稿和方案调试。调用前优先使用项目环境，避免系统 Python 缺依赖造成误判：
+
+```bash
+cd /Users/yimu/Documents/YM_Capital/YM-data-pipeline
+uv run python - <<'PY'
+from ym_stock_data.v2.resolve import resolve
+
+print(resolve("realtime_market")["_meta"])
+print(resolve("sector_index", names=["半导体"])["_meta"])
+print(resolve("stock_snapshot", codes=["603290", "688187"])["_meta"])
+print(resolve("stock_kline", code="603290", period="daily", count=20)["_meta"])
+print(resolve("review_sentiment", query="A股 IGBT 概念股 非ST 总市值 PE PB", limit=20)["_meta"])
+PY
+```
+
+当前 V2 支持的 intent：
+
+| intent | 用途 | 示例 |
+| --- | --- | --- |
+| `realtime_market` | 三大指数、成交额、涨跌家数 | `resolve("realtime_market")` |
+| `sector_index` | 同花顺 881 行业板块 | `resolve("sector_index", names=["半导体"])` |
+| `stock_snapshot` | 个股实时行情/均线快照 | `resolve("stock_snapshot", codes=["603290"])` |
+| `stock_kline` | 个股 K 线/均线 | `resolve("stock_kline", code="603290", period="daily", count=20)` |
+| `review_sentiment` | 问财 query 执行与复盘情绪聚合 | `resolve("review_sentiment", query="涨停 非ST", limit=20)` |
+
+注意：旧 flat 入口 `fetch("iwencai", query="...")` 当前可能因参数名兼容问题报 `query() got an unexpected keyword argument 'query'`。这不代表 V2 或问财源不可用。遇到该错误时，优先改用 `resolve("review_sentiment", query=...)`；若只需底层原始问财结果，可直接调用 `ym_stock_data.sources.iwencai.query("...", limit=...)`。
+
+### TDX MCP 备用源
+
+当问财 OpenAPI + pywencai 都失败、额度耗尽、返回空结果或关键字段异常时，可以使用 Codex MCP `tdx-finance` 做备用查询和交叉验证。它是授权型增强源，不是 V2 自动主源；不要把 TDX MCP 结果写成 `resolve(...)` 的结果。
+
+常用工具：
+
+| 工具 | 用途 |
+| --- | --- |
+| `tdx_screener` | 自然语言条件选股；问财挂了时优先用它补主题/板块候选 |
+| `tdx_quotes` | 个股实时行情、换手率、成交额、盘口、PE、市值等细节 |
+| `tdx_kline` | K 线交叉校验 |
+| `tdx_lookup_stock` | 名称查代码和 setcode |
+| `wenda_report_query` | 研报补充 |
+| `wenda_notice_query` | 公告补充 |
+| `wenda_news_query` | 新闻/题材催化补充 |
+
+硬规则：
+
+- 主流程仍优先使用 `YM-data-pipeline` 的本地 V2/V1 管道。
+- 使用 TDX MCP 时，输出必须标注 `source=tdx_mcp` 和查询时间。
+- 如果 `tdx-finance` 未暴露工具、`tools/list` 失败、token 过期、HTTP 401/400、或 WorkBuddy OAuth 缓存失效，必须直接告诉弈沐需要重新授权；禁止猜测、补齐或基于旧缓存下结论。
+- TDX MCP 只补“宽度”和“细节”，不能单独触发交易建议。
+
+## 投研输出约定
+
+- 在 `/Users/yimu/Documents/YM_Capital/YiMu_IR/` 做 A 股主题研究时，输出文件放到 `outputs/`。
+- 长报告默认做单文件可读 HTML，文件名使用中文主题名，例如 `outputs/IGBT功率半导体A股核心股票观察研报.html`。
+- 查询得到的行情/估值/候选池快照保留为 JSON，例如 `outputs/igbt_iwencai_snapshot_20260626.json`。
+- 最终汇报必须说明数据快照时间、使用入口、验证命令或静态校验结果，并标注研究观察不构成投资建议。
 
 ## 安装
 
@@ -35,10 +91,12 @@ pip install -e .[pywencai]    # 启用问财 pywencai 降级能力
 | 源 | 优先 | 降级 | 说明 |
 |------|------|------|------|
 | PyTDX | TCP 长连接 | easyquotation | 零鉴权，TCP 7709 端口 |
-| 问财 | OpenAPI | pywencai 网页抓取 | OpenAPI 额度耗尽自动切 pywencai |
+| 问财 | OpenAPI | pywencai 网页抓取 → TDX MCP 人工备用 | OpenAPI 额度耗尽自动切 pywencai；两者都挂时才用授权型 TDX MCP |
 | 腾讯 | HTTP API | — | PE/PB 等财务数据 |
 
-问财降级自动进行：OpenAPI 401/403/429 → 5min 内不走 OpenAPI → pywencai 接管 → 5min 后自动重试。
+问财降级自动进行：OpenAPI 401/403/429 → 300 秒 breaker；5xx、网络、超时或无效响应 → 60 秒 breaker；breaker 期间由带失败缓存的 pywencai 接管，到期后再试 OpenAPI。
+
+TDX MCP 不自动接入代码降级链；它用于 Agent 开线策划、投研筛选和手工交叉验证。需要授权时向弈沐确认，不要自行臆测结果。
 
 ## 目录结构
 

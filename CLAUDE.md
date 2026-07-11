@@ -6,6 +6,7 @@
 
 ```python
 from ym_stock_data import fetch
+from ym_stock_data.v2.resolve import resolve
 
 # 实时行情
 fetch("quotes", codes=["688017", "300476"])     # 个股报价+MA
@@ -18,8 +19,8 @@ fetch("ths_hot")                                 # 同花顺热榜+题材
 fetch("sector_inflow")                           # 行业板块净流入
 fetch("dragon_tiger")                            # 龙虎榜
 
-# 问财查询（auto-fallback）
-fetch("iwencai", query="昨日涨停 今日涨跌幅")     # OpenAPI→pywencai 自动降级
+# 问财查询（OpenAPI→pywencai 自动降级）
+resolve("review_sentiment", query="昨日涨停 今日涨跌幅", limit=20)
 ```
 
 ## 安装
@@ -35,10 +36,21 @@ pip install -e .[pywencai]    # 启用问财 pywencai 降级能力
 | 源 | 优先 | 降级 | 说明 |
 |------|------|------|------|
 | PyTDX | TCP 长连接 | easyquotation | 零鉴权，TCP 7709 端口 |
-| 问财 | OpenAPI | pywencai 网页抓取 | OpenAPI 额度耗尽自动切 pywencai |
+| 问财 | OpenAPI | pywencai 网页抓取 → TDX MCP 人工备用 | OpenAPI 额度耗尽自动切 pywencai；两者都挂时才用授权型 TDX MCP |
 | 腾讯 | HTTP API | — | PE/PB 等财务数据 |
 
-问财降级自动进行：OpenAPI 401/403/429 → 5min 内不走 OpenAPI → pywencai 接管 → 5min 后自动重试。
+问财降级自动进行：OpenAPI 401/403/429 → 300 秒 breaker；5xx、网络、超时或无效响应 → 60 秒 breaker；breaker 期间由带失败缓存的 pywencai 接管，到期后再试 OpenAPI。
+
+### TDX MCP 备用源
+
+Codex MCP `tdx-finance` 可作为问财故障时的备用源和交叉验证源。常用工具包括 `tdx_screener`、`tdx_quotes`、`tdx_kline`、`tdx_lookup_stock`、`wenda_report_query`、`wenda_notice_query`、`wenda_news_query`。
+
+硬规则：
+
+- 主流程仍优先使用 `YM-data-pipeline` 本地 V1/V2 管道。
+- 使用 TDX MCP 时，输出必须标注 `source=tdx_mcp` 和查询时间。
+- 如果 `tdx-finance` 未暴露工具、`tools/list` 失败、token 过期、HTTP 401/400、或 WorkBuddy OAuth 缓存失效，必须向弈沐请求重新授权；禁止猜测、补齐或基于旧结果下结论。
+- TDX MCP 只补投研宽度、个股细节、研报/公告/新闻，不单独触发交易建议。
 
 ## 目录结构
 

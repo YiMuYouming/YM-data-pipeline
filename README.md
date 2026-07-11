@@ -24,7 +24,7 @@ fetch("sector_index", names=["算力"])       # 板块指数
 fetch("kline", code="688017", period="daily")
 
 # L1 基础行情
-fetch("iwencai", query="涨停 非st")         # 问财全能查询
+# 问财请用下方 V2 resolve("review_sentiment", query=...)；旧 flat 参数不兼容
 fetch("ths_hot")                            # 同花顺热点+题材归因
 fetch("tencent", codes=["688017"])          # PE/PB/市值
 
@@ -56,9 +56,34 @@ resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
 - `sector_index` 只使用同花顺行业 881xxx 口径，不使用中证 931xxx，也不复用 V1 的 TDX 880xxx 板块线。
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
-- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，支持 `count` 截断；TDX MCP 暂作为交叉校验和备源毕业候选。
+- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，支持 `count` 截断。
 - `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试；顶层会输出 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 等聚合字段。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
+
+### TDX MCP 备用源规则
+
+TDX MCP 是授权型增强源，只用于 Agent 投研、问财故障兜底和交叉验证，不进入自动交易主链路。
+
+优先级：
+
+1. 主流程仍用 `resolve(...)` / `fetch(...)` 的本地管道结果。
+2. 问财 OpenAPI + pywencai 都失败、额度耗尽或返回空结果时，可使用 Codex MCP `tdx-finance` 备用。
+3. TDX 结果必须在输出里标注 `source=tdx_mcp`，不能伪装成本地 V2 结果。
+4. TDX 授权失效、`tools/list` 失败、token 过期或返回 HTTP 401/400 时，必须向弈沐请求重新授权；禁止猜测、补齐或基于旧结果下结论。
+
+常用 TDX MCP 工具：
+
+| 工具 | 用途 | 适合场景 |
+|---|---|---|
+| `tdx_screener` | 自然语言条件选股 | 问财挂了时筛主题/板块候选 |
+| `tdx_quotes` | 个股实时行情、换手、成交额、盘口、估值 | 单票细节补充和交叉验证 |
+| `tdx_kline` | K 线数据 | 与 PyTDX K 线做一致性校验 |
+| `tdx_lookup_stock` | 名称查代码和市场码 | 不确定代码时先查 |
+| `wenda_report_query` | 研报 | 单票基本面补充 |
+| `wenda_notice_query` | 公告 | 业绩、减持、重大事项核对 |
+| `wenda_news_query` | 新闻资讯 | 个股催化和题材归因补充 |
+
+TDX 适合补“宽度”和“细节”，但不替代 V2 的 `_meta`、时效、均线和规则治理。
 
 ## 架构（5 层）
 
@@ -70,12 +95,13 @@ resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶
 | L3 | 资金流向 | 北向 / 龙虎榜 / 行业净流入 |
 | L4 | 研报/公告/新闻 | 东财 reportapi / 巨潮 / 财联社 |
 
-## 数据源（10 个，全部通过验证）
+## 数据源与人工备用源
 
 | 数据源 | 协议 | 鉴权 | 文件 |
 |--------|------|------|------|
 | PyTDX (通达信) | TCP 7709 | 无 | `sources/pytdx.py` |
 | 问财 OpenAPI | HTTP POST | API KEY | `sources/iwencai.py` |
+| TDX MCP | MCP/HTTP | WorkBuddy OAuth | Codex `tdx-finance` 备用源 |
 | 同花顺热点 | HTTP GET | 无 | `sources/ths_hot.py` |
 | 腾讯财经 | HTTP GET | 无 | `sources/tencent.py` |
 | 东财龙虎榜 | HTTP GET | Referer | `sources/eastmoney.py` |
@@ -106,7 +132,7 @@ YM-data-pipeline/
 ├── ym_stock_data/             # Python 包 (23 文件, 2635 行)
 │   ├── fetch.py               # 统一路由 → 15 种 data_type
 │   ├── config.py              # 全局配置
-│   ├── sources/               # 10 个数据源适配器
+│   ├── sources/               # 数据源适配器
 │   ├── v2/                    # v2.0 MVP 旁路 resolve()
 │   ├── utils/                 # 缓存 + 重试
 │   └── consumer/              # 看板适配器
