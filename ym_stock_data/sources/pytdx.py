@@ -12,34 +12,61 @@ TCP 长连接通达信行情服务器 (7709)，零鉴权，高稳定性。
 
 import json
 import os
+import re
 import time
 import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from contextlib import contextmanager
+from functools import wraps
 
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
 
 # === 连接池（线程安全）===
 _api = None
-_lock = threading.Lock()
+_lock = threading.RLock()
 _connected_at = 0
 _fail_count = 0
 _using_fallback = False
+_all_servers_down_at = 0
+_PYTDX_DOWN_COOLDOWN = 60
 
 # 均线缓存: {code: {ma5_d, ma10_d, ma20_d, ma10_60m, ma10_60m_dir, _strong}}
 _ma_cache = {}
 _vol_cache = {}
 
 
+def _serialized_pytdx_call(fn):
+    """Keep a shared PyTDX socket alive for the whole business operation."""
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+def _api_has_business_data(api) -> bool:
+    """Reject TCP handshakes that cannot serve even a lightweight quote."""
+    try:
+        rows = api.get_security_quotes([(1, "600000"), (0, "000001")])
+    except Exception:
+        return False
+    return bool(rows) and any(row.get("code") for row in rows if isinstance(row, dict))
+
+
 def _get_api():
     """获取 PyTDX 连接（自动重连，线程安全）"""
-    global _api, _connected_at, _fail_count
+    global _api, _connected_at, _fail_count, _all_servers_down_at
 
     if os.getenv("YIMU_DISABLE_PYTDX", "").strip().lower() in {"1", "true", "yes", "on"}:
         return None
+    if _all_servers_down_at and time.time() - _all_servers_down_at < _PYTDX_DOWN_COOLDOWN:
+        return None
 
     with _lock:
+        if _all_servers_down_at and time.time() - _all_servers_down_at < _PYTDX_DOWN_COOLDOWN:
+            return None
         if _api and (time.time() - _connected_at) < PYTDX_MAX_AGE:
             return _api
 
@@ -59,26 +86,43 @@ def _get_api():
             try:
                 api = TdxHq_API()
                 if api.connect(ip, port, time_out=PYTDX_CONNECT_TIMEOUT):
+                    if not _api_has_business_data(api):
+                        try:
+                            api.disconnect()
+                        except Exception:
+                            pass
+                        continue
                     _api = api
                     _connected_at = time.time()
                     _fail_count = 0
+                    _all_servers_down_at = 0
                     return api
             except Exception:
                 continue
 
         _fail_count += 1
+        _all_servers_down_at = time.time()
     return None
+
+
+@contextmanager
+def api_session():
+    """Lease the shared connection without allowing concurrent disconnects."""
+    with _lock:
+        yield _get_api()
 
 
 def disconnect():
     """主动断开连接"""
-    global _api
-    if _api:
-        try:
-            _api.disconnect()
-        except Exception:
-            pass
-        _api = None
+    global _api, _connected_at
+    with _lock:
+        if _api:
+            try:
+                _api.disconnect()
+            except Exception:
+                pass
+            _api = None
+            _connected_at = 0
 
 
 def to_tdx_code(code: str):
@@ -129,9 +173,11 @@ def _fallback_index() -> dict:
     try:
         payload = _eastmoney_json(url)
     except Exception:
-        return {}
+        payload = {}
 
     rows = (((payload or {}).get("data") or {}).get("diff") or [])
+    if not rows:
+        return _fallback_index_tencent()
     name_map = {
         "000001": "上证指数",
         "399001": "深证指数",
@@ -171,6 +217,57 @@ def _fallback_index() -> dict:
         result["下跌家数"] = down_total
     if result:
         result["_source"] = "eastmoney_fallback"
+        return result
+    return _fallback_index_tencent()
+
+
+def _fallback_index_tencent() -> dict:
+    """Second no-auth index fallback when Eastmoney is unavailable."""
+    url = "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006"
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "*/*",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            text = resp.read().decode("gbk")
+    except Exception:
+        return {}
+
+    name_map = {
+        "sh000001": "上证指数",
+        "sz399001": "深证指数",
+        "sz399006": "创业指数",
+    }
+    result = {}
+    amount_total = 0.0
+    for line in text.split(";"):
+        if "=" not in line or '"' not in line:
+            continue
+        symbol = line.split("=", 1)[0].split("_")[-1]
+        name = name_map.get(symbol)
+        if not name:
+            continue
+        values = line.split('"', 2)[1].split("~")
+        if len(values) < 38:
+            continue
+        price = _number(values[3])
+        pct = _number(values[32])
+        high = _number(values[33])
+        low = _number(values[34])
+        last_close = _number(values[4])
+        amount = _number(values[37]) * 10000
+        result[name] = round(price, 2) if price else 0
+        result[f"{name}涨幅"] = f"{pct:+.2f}%"
+        result[f"{name}成交额"] = _format_amount(amount)
+        if high and low and last_close:
+            result[f"{name}振幅"] = f"{round((high - low) / last_close * 100, 2):.2f}%"
+        if symbol in ("sh000001", "sz399001"):
+            amount_total += amount
+    if amount_total:
+        result["成交额"] = _format_amount(amount_total)
+    if result:
+        result["_source"] = "tencent_index_fallback"
     return result
 
 
@@ -217,6 +314,7 @@ def _fallback_breadth() -> dict:
 # ==================== 个股报价 ====================
 
 
+@_serialized_pytdx_call
 def fetch_quotes(codes: list) -> dict:
     """批量个股实时报价
 
@@ -414,6 +512,7 @@ def _fallback_quotes(codes):
                     "涨幅": d.get("涨跌(%)", "—"),
                     "量比": d.get("量比", "—"),
                     "换手": d.get("换手(%)", "—"),
+                    "_source": "sina_fallback",
                 }
         return result
     except Exception:
@@ -423,6 +522,7 @@ def _fallback_quotes(codes):
 # ==================== 三大指数 ====================
 
 
+@_serialized_pytdx_call
 def fetch_index() -> dict:
     """三大指数实时行情
 
@@ -443,9 +543,9 @@ def fetch_index() -> dict:
     try:
         raw = api.get_security_quotes(idx_codes)
         if not raw:
-            return {}
+            return _fallback_index()
     except Exception:
-        return {}
+        return _fallback_index()
 
     result = {}
     amount_total = 0
@@ -504,6 +604,7 @@ def _get_up_down(api):
 # ==================== 全市场涨跌分布 ====================
 
 
+@_serialized_pytdx_call
 def fetch_breadth() -> dict:
     """全市场涨跌分布 (~5000只)
 
@@ -589,6 +690,7 @@ def _all_share_codes():
 # ==================== K线 ====================
 
 
+@_serialized_pytdx_call
 def fetch_kline(code: str, period: str = "daily") -> dict:
     """K线+均线
 
@@ -601,7 +703,7 @@ def fetch_kline(code: str, period: str = "daily") -> dict:
     """
     api = _get_api()
     if not api:
-        return {"code": code, "error": "连接失败"}
+        return _fallback_kline(code, period=period)
 
     _PERIOD_MAP = {"daily": 9, "weekly": 5, "monthly": 6, "60m": 3, "15m": 1, "5m": 0}
     bar_type = _PERIOD_MAP.get(period, 9)
@@ -611,37 +713,163 @@ def fetch_kline(code: str, period: str = "daily") -> dict:
     try:
         bars = api.get_security_bars(bar_type, mkt, str(code), 0, count)
         if not bars:
-            return {"code": code, "error": "无数据"}
-    except Exception as e:
-        return {"code": code, "error": str(e)}
+            return _fallback_kline(code, period=period, count=count)
+    except Exception:
+        return _fallback_kline(code, period=period, count=count)
 
-    closes = [b.get("close", 0) for b in bars if b.get("close", 0) > 0]
+    bar_list = [{
+        "time": str(b.get("datetime", "")),
+        "open": b.get("open", 0),
+        "high": b.get("high", 0),
+        "low": b.get("low", 0),
+        "close": b.get("close", 0),
+        "vol": b.get("vol", 0),
+        "amount": b.get("amount", 0),
+    } for b in bars]
+    return _build_kline_result(code, bar_list)
+
+
+def _build_kline_result(
+    code: str,
+    bars: list[dict],
+    *,
+    source: str | None = None,
+    fallback_to: str | None = None,
+) -> dict:
+    closes = [_number(b.get("close")) for b in bars if _number(b.get("close")) > 0]
     mas = {}
     for n, key in [(5, "MA5"), (10, "MA10"), (20, "MA20")]:
         if len(closes) >= n:
             mas[key] = round(sum(closes[-n:]) / n, 2)
 
-    bar_list = []
-    for b in bars:
-        bar_list.append({
-            "time": str(b.get("datetime", "")),
-            "open": b.get("open", 0),
-            "high": b.get("high", 0),
-            "low": b.get("low", 0),
-            "close": b.get("close", 0),
-            "vol": b.get("vol", 0),
-            "amount": b.get("amount", 0),
-        })
-
-    return {
+    result = {
         "code": code,
         "total_bars": len(bars),
         "last_close": closes[-1] if closes else 0,
         "mas": mas,
-        "bars": bar_list,
+        "bars": bars,
+    }
+    if source:
+        result["_source"] = source
+    if fallback_to:
+        result["_meta"] = {
+            "fallback_from": "pytdx",
+            "fallback_to": fallback_to,
+        }
+    return result
+
+
+def _fallback_kline(code: str, period: str = "daily", count: int | None = None) -> dict:
+    """No-auth HTTP fallback: Tencent for long periods, Sina for intraday."""
+    row_count = count or (30 if period in ("daily", "60m") else 48)
+    if period in {"daily", "weekly", "monthly"}:
+        bars = _fetch_tencent_kline(code, period=period, count=row_count)
+        if bars:
+            return _build_kline_result(
+                code,
+                bars,
+                source="tencent_fallback",
+                fallback_to="tencent",
+            )
+
+    bars = _fetch_sina_kline(code, period=period, count=row_count)
+    if bars:
+        return _build_kline_result(
+            code,
+            bars,
+            source="sina_fallback",
+            fallback_to="sina",
+        )
+    return {
+        "code": code,
+        "error": "无数据（PyTDX及HTTP降级均不可用）",
+        "bars": [],
+        "_meta": {"fallback_from": "pytdx", "fallback_to": "none"},
     }
 
 
+def _fetch_tencent_kline(code: str, *, period: str, count: int) -> list[dict]:
+    period_map = {"daily": "day", "weekly": "week", "monthly": "month"}
+    remote_period = period_map.get(period)
+    if not remote_period:
+        return []
+    symbol = ("sh" if str(code).startswith(("6", "9")) else "bj" if str(code).startswith("8") else "sz") + str(code)
+    url = (
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
+        + urllib.parse.urlencode({"param": f"{symbol},{remote_period},,,{count},qfq"})
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://gu.qq.com/",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        stock = ((payload or {}).get("data") or {}).get(symbol) or {}
+        rows = stock.get(f"qfq{remote_period}") or stock.get(remote_period) or []
+    except Exception:
+        return []
+
+    bars = []
+    for row in rows[-count:]:
+        if not isinstance(row, list) or len(row) < 6:
+            continue
+        bars.append({
+            "time": str(row[0]),
+            "open": _number(row[1]),
+            "close": _number(row[2]),
+            "high": _number(row[3]),
+            "low": _number(row[4]),
+            "vol": _number(row[5]),
+            "amount": _number(row[6]) if len(row) > 6 else None,
+        })
+    return bars
+
+
+def _fetch_sina_kline(code: str, *, period: str, count: int) -> list[dict]:
+    scale_map = {"daily": 240, "60m": 60, "15m": 15, "5m": 5}
+    scale = scale_map.get(period)
+    if scale is None:
+        return []
+    symbol = ("sh" if str(code).startswith(("6", "9")) else "bj" if str(code).startswith("8") else "sz") + str(code)
+    url = (
+        "https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_k=/CN_MarketDataService.getKLineData?"
+        + urllib.parse.urlencode({
+            "symbol": symbol,
+            "scale": str(scale),
+            "ma": "no",
+            "datalen": str(count),
+        })
+    )
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://finance.sina.com.cn/",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            text = resp.read().decode("utf-8", "replace")
+        match = re.search(r"\((\[.*\])\)\s*;?\s*$", text, re.DOTALL)
+        rows = json.loads(match.group(1)) if match else []
+    except Exception:
+        return []
+
+    bars = []
+    for row in rows[-count:]:
+        if not isinstance(row, dict):
+            continue
+        bars.append({
+            "time": str(row.get("day", "")),
+            "open": _number(row.get("open")),
+            "high": _number(row.get("high")),
+            "low": _number(row.get("low")),
+            "close": _number(row.get("close")),
+            "vol": _number(row.get("volume")),
+            "amount": _number(row.get("amount")),
+        })
+    return bars
+
+
+@_serialized_pytdx_call
 def fetch_kline_15m() -> dict:
     """三大指数15分钟量价（同比昨日）
 
@@ -750,6 +978,7 @@ _TDX_SECTOR_MAP = {
 }
 
 
+@_serialized_pytdx_call
 def fetch_sector(names: list) -> dict:
     """板块指数实时行情
 

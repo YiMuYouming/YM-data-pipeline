@@ -95,6 +95,36 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual(quality, query_meta["quality"])
         self.assertEqual(["iwencai", "openapi"], query_meta["source_chain"])
 
+    def test_review_batch_reports_partial_success_without_hiding_empty_queries(self):
+        from ym_stock_data.v2 import resolve
+
+        def fake_query(query_str, limit=50):
+            rows = [] if "涨停 跌停" in query_str else [{"股票代码": "600000"}]
+            return {
+                "datas": rows,
+                "row_count": len(rows),
+                "_source": "openapi",
+                "_meta": {
+                    "data_type": "iwencai",
+                    "source": "iwencai",
+                    "fetched_at": "2026-07-13T15:10:00+08:00",
+                },
+            }
+
+        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_query):
+            result = resolve(
+                "review_sentiment",
+                _now=ts("2026-07-13T15:10:20+08:00"),
+            )
+
+        self.assertIn("query_summary", result["data"])
+        summary = result["data"]["query_summary"]
+        self.assertEqual(summary["total_queries"], 6)
+        self.assertEqual(summary["empty_queries"], 1)
+        self.assertEqual(summary["nonempty_queries"], 5)
+        self.assertEqual(summary["batch_status"], "partial_success")
+        self.assertEqual(result["_meta"]["quality"]["batch_status"], "partial_success")
+
     def test_sector_expectation_rejects_stock_rows_even_with_industry_fields(self):
         from ym_stock_data.v2 import resolve
 

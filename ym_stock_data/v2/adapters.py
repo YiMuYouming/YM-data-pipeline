@@ -31,6 +31,24 @@ def _with_meta(raw: Any, *, data_type: str, source: str) -> dict:
     else:
         result = {"data": raw}
     meta = dict(result.get("_meta", {}))
+    fallback_marker = result.get("_source")
+    if not fallback_marker:
+        row_markers = {
+            value.get("_source")
+            for key, value in result.items()
+            if key != "_meta" and isinstance(value, dict) and value.get("_source")
+        }
+        if len(row_markers) == 1:
+            fallback_marker = next(iter(row_markers))
+            result["_source"] = fallback_marker
+    if isinstance(fallback_marker, str) and fallback_marker.endswith("_fallback"):
+        actual_source = fallback_marker.removesuffix("_fallback")
+        if actual_source == "tencent_index":
+            actual_source = "tencent"
+        meta.setdefault("fallback_from", source)
+        meta.setdefault("fallback_to", actual_source)
+        meta["source"] = actual_source
+        meta["degraded"] = True
     meta.setdefault("data_type", data_type)
     meta.setdefault("source", source)
     meta.setdefault("fetched_at", _now_iso())

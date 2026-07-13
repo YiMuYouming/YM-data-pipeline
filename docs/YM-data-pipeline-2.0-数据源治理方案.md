@@ -181,7 +181,7 @@ v2.1 再扩展：
 | `realtime_market` | 看板指数、涨跌家数、成交额 | PyTDX | 东财 fallback |
 | `sector_index` | 同花顺行业板块涨跌幅、主力净流入 | 同花顺 881xxx | 暂无 |
 | `stock_snapshot` | 个股临时查票、快速技术快照 | PyTDX | 腾讯/easyquotation |
-| `stock_kline` | 个股 K 线和基础均线 | PyTDX | TDX MCP 交叉校验后再毕业 |
+| `stock_kline` | 个股 K 线和基础均线 | PyTDX | 日/周/月腾讯；5/15/60分钟新浪；TDX MCP仅交叉校验 |
 | `realtime_quotes` | 自选股实时行情，后续可由 `stock_snapshot` 扩展 | PyTDX | 腾讯/easyquotation |
 | `realtime_sectors` | 板块实时涨跌和均线 | PyTDX | baseline |
 | `sentiment_intraday` | 盘中情绪节点 | 问财固定 query | 东财涨跌停池 |

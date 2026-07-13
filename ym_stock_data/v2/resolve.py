@@ -60,8 +60,12 @@ def _intent_trade_usage(intent: str) -> str:
 
 
 def _source_chain(source: str, raw: dict) -> list[str]:
-    chain = [source]
     raw_meta = raw.get("_meta", {}) if isinstance(raw, dict) else {}
+    primary_source = raw_meta.get("fallback_from")
+    fallback_to = raw_meta.get("fallback_to")
+    chain = [primary_source if source == fallback_to and primary_source else source]
+    if source not in chain:
+        chain.append(source)
     for key in ("fallback_from", "fallback_to"):
         fallback_source = raw_meta.get(key)
         if fallback_source and fallback_source not in chain:
@@ -70,6 +74,32 @@ def _source_chain(source: str, raw: dict) -> list[str]:
     if raw_source and raw_source not in chain:
         chain.append(raw_source)
     return chain
+
+
+def _fallback_quality(
+    quality: dict,
+    *,
+    source: str,
+    primary: str,
+    missing_fields: list[str] | None = None,
+) -> dict:
+    if source == primary:
+        return quality
+    result = dict(quality)
+    if result.get("status") == "normal":
+        result["status"] = "partial"
+    result["semantic_equivalence"] = "unknown"
+    reasons = list(result.get("reason_codes", []))
+    if "fallback_source" not in reasons:
+        reasons.append("fallback_source")
+    result["reason_codes"] = reasons
+    missing = list(result.get("missing", []))
+    for field in missing_fields or []:
+        if field not in missing:
+            missing.append(field)
+    result["missing"] = missing
+    result["missing_count"] = len(missing)
+    return result
 
 
 def _review_queries(query: str | None = None) -> list[str]:
@@ -121,12 +151,17 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             [raw] if not source_error and _non_meta_payload_exists(raw) else [],
             source_error=source_error,
         )
+        quality = _fallback_quality(quality, source=source, primary="pytdx")
+        data_scope = {
+            "eastmoney": "东方财富指数降级口径",
+            "tencent": "腾讯指数降级口径",
+        }.get(source, _intent_data_scope(intent, "PyTDX实时行情口径"))
         return normalize_result(
             intent=intent,
             raw=raw,
             source=source,
             source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
-            data_scope=_intent_data_scope(intent, "PyTDX实时行情口径"),
+            data_scope=data_scope,
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
             now=_now,
@@ -160,12 +195,17 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             missing=missing,
             source_error=_source_error(raw),
         )
+        quality = _fallback_quality(quality, source=source, primary="pytdx")
+        data_scope = {
+            "tencent": "腾讯个股行情降级口径",
+            "sina": "新浪个股行情降级口径",
+        }.get(source, _intent_data_scope(intent, "PyTDX个股实时行情口径"))
         return normalize_result(
             intent=intent,
             raw=raw,
             source=source,
             source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
-            data_scope=_intent_data_scope(intent, "PyTDX个股实时行情口径"),
+            data_scope=data_scope,
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
             now=_now,
@@ -238,12 +278,25 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             expected_count=count,
             source_error=_source_error(raw),
         )
+        missing_fields = []
+        if source == "tencent" and any(bar.get("amount") is None for bar in bars):
+            missing_fields.append("amount")
+        quality = _fallback_quality(
+            quality,
+            source=source,
+            primary="pytdx",
+            missing_fields=missing_fields,
+        )
+        data_scope = {
+            "tencent": "腾讯前复权K线降级口径",
+            "sina": "新浪分钟K线降级口径",
+        }.get(source, _intent_data_scope(intent, "PyTDX个股K线口径"))
         return normalize_result(
             intent=intent,
             raw=raw,
             source=source,
             source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
-            data_scope=_intent_data_scope(intent, "PyTDX个股K线口径"),
+            data_scope=data_scope,
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
             now=_now,
@@ -314,6 +367,38 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
                 "error": has_error,
             },
         }
+        status_counts = {}
+        for item in qualities:
+            status = str(item.get("status", "normal"))
+            status_counts[status] = status_counts.get(status, 0) + 1
+        nonempty_queries = sum(
+            1 for item in qualities if int(item.get("returned_count", 0)) > 0
+        )
+        if status_counts.get("error", 0) == len(qualities):
+            batch_status = "error"
+        elif nonempty_queries and (
+            status_counts.get("empty", 0) or status_counts.get("error", 0)
+        ):
+            batch_status = "partial_success"
+        elif status_counts.get("empty", 0) == len(qualities):
+            batch_status = "empty"
+        elif status_counts.get("semantic_degraded", 0):
+            batch_status = "semantic_degraded"
+        elif status_counts.get("partial", 0):
+            batch_status = "partial"
+        else:
+            batch_status = "normal"
+        query_summary = {
+            "total_queries": len(qualities),
+            "nonempty_queries": nonempty_queries,
+            "empty_queries": status_counts.get("empty", 0),
+            "error_queries": status_counts.get("error", 0),
+            "semantic_degraded_queries": status_counts.get("semantic_degraded", 0),
+            "partial_queries": status_counts.get("partial", 0),
+            "normal_queries": status_counts.get("normal", 0),
+            "batch_status": batch_status,
+        }
+        raw["query_summary"] = query_summary
         aggregates = aggregate_review_sentiment(rows)
         raw.update({key: value for key, value in aggregates.items() if key in ("涨停收益均值", "红盘率", "炸板率", "最高板")})
         for key in ("涨停收益均值", "红盘率", "炸板率", "最高板"):
@@ -323,6 +408,10 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             for key, value in aggregates.items()
             if key not in ("涨停收益均值", "红盘率", "炸板率", "最高板")
         }
+        rolled_quality = rollup_qualities(qualities)
+        if len(qualities) > 1:
+            rolled_quality["batch_status"] = batch_status
+            rolled_quality["query_counts"] = query_summary
         return normalize_result(
             intent=intent,
             raw=raw,
@@ -333,7 +422,7 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             trade_usage=_intent_trade_usage(intent),
             query=queries,
             now=_now,
-            quality=rollup_qualities(qualities),
+            quality=rolled_quality,
         )
 
     raise ValueError(

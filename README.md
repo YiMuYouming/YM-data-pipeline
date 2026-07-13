@@ -56,8 +56,9 @@ resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶
 - 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
 - `sector_index` 只使用同花顺行业 881xxx 口径，不使用中证 931xxx，也不复用 V1 的 TDX 880xxx 板块线。
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
-- `stock_kline` 当前使用 PyTDX K 线源，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m`，支持 `count` 截断。
-- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试；顶层会输出 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 等聚合字段。
+- `stock_kline` 主源为 PyTDX，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m` 和 `count` 截断；PyTDX 无业务数据时，日/周/月自动降级腾讯，5/15/60 分钟自动降级新浪，并在 `_meta.source_chain` 标注真实来源。
+- PyTDX 节点不能只看 TCP 握手；连接后会执行轻量报价探针，空节点自动跳过。服务器池全部不可用时短期熔断，直接走无鉴权 HTTP fallback。
+- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试；顶层会输出 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 等聚合字段。批量结果另带 `query_summary`，区分整批正常、部分成功、空结果和错误，避免把个别空 query 误报为全链路失败。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
 ### TDX MCP 备用源规则

@@ -14,7 +14,7 @@ from datetime import datetime
 
 from ..fetch import fetch
 from ..sources.pytdx import fetch_quotes as _pytdx_quotes, fetch_breadth, \
-    fetch_sector, fetch_kline_15m, _get_api, _format_amount
+    fetch_sector, fetch_kline_15m, api_session, _format_amount
 
 _OUTPUT = Path(__file__).resolve().parent.parent.parent / "outputs" / "dashboard_live_new.json"
 _DASHBOARD_DATA = Path.home() / "Documents/YM_Capital/live-dashboard/data/dashboard_data.json"
@@ -50,37 +50,37 @@ def get_sector_names():
 
 def _yesterday_baseline():
     """昨日收盘基线（与 poll_live.py 一致）"""
-    api = _get_api()
-    if not api:
-        return {}
-    idx_list = [(1, "000001", "上证"), (0, "399001", "深证"), (0, "399006", "创业")]
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    result = {}
-    for mkt, code, name in idx_list:
-        try:
-            bars = api.get_index_bars(9, mkt, code, 0, 4)
-            if not bars or len(bars) < 2:
-                continue
-            yesterday = None; prev = None
-            for b in reversed(bars):
-                dt = str(b.get("datetime", ""))
-                if today_str in dt:
+    with api_session() as api:
+        if not api:
+            return {}
+        idx_list = [(1, "000001", "上证"), (0, "399001", "深证"), (0, "399006", "创业")]
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        result = {}
+        for mkt, code, name in idx_list:
+            try:
+                bars = api.get_index_bars(9, mkt, code, 0, 4)
+                if not bars or len(bars) < 2:
                     continue
-                if yesterday is None: yesterday = b
-                elif prev is None: prev = b; break
-            if not yesterday:
-                continue
-            close = yesterday.get("close", 0)
-            prev_close = prev.get("close", close) if prev else close
-            pct = round((close - prev_close) / prev_close * 100, 2) if prev_close else 0
-            result[f"{name}昨收"] = close
-            result[f"{name}昨涨幅"] = f"{pct:+.2f}%"
-            result[f"{name}昨成交额"] = _format_amount(yesterday.get("amount", 0))
-            result[f"{name}昨上涨"] = yesterday.get("up_count", 0)
-            result[f"{name}昨下跌"] = yesterday.get("down_count", 0)
-        except Exception:
-            pass
-    return result
+                yesterday = None; prev = None
+                for b in reversed(bars):
+                    dt = str(b.get("datetime", ""))
+                    if today_str in dt:
+                        continue
+                    if yesterday is None: yesterday = b
+                    elif prev is None: prev = b; break
+                if not yesterday:
+                    continue
+                close = yesterday.get("close", 0)
+                prev_close = prev.get("close", close) if prev else close
+                pct = round((close - prev_close) / prev_close * 100, 2) if prev_close else 0
+                result[f"{name}昨收"] = close
+                result[f"{name}昨涨幅"] = f"{pct:+.2f}%"
+                result[f"{name}昨成交额"] = _format_amount(yesterday.get("amount", 0))
+                result[f"{name}昨上涨"] = yesterday.get("up_count", 0)
+                result[f"{name}昨下跌"] = yesterday.get("down_count", 0)
+            except Exception:
+                pass
+        return result
 
 
 def _add_index_derived(live_index: dict, k15: dict):

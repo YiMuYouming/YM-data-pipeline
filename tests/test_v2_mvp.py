@@ -275,6 +275,30 @@ class V2MvpTests(unittest.TestCase):
         self.assertNotIn("data", result["data"])
         self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "tencent", "tencent_fallback"])
 
+    def test_stock_snapshot_promotes_row_level_fallback_provenance(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "002475": {
+                "最新价": 31.2,
+                "涨幅": "+1.20%",
+                "_source": "tencent_fallback",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw):
+            result = resolve(
+                "stock_snapshot",
+                codes=["002475"],
+                _now=ts("2026-06-04T10:00:20+08:00"),
+            )
+
+        self.assertEqual(result["_meta"]["source"], "tencent")
+        self.assertEqual(
+            result["_meta"]["source_chain"],
+            ["pytdx", "tencent", "tencent_fallback"],
+        )
+
     def test_sector_index_calls_ths_881_source_by_code(self):
         from ym_stock_data.v2 import resolve
 
@@ -469,6 +493,44 @@ class V2MvpTests(unittest.TestCase):
 
         self.assertEqual(result["_meta"]["confidence"], "stale")
         self.assertIn("超过阈值", result["_meta"]["warn"])
+
+    def test_stock_kline_marks_http_fallback_as_degraded_scope(self):
+        from ym_stock_data.v2 import resolve
+
+        raw = {
+            "code": "002475",
+            "bars": [{
+                "time": "2026-06-04",
+                "open": 30.0,
+                "high": 32.0,
+                "low": 29.8,
+                "close": 31.2,
+                "vol": 1000,
+                "amount": None,
+            }],
+            "_source": "tencent_fallback",
+            "_meta": {
+                "fallback_from": "pytdx",
+                "fallback_to": "tencent",
+                "fetched_at": "2026-06-04T15:01:00+08:00",
+            },
+        }
+
+        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw):
+            result = resolve(
+                "stock_kline",
+                code="002475",
+                period="daily",
+                count=1,
+                _now=ts("2026-06-04T15:01:20+08:00"),
+            )
+
+        self.assertEqual(result["_meta"]["source"], "tencent")
+        self.assertEqual(result["_meta"]["confidence"], "degraded")
+        self.assertEqual(result["_meta"]["data_scope"], "腾讯前复权K线降级口径")
+        self.assertEqual(result["_meta"]["quality"]["status"], "partial")
+        self.assertIn("fallback_source", result["_meta"]["quality"]["reason_codes"])
+        self.assertIn("amount", result["_meta"]["quality"]["missing"])
 
     def test_source_chain_captures_fallback_metadata(self):
         from ym_stock_data.v2 import resolve

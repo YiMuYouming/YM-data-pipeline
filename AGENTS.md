@@ -90,7 +90,7 @@ pip install -e .[pywencai]    # 启用问财 pywencai 降级能力
 
 | 源 | 优先 | 降级 | 说明 |
 |------|------|------|------|
-| PyTDX | TCP 长连接 | easyquotation | 零鉴权，TCP 7709 端口 |
+| PyTDX | TCP 长连接 + 业务探针 | 指数：东财→腾讯；报价：腾讯→easyquotation；K线：腾讯/新浪 | 零鉴权；握手成功但业务空数据视为坏节点并自动轮换 |
 | 问财 | OpenAPI | pywencai 网页抓取 → TDX MCP 人工备用 | OpenAPI 额度耗尽自动切 pywencai；两者都挂时才用授权型 TDX MCP |
 | 腾讯 | HTTP API | — | PE/PB 等财务数据 |
 
@@ -136,6 +136,7 @@ IWENCAI_API_KEY 读取优先级：环境变量 → ~/.zshrc → ~/.bash_profile 
 ## 线程安全
 
 所有 PyTDX 调用受 `threading.Lock` 保护，多个 collector 线程可安全共享。详见 `sources/pytdx.py` 的 `_get_api()`。
+节点连接后必须通过轻量报价探针才会进入连接池；全池失败会短期熔断，避免每个 V2 intent 重复等待。V2 fallback 的顶层 `source` 和 `source_chain` 必须反映实际供应商，不能把腾讯/新浪降级结果继续标成 PyTDX。
 
 ## 所属项目
 

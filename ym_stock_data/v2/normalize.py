@@ -57,6 +57,9 @@ def normalize_result(
     if error:
         confidence = "error"
         warn = "数据源返回错误"
+    elif raw_meta.get("degraded"):
+        confidence = "degraded"
+        warn = "主数据源不可用，当前使用降级数据源"
     elif fetched_dt is None:
         confidence = "unknown"
         warn = "无法取得 fetched_at，无法判断数据新鲜度"
