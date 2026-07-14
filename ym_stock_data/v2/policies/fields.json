@@ -79,24 +79,24 @@
   {
     "field": "涨停家数",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "涨停 跌停 非st"},
-    "fallback": [{"source": "pywencai"}],
-    "freq": "盘后/10min",
-    "data_scope": "问财口径",
+    "primary": {"source": "pytdx", "data_type": "breadth"},
+    "fallback": [{"source": "eastmoney"}, {"source": "iwencai"}, {"source": "pywencai"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX全市场涨跌分布口径",
     "trade_usage": "辅助，不单独触发交易",
     "staleness_sec": 1800,
-    "rate_class": "limited"
+    "rate_class": "zero_auth"
   },
   {
     "field": "跌停家数",
     "intent": "review_sentiment",
-    "primary": {"source": "iwencai", "query": "涨停 跌停 非st"},
-    "fallback": [{"source": "pywencai"}],
-    "freq": "盘后/10min",
-    "data_scope": "问财口径",
+    "primary": {"source": "pytdx", "data_type": "breadth"},
+    "fallback": [{"source": "eastmoney"}, {"source": "iwencai"}, {"source": "pywencai"}],
+    "freq": "盘中/30s",
+    "data_scope": "PyTDX全市场涨跌分布口径",
     "trade_usage": "辅助，不单独触发交易",
     "staleness_sec": 1800,
-    "rate_class": "limited"
+    "rate_class": "zero_auth"
   },
   {
     "field": "封板率",

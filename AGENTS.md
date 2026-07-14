@@ -46,6 +46,8 @@ PY
 | `stock_kline` | 个股 K 线/均线 | `resolve("stock_kline", code="603290", period="daily", count=20)` |
 | `review_sentiment` | 问财 query 执行与复盘情绪聚合 | `resolve("review_sentiment", query="涨停 非ST", limit=20)` |
 
+额度规则：`resolve("review_sentiment")` 不传 `query` 时默认先走 PyTDX breadth，不调用问财；PyTDX breadth 不可用时最多降级为 1 次问财。显式字符串 `query=...` 才执行单次自然语言查询；只有显式列表 `query=[...]` 才允许批量问财。成功的 OpenAPI 结果默认缓存 300 秒，可通过 `IWENCAI_QUERY_CACHE_TTL=0..1800` 调整。
+
 注意：旧 flat 入口 `fetch("iwencai", query="...")` 当前可能因参数名兼容问题报 `query() got an unexpected keyword argument 'query'`。这不代表 V2 或问财源不可用。遇到该错误时，优先改用 `resolve("review_sentiment", query=...)`；若只需底层原始问财结果，可直接调用 `ym_stock_data.sources.iwencai.query("...", limit=...)`。
 
 ### TDX MCP 备用源
@@ -94,7 +96,7 @@ pip install -e .[pywencai]    # 启用问财 pywencai 降级能力
 | 问财 | OpenAPI | pywencai 网页抓取 → TDX MCP 人工备用 | OpenAPI 额度耗尽自动切 pywencai；两者都挂时才用授权型 TDX MCP |
 | 腾讯 | HTTP API | — | PE/PB 等财务数据 |
 
-问财降级自动进行：OpenAPI 401/403/429 → 300 秒 breaker；5xx、网络、超时或无效响应 → 60 秒 breaker；breaker 期间由带失败缓存的 pywencai 接管，到期后再试 OpenAPI。
+问财降级自动进行：OpenAPI 401/403/429 → 300 秒 breaker；5xx、网络、超时或无效响应 → 60 秒 breaker；breaker 期间由带失败缓存的 pywencai 接管，到期后再试 OpenAPI。成功的 OpenAPI 查询另有 300 秒进程内结果缓存，重复请求不会再次消耗额度。
 
 TDX MCP 不自动接入代码降级链；它用于 Agent 开线策划、投研筛选和手工交叉验证。需要授权时向弈沐确认，不要自行臆测结果。
 
@@ -126,6 +128,7 @@ PYTDX_CONNECT_TIMEOUT = 5         # 连接超时（秒）
 PYTDX_MAX_AGE = 60                # 连接复用时长（超时自动重连）
 PYTDX_MAX_FAIL = 3                # 连续失败切换兜底
 IWENCAI_API_KEY_PATH = ~/.zshrc   # 问财 API Key 读取路径
+IWENCAI_QUERY_CACHE_TTL = 300      # OpenAPI 成功结果缓存秒数；0 关闭，最大 1800
 PYWENCAI_VENV                     # pywencai 运行环境路径
 ```
 

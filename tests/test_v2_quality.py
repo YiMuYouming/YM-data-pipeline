@@ -95,11 +95,11 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual(quality, query_meta["quality"])
         self.assertEqual(["iwencai", "openapi"], query_meta["source_chain"])
 
-    def test_review_batch_reports_partial_success_without_hiding_empty_queries(self):
+    def test_review_sentiment_breadth_failure_falls_back_to_one_iwencai_query(self):
         from ym_stock_data.v2 import resolve
 
         def fake_query(query_str, limit=50):
-            rows = [] if "涨停 跌停" in query_str else [{"股票代码": "600000"}]
+            rows = [{"股票代码": "600000", "今日涨跌幅": 1.2}]
             return {
                 "datas": rows,
                 "row_count": len(rows),
@@ -111,19 +111,22 @@ class V2QualityTests(unittest.TestCase):
                 },
             }
 
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_query):
+        with patch("ym_stock_data.sources.pytdx.fetch_breadth", return_value={}) as fetch_breadth, \
+             patch("ym_stock_data.sources.iwencai.query", side_effect=fake_query) as query:
             result = resolve(
                 "review_sentiment",
                 _now=ts("2026-07-13T15:10:20+08:00"),
             )
 
+        fetch_breadth.assert_called_once_with()
+        query.assert_called_once_with("昨日涨停 今日涨跌幅 非st", limit=50)
         self.assertIn("query_summary", result["data"])
         summary = result["data"]["query_summary"]
-        self.assertEqual(summary["total_queries"], 6)
-        self.assertEqual(summary["empty_queries"], 1)
-        self.assertEqual(summary["nonempty_queries"], 5)
-        self.assertEqual(summary["batch_status"], "partial_success")
-        self.assertEqual(result["_meta"]["quality"]["batch_status"], "partial_success")
+        self.assertEqual(summary["total_queries"], 1)
+        self.assertEqual(summary["empty_queries"], 0)
+        self.assertEqual(summary["nonempty_queries"], 1)
+        self.assertEqual(summary["batch_status"], "normal")
+        self.assertEqual(result["_meta"]["source_chain"], ["iwencai", "openapi"])
 
     def test_sector_expectation_rejects_stock_rows_even_with_industry_fields(self):
         from ym_stock_data.v2 import resolve
@@ -400,10 +403,10 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.v2.resolve._review_queries", return_value=list(raw_results)), \
-             patch("ym_stock_data.sources.iwencai.query", side_effect=lambda query, limit=50: raw_results[query]):
+        with patch("ym_stock_data.sources.iwencai.query", side_effect=lambda query, limit=50: raw_results[query]):
             result = resolve(
                 "review_sentiment",
+                query=list(raw_results),
                 expected_row_shape="sector_rows",
                 expected_count=2,
                 _now=ts("2026-07-11T15:00:20+08:00"),

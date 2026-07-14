@@ -102,9 +102,20 @@ def _fallback_quality(
     return result
 
 
-def _review_queries(query: str | None = None) -> list[str]:
+def _review_queries(query: str | list[str] | tuple[str, ...] | None = None) -> list[str]:
+    if isinstance(query, (list, tuple)):
+        queries = []
+        seen = set()
+        for item in query:
+            value = str(item).strip()
+            if value and value not in seen:
+                queries.append(value)
+                seen.add(value)
+        if not queries:
+            raise ValueError("review_sentiment query 列表不能为空")
+        return queries
     if query:
-        return [query]
+        return [str(query)]
 
     queries = []
     seen = set()
@@ -114,6 +125,118 @@ def _review_queries(query: str | None = None) -> list[str]:
             queries.append(policy_query)
             seen.add(policy_query)
     return queries or [DEFAULT_REVIEW_SENTIMENT_QUERY]
+
+
+def _breadth_count(raw: dict, keys: tuple[str, ...]) -> int:
+    total = 0
+    for key in keys:
+        value = raw.get(key, 0)
+        try:
+            total += int(float(value or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _resolve_review_sentiment_from_breadth(raw: dict, *, now: datetime | None) -> dict | None:
+    raw_meta = raw.get("_meta", {}) if isinstance(raw, dict) else {}
+    source = raw_meta.get("source", "pytdx")
+    total = _breadth_count(raw, ("_total",))
+    if total <= 0 or _source_error(raw):
+        return None
+
+    up_count = _breadth_count(raw, ("涨停", ">7%", "5~7%", "3~5%", "0~3%"))
+    down_count = _breadth_count(raw, ("-0~-3%", "-3~-5%", "-5~-7%", "<-7%", "跌停"))
+    directional_total = up_count + down_count
+    red_rate = round(up_count / directional_total * 100, 2) if directional_total else None
+    exact_limit_counts = source == "pytdx"
+    limit_up_count = _breadth_count(raw, ("涨停",)) if exact_limit_counts else None
+    limit_down_count = _breadth_count(raw, ("跌停",)) if exact_limit_counts else None
+
+    row = {
+        "上涨家数": up_count,
+        "下跌家数": down_count,
+        "涨停家数": limit_up_count,
+        "跌停家数": limit_down_count,
+        "红盘率": red_rate,
+    }
+    missing = ["涨停收益均值", "炸板率", "最高板"]
+    if not exact_limit_counts:
+        missing.extend(["涨停家数", "跌停家数"])
+    quality = assess_quality([row], missing=missing)
+    source_chain = _source_chain(source, raw)
+    query_meta = dict(raw_meta)
+    query_meta.update({
+        "source": source,
+        "source_chain": source_chain,
+        "quality": quality,
+        "zero_auth": True,
+    })
+    breadth = {
+        key: value
+        for key, value in raw.items()
+        if key not in {"_meta", "_source"}
+    }
+    result_raw = {
+        "queries": [{
+            "query": "全市场涨跌分布",
+            "result": {
+                "datas": [row],
+                "row_count": 1,
+                "breadth": breadth,
+                "_source": source,
+            },
+            "_meta": query_meta,
+        }],
+        "query_count": 1,
+        "query_summary": {
+            "total_queries": 1,
+            "nonempty_queries": 1,
+            "empty_queries": 0,
+            "error_queries": 0,
+            "semantic_degraded_queries": 0,
+            "partial_queries": 1,
+            "normal_queries": 0,
+            "batch_status": "partial",
+        },
+        "涨停收益均值": None,
+        "红盘率": red_rate,
+        "炸板率": None,
+        "最高板": None,
+        "涨停家数": limit_up_count,
+        "跌停家数": limit_down_count,
+        "上涨家数": up_count,
+        "下跌家数": down_count,
+        "aggregates": {
+            "red_rate": red_rate,
+            "limit_up_count": limit_up_count,
+            "limit_down_count": limit_down_count,
+            "up_count": up_count,
+            "down_count": down_count,
+            "breadth": breadth,
+        },
+        "_meta": {
+            **raw_meta,
+            "data_type": "review_sentiment",
+            "source": source,
+        },
+    }
+    return normalize_result(
+        intent="review_sentiment",
+        raw=result_raw,
+        source=source,
+        source_chain=source_chain,
+        data_scope=(
+            "PyTDX全市场涨跌分布口径"
+            if source == "pytdx"
+            else f"{source}全市场涨跌分布降级口径"
+        ),
+        staleness_sec=_intent_staleness("review_sentiment"),
+        trade_usage=_intent_trade_usage("review_sentiment"),
+        query=["全市场涨跌分布"],
+        now=now,
+        quality=quality,
+    )
 
 
 def _merge_source_chains(chains: list[list[str]]) -> list[str]:
@@ -304,7 +427,20 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
         )
 
     if intent == "review_sentiment":
-        queries = _review_queries(kwargs.get("query"))
+        query_override = kwargs.get("query")
+        if not query_override:
+            breadth_result = _resolve_review_sentiment_from_breadth(
+                adapters.fetch_breadth(),
+                now=_now,
+            )
+            if breadth_result is not None:
+                return breadth_result
+
+        queries = (
+            _review_queries(query_override)
+            if query_override
+            else [DEFAULT_REVIEW_SENTIMENT_QUERY]
+        )
         limit = int(kwargs.get("limit", 50))
         expected_row_shape = kwargs.get("expected_row_shape")
         expected_count = kwargs.get("expected_count")

@@ -616,8 +616,10 @@ def fetch_breadth() -> dict:
     if not api:
         return _fallback_breadth()
 
-    codes = _all_share_codes()
-    batch_size = 200
+    codes = _all_share_codes(api)
+    if not codes:
+        return _fallback_breadth()
+    batch_size = 80
     cats = {"涨停": 0, ">7%": 0, "5~7%": 0, "3~5%": 0, "0~3%": 0,
             "-0~-3%": 0, "-3~-5%": 0, "-5~-7%": 0, "<-7%": 0, "跌停": 0}
     total = 0
@@ -663,26 +665,46 @@ def fetch_breadth() -> dict:
             else:
                 cats["跌停"] += 1
 
-    if total:
-        cats["_total"] = total
+    if not total:
+        return _fallback_breadth()
+    cats["_total"] = total
     return cats
 
 
 _all_codes_cache = None
 
 
-def _all_share_codes():
+def _all_share_codes(api):
     global _all_codes_cache
     if _all_codes_cache:
         return _all_codes_cache
+
+    prefixes = {
+        0: ("000", "001", "002", "003", "300", "301"),
+        1: ("600", "601", "603", "605", "688", "689"),
+    }
     codes = []
-    for prefix, start, end in [("60", 600000, 606000), ("688", 688000, 689000)]:
-        for i in range(start, end):
-            codes.append((1, str(i)))
-    for i in range(1, 4000):
-        codes.append((0, f"{i:06d}"))
-    for i in range(300000, 302000):
-        codes.append((0, str(i)))
+    seen = set()
+    for market in (0, 1):
+        try:
+            count = int(api.get_security_count(market) or 0)
+        except Exception:
+            continue
+        for start in range(0, count, 1000):
+            try:
+                rows = api.get_security_list(market, start) or []
+            except Exception:
+                continue
+            for row in rows:
+                code = str(row.get("code", ""))
+                key = (market, code)
+                if (
+                    len(code) == 6
+                    and code.startswith(prefixes[market])
+                    and key not in seen
+                ):
+                    codes.append(key)
+                    seen.add(key)
     _all_codes_cache = codes
     return codes
 

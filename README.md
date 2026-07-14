@@ -46,7 +46,8 @@ resolve("sector_index", codes=["881124"])  # 直连同花顺 881 行业板块，
 resolve("sector_index", names=["消费电子", "通信设备"])  # 名称查询同样映射到 881xxx
 resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fetch_quotes
 resolve("stock_kline", code="002475", period="15m", count=20)  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
-resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶层补聚合字段
+resolve("review_sentiment")   # 默认走 PyTDX breadth，不消耗问财额度
+resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st")  # 显式自然语言查询才走问财
 ```
 
 边界：
@@ -58,7 +59,9 @@ resolve("review_sentiment")   # 执行复盘情绪问财模板，并在 data 顶
 - `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
 - `stock_kline` 主源为 PyTDX，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m` 和 `count` 截断；PyTDX 无业务数据时，日/周/月自动降级腾讯，5/15/60 分钟自动降级新浪，并在 `_meta.source_chain` 标注真实来源。
 - PyTDX 节点不能只看 TCP 握手；连接后会执行轻量报价探针，空节点自动跳过。服务器池全部不可用时短期熔断，直接走无鉴权 HTTP fallback。
-- `review_sentiment` 默认批量执行字段策略里的问财 query；传入 `query=...` 时只执行单条 query，便于调试；顶层会输出 `涨停收益均值`、`红盘率`、`炸板率`、`最高板` 等聚合字段。批量结果另带 `query_summary`，区分整批正常、部分成功、空结果和错误，避免把个别空 query 误报为全链路失败。
+- `review_sentiment` 不传 `query` 时优先走零鉴权 PyTDX breadth，直接计算涨跌家数、涨跌停家数和红盘率；PyTDX 不可用时最多降级为 1 次问财，不再隐式批量执行 6 个 query。
+- 传入字符串 `query=...` 时只执行 1 次问财；确需批量聚合时必须显式传入 `query=[...]`。批量结果带 `query_summary`，不会由默认调用暗中消耗多次额度。
+- 问财 OpenAPI 成功结果按“标准化 query + limit + page”做 300 秒进程内缓存；命中时 `_meta.cache_hit=true`。可用 `IWENCAI_QUERY_CACHE_TTL=0..1800` 调整，设为 `0` 可关闭。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
 ### TDX MCP 备用源规则

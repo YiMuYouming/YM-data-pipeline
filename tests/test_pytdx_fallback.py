@@ -36,6 +36,7 @@ class PytdxFallbackQuotesTest(unittest.TestCase):
         pytdx._api = None
         pytdx._connected_at = 0
         pytdx._all_servers_down_at = 0
+        pytdx._all_codes_cache = None
 
     def tearDown(self):
         pytdx.disconnect()
@@ -321,6 +322,35 @@ class PytdxFallbackQuotesTest(unittest.TestCase):
         self.assertEqual(result["_flat"], 149)
         self.assertEqual(result["_total"], 5269)
         self.assertEqual(result["_source"], "eastmoney_index_fallback")
+
+    def test_all_share_codes_uses_tdx_directory_instead_of_guessed_ranges(self):
+        class DirectoryApi:
+            def get_security_count(self, _market):
+                return 1000
+
+            def get_security_list(self, market, _start):
+                if market == 0:
+                    return [
+                        {"code": "000001", "name": "平安银行"},
+                        {"code": "300001", "name": "特锐德"},
+                        {"code": "399001", "name": "深证成指"},
+                        {"code": "159001", "name": "货币ETF"},
+                    ]
+                return [
+                    {"code": "600000", "name": "浦发银行"},
+                    {"code": "688001", "name": "华兴源创"},
+                    {"code": "000001", "name": "上证指数"},
+                    {"code": "510050", "name": "50ETF"},
+                ]
+
+        result = pytdx._all_share_codes(DirectoryApi())
+
+        self.assertEqual(result, [
+            (0, "000001"),
+            (0, "300001"),
+            (1, "600000"),
+            (1, "688001"),
+        ])
 
 
 if __name__ == "__main__":

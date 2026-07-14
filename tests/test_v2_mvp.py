@@ -117,36 +117,46 @@ class V2MvpTests(unittest.TestCase):
         self.assertIn("超过阈值", result["_meta"]["warn"])
         self.assertGreater(result["_meta"]["age_sec"], result["_meta"]["staleness_sec"])
 
-    def test_review_sentiment_runs_unique_policy_queries(self):
+    def test_review_sentiment_default_prefers_pytdx_breadth_without_iwencai(self):
         from ym_stock_data.v2 import resolve
 
-        def fake_fetch(query_str, limit=50):
-            return {
-                "datas": [{"query": query_str, "limit": limit, "value": 1}],
-                "row_count": 1,
-                "_source": "openapi",
-                "_meta": {
-                    "data_type": "iwencai",
-                    "source": "iwencai",
-                    "fetched_at": "2026-06-03T15:10:00+08:00",
-                },
-            }
+        breadth = {
+            "涨停": 72,
+            ">7%": 31,
+            "5~7%": 64,
+            "3~5%": 180,
+            "0~3%": 2600,
+            "-0~-3%": 1800,
+            "-3~-5%": 210,
+            "-5~-7%": 80,
+            "<-7%": 45,
+            "跌停": 12,
+            "_total": 5094,
+        }
 
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_fetch) as query, \
+        with patch("ym_stock_data.sources.pytdx.fetch_breadth", return_value=breadth) as fetch_breadth, \
+             patch("ym_stock_data.sources.iwencai.query") as query, \
              patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
             result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        queries = [call.args[0] for call in query.call_args_list]
-        self.assertGreaterEqual(len(queries), 5)
-        self.assertEqual(len(queries), len(set(queries)))
-        self.assertIn("昨日涨停 今日涨跌幅 非st", queries)
-        self.assertIn("今日连板 股票简称 连板数 非st", queries)
-        self.assertEqual(result["data"]["query_count"], len(queries))
+        fetch_breadth.assert_called_once_with()
+        query.assert_not_called()
+        self.assertEqual(result["data"]["query_count"], 1)
+        self.assertEqual(result["data"]["涨停家数"], 72)
+        self.assertEqual(result["data"]["跌停家数"], 12)
+        self.assertEqual(result["data"]["上涨家数"], 2947)
+        self.assertEqual(result["data"]["下跌家数"], 2147)
+        self.assertAlmostEqual(result["data"]["红盘率"], 57.85)
         self.assertEqual(result["_meta"]["intent"], "review_sentiment")
-        self.assertEqual(result["_meta"]["source"], "iwencai")
-        self.assertEqual(result["_meta"]["source_chain"], ["iwencai", "openapi"])
-        self.assertEqual(result["_meta"]["data_scope"], "问财口径")
-        self.assertEqual(result["_meta"]["queries"], queries)
+        self.assertEqual(result["_meta"]["source"], "pytdx")
+        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
+        self.assertEqual(result["_meta"]["data_scope"], "PyTDX全市场涨跌分布口径")
+        self.assertEqual(result["_meta"]["queries"], ["全市场涨跌分布"])
+        self.assertEqual(result["_meta"]["quality"]["status"], "partial")
+        self.assertEqual(
+            result["_meta"]["quality"]["missing"],
+            ["涨停收益均值", "炸板率", "最高板"],
+        )
 
     def test_review_sentiment_allows_single_query_override(self):
         from ym_stock_data.v2 import resolve
@@ -576,8 +586,17 @@ class V2MvpTests(unittest.TestCase):
                 },
             }
 
+        queries = [
+            "昨日涨停 今日涨跌幅 非st",
+            "昨日炸板 今日涨跌幅 炸板率 非st",
+            "今日连板 股票简称 连板数 非st",
+        ]
         with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_fetch):
-            result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
+            result = resolve(
+                "review_sentiment",
+                query=queries,
+                _now=ts("2026-06-03T15:15:00+08:00"),
+            )
 
         self.assertEqual(result["data"]["涨停收益均值"], 1.33)
         self.assertEqual(result["data"]["红盘率"], 66.67)
@@ -609,6 +628,15 @@ class V2MvpTests(unittest.TestCase):
         self.assertGreaterEqual(len(sector_fields), 2)
         for item in sector_fields:
             self.assertEqual(item["primary"]["source"], "ths_industry")
+
+        sentiment_by_name = {
+            item["field"]: item
+            for item in fields
+            if item["intent"] == "review_sentiment"
+        }
+        for field in ("涨停家数", "跌停家数"):
+            self.assertEqual("pytdx", sentiment_by_name[field]["primary"]["source"])
+            self.assertEqual("zero_auth", sentiment_by_name[field]["rate_class"])
             self.assertEqual(item["primary"].get("code_prefix"), "881")
 
         kline_fields = [item for item in fields if item["intent"] == "stock_kline"]

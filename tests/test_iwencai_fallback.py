@@ -62,6 +62,29 @@ class IwencaiFallbackTests(unittest.TestCase):
         self.iwencai_state = patch.multiple(iwencai, **IWENCAI_TEST_STATE)
         self.iwencai_state.start()
         self.addCleanup(self.iwencai_state.stop)
+        if hasattr(iwencai, "_QUERY_CACHE"):
+            iwencai._QUERY_CACHE.clear()
+
+    def test_successful_openapi_query_reuses_result_within_cache_ttl(self):
+        response = {
+            "datas": [{"股票代码": "600000", "股票简称": "浦发银行"}],
+            "row_count": 1,
+        }
+
+        with patch.object(iwencai.time, "time", return_value=1_000.0), \
+             patch.object(
+                 iwencai.urllib.request,
+                 "urlopen",
+                 side_effect=[JsonResponse(response), AssertionError("duplicate request")],
+             ) as urlopen:
+            first = iwencai.query("银行股", limit=1)
+            second = iwencai.query("银行股", limit=1)
+
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertFalse(first["_meta"]["cache_hit"])
+        self.assertTrue(second["_meta"]["cache_hit"])
+        self.assertEqual(second["_meta"]["cache_age_sec"], 0)
+        self.assertEqual(first["datas"], second["datas"])
 
     def test_pywencai_failure_is_cached_when_openapi_already_down(self):
         iwencai._OPENAPI_DOWN_AT = time.time()
@@ -226,13 +249,15 @@ class IwencaiFallbackTests(unittest.TestCase):
         self.addCleanup(second_failure.close)
         fallback_failure = {"error": "anti bot", "query": "银行股", "_source": "pywencai"}
 
-        with patch("time.time", return_value=1_000.0), \
+        with patch.dict(os.environ, {"IWENCAI_QUERY_CACHE_TTL": "0"}), \
+             patch("time.time", return_value=1_000.0), \
              patch.object(iwencai.urllib.request, "urlopen", side_effect=first_failure), \
              patch.object(iwencai, "_pywencai_query", return_value=fallback_failure):
             first = iwencai.query("银行股", limit=1)
         self.assertEqual("all_paths_dead", first["error_type"])
 
-        with patch("time.time", return_value=1_061.0), \
+        with patch.dict(os.environ, {"IWENCAI_QUERY_CACHE_TTL": "0"}), \
+             patch("time.time", return_value=1_061.0), \
              patch.object(
                  iwencai.urllib.request,
                  "urlopen",
@@ -241,7 +266,8 @@ class IwencaiFallbackTests(unittest.TestCase):
             recovered = iwencai.query("银行股", limit=1)
         self.assertEqual("openapi", recovered["_source"])
 
-        with patch("time.time", return_value=1_062.0), \
+        with patch.dict(os.environ, {"IWENCAI_QUERY_CACHE_TTL": "0"}), \
+             patch("time.time", return_value=1_062.0), \
              patch.object(iwencai.urllib.request, "urlopen", side_effect=second_failure), \
              patch.object(iwencai, "_pywencai_query", return_value={"datas": [], "row_count": 0}) as pywencai_query:
             second = iwencai.query("银行股", limit=1)

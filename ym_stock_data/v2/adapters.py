@@ -86,6 +86,21 @@ def fetch_index() -> dict:
         return _with_meta({"error": str(e)}, data_type="index", source="pytdx")
 
 
+def fetch_breadth() -> dict:
+    try:
+        return _with_meta(
+            _pytdx_call(pytdx.fetch_breadth),
+            data_type="breadth",
+            source="pytdx",
+        )
+    except Exception as e:
+        return _with_meta(
+            {"error": str(e)},
+            data_type="breadth",
+            source="pytdx",
+        )
+
+
 def fetch_quotes(codes: list[str]) -> dict:
     try:
         return _with_meta(

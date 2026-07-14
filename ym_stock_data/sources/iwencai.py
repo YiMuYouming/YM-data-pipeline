@@ -11,6 +11,7 @@
     2. pywencai 网页抓取 → 无额度、稍慢（自动切换）
 """
 
+import copy
 import http.client
 import os, re, json, socket, urllib.error, urllib.request, secrets, sys, time
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ _OPENAPI_BREAKER_SECONDS = 300
 _OPENAPI_FAILURE_TYPE = "rate_limit"
 _OPENAPI_LAST_ERROR = None
 _PYWENCAI_LAST_ERROR = None
+_QUERY_CACHE = {}
+_DEFAULT_QUERY_CACHE_TTL = 300
 
 
 class _InvalidOpenAPIResponse(ValueError):
@@ -101,6 +104,61 @@ def _iwencai_headers() -> dict:
         "X-Claw-Plugin-Version": "none",
         "X-Claw-Trace-Id": secrets.token_hex(32),
     }
+
+
+def _query_cache_ttl() -> int:
+    try:
+        value = int(os.environ.get("IWENCAI_QUERY_CACHE_TTL", _DEFAULT_QUERY_CACHE_TTL))
+    except (TypeError, ValueError):
+        value = _DEFAULT_QUERY_CACHE_TTL
+    return max(0, min(value, 1800))
+
+
+def _query_cache_key(query_str: str, limit: int, page: int) -> tuple[str, int, int]:
+    normalized_query = " ".join(str(query_str).split()).strip().lower()
+    return normalized_query, int(limit), int(page)
+
+
+def _query_cache_get(query_str: str, limit: int, page: int) -> dict | None:
+    ttl = _query_cache_ttl()
+    if ttl <= 0:
+        return None
+    key = _query_cache_key(query_str, limit, page)
+    cached = _QUERY_CACHE.get(key)
+    if not cached:
+        return None
+    cached_at, cached_result = cached
+    age = max(0, int(time.time() - cached_at))
+    if age >= ttl:
+        _QUERY_CACHE.pop(key, None)
+        return None
+    result = copy.deepcopy(cached_result)
+    meta = dict(result.get("_meta", {}))
+    meta.update({
+        "cache_hit": True,
+        "cache_age_sec": age,
+        "cache_ttl_sec": ttl,
+    })
+    result["_meta"] = meta
+    return result
+
+
+def _query_cache_put(query_str: str, limit: int, page: int, result: dict) -> dict:
+    ttl = _query_cache_ttl()
+    enriched = copy.deepcopy(result)
+    meta = dict(enriched.get("_meta", {}))
+    meta.update({
+        "cache_hit": False,
+        "cache_age_sec": 0,
+        "cache_ttl_sec": ttl,
+    })
+    enriched["_meta"] = meta
+    if ttl > 0 and not enriched.get("error"):
+        _QUERY_CACHE[_query_cache_key(query_str, limit, page)] = (
+            time.time(),
+            copy.deepcopy(enriched),
+        )
+    return enriched
 
 
 def _get_pywencai():
@@ -371,6 +429,10 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     Returns:
         {columns: [...], datas: [{列名:值}, ...], row_count: N, _source: "openapi"|"pywencai"}
     """
+    cached = _query_cache_get(query_str, limit, page)
+    if cached is not None:
+        return cached
+
     key = _load_api_key()
     if not key:
         return _limit_pywencai_rows(_pywencai_query(query_str, limit), limit)
@@ -399,7 +461,7 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
             )
             result["_source"] = "openapi"
             _OPENAPI_DOWN_AT = 0  # 恢复
-            return result
+            return _query_cache_put(query_str, limit, page, result)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403, 429):
             failure_type = "rate_limit" if e.code == 429 else "auth"
