@@ -462,5 +462,93 @@
     "trade_usage": "辅助，不单独触发交易",
     "staleness_sec": 300,
     "rate_class": "zero_auth"
+  },
+  {
+    "field": "zt_count",
+    "intent": "market_limit_state",
+    "primary": {"source": "eastmoney_limit_pool", "data_type": "limit_state"},
+    "fallback": [],
+    "freq": "盘后/10min",
+    "data_scope": "东财涨跌停池口径",
+    "trade_usage": "复盘辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "zb_count",
+    "intent": "market_limit_state",
+    "primary": {"source": "eastmoney_limit_pool", "data_type": "limit_state"},
+    "fallback": [],
+    "freq": "盘后/10min",
+    "data_scope": "东财涨跌停池口径",
+    "trade_usage": "复盘辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "dt_count",
+    "intent": "market_limit_state",
+    "primary": {"source": "eastmoney_limit_pool", "data_type": "limit_state"},
+    "fallback": [],
+    "freq": "盘后/10min",
+    "data_scope": "东财涨跌停池口径",
+    "trade_usage": "复盘辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "break_rate",
+    "intent": "market_limit_state",
+    "primary": {"source": "eastmoney_limit_pool", "data_type": "limit_state"},
+    "fallback": [],
+    "freq": "盘后/10min",
+    "data_scope": "东财涨跌停池口径",
+    "trade_usage": "复盘辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "max_board",
+    "intent": "market_limit_state",
+    "primary": {"source": "eastmoney_limit_pool", "data_type": "limit_state"},
+    "fallback": [],
+    "freq": "盘后/10min",
+    "data_scope": "东财涨跌停池口径",
+    "trade_usage": "复盘辅助，不单独触发交易",
+    "staleness_sec": 1800,
+    "rate_class": "limited"
+  },
+  {
+    "field": "event",
+    "intent": "stock_event",
+    "primary": {"source": "eastmoney_datacenter", "data_type": "stock_event"},
+    "fallback": [],
+    "freq": "低频/日",
+    "data_scope": "东财低频事件口径",
+    "trade_usage": "风险与基本面辅助，不单独触发交易",
+    "staleness_sec": 86400,
+    "rate_class": "limited"
+  },
+  {
+    "field": "code",
+    "intent": "stock_event",
+    "primary": {"source": "eastmoney_datacenter", "data_type": "stock_event"},
+    "fallback": [],
+    "freq": "低频/日",
+    "data_scope": "东财低频事件口径",
+    "trade_usage": "风险与基本面辅助，不单独触发交易",
+    "staleness_sec": 86400,
+    "rate_class": "limited"
+  },
+  {
+    "field": "items",
+    "intent": "stock_event",
+    "primary": {"source": "eastmoney_datacenter", "data_type": "stock_event"},
+    "fallback": [],
+    "freq": "低频/日",
+    "data_scope": "东财低频事件口径",
+    "trade_usage": "风险与基本面辅助，不单独触发交易",
+    "staleness_sec": 86400,
+    "rate_class": "limited"
   }
 ]

@@ -9,6 +9,12 @@ from datetime import datetime
 from typing import Any
 
 from ym_stock_data.sources import iwencai, pytdx, ths_industry
+from ym_stock_data.sources.limit_state import (
+    fetch_limit_state as _fetch_limit_state,
+)
+from ym_stock_data.sources.stock_events import (
+    fetch_stock_event as _fetch_stock_event,
+)
 
 _PYTDX_MAX_RETRIES = 3
 _PYTDX_RETRY_SLEEP = 1.0
@@ -141,6 +147,22 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
 
 def query_iwencai(query_str: str, *, limit: int = 50) -> dict:
     return _with_meta(iwencai.query(query_str, limit=limit), data_type="iwencai", source="iwencai")
+
+
+def fetch_limit_state(date: str | None = None) -> dict:
+    return _with_meta(
+        _fetch_limit_state(date=date),
+        data_type="limit_state",
+        source="eastmoney_limit_pool",
+    )
+
+
+def fetch_stock_event(event: str, code: str, page_size: int = 30) -> dict:
+    return _with_meta(
+        _fetch_stock_event(event=event, code=code, page_size=page_size),
+        data_type="stock_event",
+        source="eastmoney_datacenter",
+    )
 
 
 def fetch_v1(data_type: str, **kwargs) -> dict:

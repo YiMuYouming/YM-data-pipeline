@@ -604,6 +604,111 @@ class V2MvpTests(unittest.TestCase):
         self.assertEqual(result["data"]["最高板"], 5)
         self.assertEqual(result["data"]["aggregates"]["limit_up_return_avg"], 1.33)
 
+    @patch("ym_stock_data.v2.adapters.fetch_limit_state")
+    def test_market_limit_state_is_additive(self, fetch_limit_state):
+        from ym_stock_data.v2 import resolve
+
+        fetch_limit_state.return_value = {
+            "zt_count": 30,
+            "zb_count": 10,
+            "dt_count": 5,
+            "break_rate": 25.0,
+            "max_board": 4,
+            "source": "eastmoney_limit_pool",
+            "_meta": {
+                "source": "eastmoney_limit_pool",
+                "fetched_at": "2026-07-14T15:10:00+08:00",
+            },
+        }
+
+        result = resolve(
+            "market_limit_state",
+            date="20260714",
+            _now=ts("2026-07-14T15:10:20+08:00"),
+        )
+
+        self.assertEqual(30, result["data"]["zt_count"])
+        self.assertEqual("market_limit_state", result["_meta"]["intent"])
+        self.assertEqual(
+            ["eastmoney_limit_pool"], result["_meta"]["source_chain"]
+        )
+        self.assertEqual("normal", result["_meta"]["quality"]["status"])
+
+    @patch("ym_stock_data.v2.adapters.fetch_limit_state")
+    def test_market_limit_state_source_error_is_explicit(self, fetch_limit_state):
+        from ym_stock_data.v2 import resolve
+
+        fetch_limit_state.return_value = {
+            "error": "timed out",
+            "error_type": "TimeoutError",
+            "source": "eastmoney_limit_pool",
+            "_meta": {
+                "source": "eastmoney_limit_pool",
+                "fetched_at": "2026-07-14T15:10:00+08:00",
+                "error": True,
+            },
+        }
+
+        result = resolve("market_limit_state", date="20260714")
+
+        self.assertEqual("error", result["_meta"]["quality"]["status"])
+        self.assertEqual("error", result["_meta"]["confidence"])
+
+    @patch("ym_stock_data.v2.adapters.fetch_stock_event")
+    def test_stock_event_is_additive(self, fetch_stock_event):
+        from ym_stock_data.v2 import resolve
+
+        fetch_stock_event.return_value = {
+            "event": "lockup",
+            "code": "600519",
+            "total": 1,
+            "items": [{"date": "2026-08-01"}],
+            "source": "eastmoney_datacenter",
+            "_meta": {
+                "source": "eastmoney_datacenter",
+                "fetched_at": "2026-07-14T15:10:00+08:00",
+            },
+        }
+
+        result = resolve(
+            "stock_event",
+            event="lockup",
+            code="600519",
+            _now=ts("2026-07-14T15:10:20+08:00"),
+        )
+
+        self.assertEqual(1, result["data"]["total"])
+        self.assertEqual("stock_event", result["_meta"]["intent"])
+        self.assertEqual("normal", result["_meta"]["quality"]["status"])
+
+    @patch("ym_stock_data.v2.adapters.fetch_stock_event")
+    def test_stock_event_empty_result_has_empty_quality(self, fetch_stock_event):
+        from ym_stock_data.v2 import resolve
+
+        fetch_stock_event.return_value = {
+            "event": "lockup",
+            "code": "600519",
+            "total": 0,
+            "items": [],
+            "source": "eastmoney_datacenter",
+            "_meta": {
+                "source": "eastmoney_datacenter",
+                "fetched_at": "2026-07-14T15:10:00+08:00",
+            },
+        }
+
+        result = resolve("stock_event", event="lockup", code="600519")
+
+        self.assertEqual("empty", result["_meta"]["quality"]["status"])
+
+    def test_stock_event_requires_event_and_code(self):
+        from ym_stock_data.v2 import resolve
+
+        with self.assertRaisesRegex(ValueError, "event"):
+            resolve("stock_event", code="600519")
+        with self.assertRaisesRegex(ValueError, "code"):
+            resolve("stock_event", event="lockup")
+
     def test_fields_policy_covers_critical_fields(self):
         fields_path = Path(__file__).resolve().parents[1] / "ym_stock_data/v2/policies/fields.json"
         fields = json.loads(fields_path.read_text(encoding="utf-8"))

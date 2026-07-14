@@ -14,7 +14,15 @@ from .quality import assess_quality, rollup_qualities
 
 
 DEFAULT_REVIEW_SENTIMENT_QUERY = "昨日涨停 今日涨跌幅 非st"
-SUPPORTED_INTENTS = ["realtime_market", "sector_index", "review_sentiment", "stock_snapshot", "stock_kline"]
+SUPPORTED_INTENTS = [
+    "realtime_market",
+    "sector_index",
+    "review_sentiment",
+    "stock_snapshot",
+    "stock_kline",
+    "market_limit_state",
+    "stock_event",
+]
 SUPPORTED_KLINE_PERIODS = {"daily", "weekly", "monthly", "60m", "15m", "5m"}
 
 
@@ -285,6 +293,78 @@ def resolve(intent: str, *, _now: datetime | None = None, **kwargs) -> dict:
             source=source,
             source_chain=_source_chain(source, raw if isinstance(raw, dict) else {}),
             data_scope=data_scope,
+            staleness_sec=_intent_staleness(intent),
+            trade_usage=_intent_trade_usage(intent),
+            now=_now,
+            quality=quality,
+        )
+
+    if intent == "market_limit_state":
+        raw = adapters.fetch_limit_state(date=kwargs.get("date"))
+        source = (
+            raw.get("_meta", {}).get("source", "eastmoney_limit_pool")
+            if isinstance(raw, dict)
+            else "eastmoney_limit_pool"
+        )
+        source_error = _source_error(raw)
+        required = ("zt_count", "zb_count", "dt_count", "break_rate", "max_board")
+        missing = [field for field in required if field not in raw]
+        has_rows = not source_error and not missing and any(
+            int(raw.get(field, 0) or 0) > 0
+            for field in ("zt_count", "zb_count", "dt_count")
+        )
+        quality = assess_quality(
+            [raw] if has_rows else [],
+            missing=missing,
+            source_error=source_error,
+        )
+        return normalize_result(
+            intent=intent,
+            raw=raw,
+            source=source,
+            source_chain=_source_chain(source, raw),
+            data_scope=_intent_data_scope(intent, "东财涨跌停池口径"),
+            staleness_sec=_intent_staleness(intent),
+            trade_usage=_intent_trade_usage(intent),
+            now=_now,
+            quality=quality,
+        )
+
+    if intent == "stock_event":
+        event = kwargs.get("event")
+        code = kwargs.get("code")
+        if not event:
+            raise ValueError("stock_event 需要提供 event")
+        if not code:
+            raise ValueError("stock_event 需要提供 code")
+        page_size = int(kwargs.get("page_size", 30))
+        if page_size <= 0:
+            raise ValueError("stock_event page_size 必须大于 0")
+        raw = adapters.fetch_stock_event(
+            event=str(event),
+            code=str(code),
+            page_size=page_size,
+        )
+        source = (
+            raw.get("_meta", {}).get("source", "eastmoney_datacenter")
+            if isinstance(raw, dict)
+            else "eastmoney_datacenter"
+        )
+        items = raw.get("items", []) if isinstance(raw, dict) else []
+        if not isinstance(items, list):
+            items = []
+        missing = [field for field in ("event", "code", "items") if field not in raw]
+        quality = assess_quality(
+            items,
+            missing=missing,
+            source_error=_source_error(raw),
+        )
+        return normalize_result(
+            intent=intent,
+            raw=raw,
+            source=source,
+            source_chain=_source_chain(source, raw),
+            data_scope=_intent_data_scope(intent, "东财低频事件口径"),
             staleness_sec=_intent_staleness(intent),
             trade_usage=_intent_trade_usage(intent),
             now=_now,

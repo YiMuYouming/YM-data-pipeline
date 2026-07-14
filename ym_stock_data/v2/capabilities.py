@@ -15,6 +15,8 @@ _MANIFEST = {
         "stock_snapshot": {"status": "stable"},
         "stock_kline": {"status": "stable"},
         "review_sentiment": {"status": "stable"},
+        "market_limit_state": {"status": "experimental"},
+        "stock_event": {"status": "experimental"},
     },
     "v1_routes": {
         "limit_state": {"status": "experimental"},

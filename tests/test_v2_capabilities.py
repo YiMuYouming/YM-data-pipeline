@@ -17,14 +17,32 @@ class CapabilityManifestTests(unittest.TestCase):
                 "stock_snapshot",
                 "stock_kline",
                 "review_sentiment",
+                "market_limit_state",
+                "stock_event",
             },
             set(manifest["v2_intents"]),
         )
-        self.assertTrue(
-            all(
-                item["status"] == "stable"
-                for item in manifest["v2_intents"].values()
+        for intent in (
+            "realtime_market",
+            "sector_index",
+            "stock_snapshot",
+            "stock_kline",
+            "review_sentiment",
+        ):
+            self.assertEqual(
+                "stable", manifest["v2_intents"][intent]["status"]
             )
+
+    def test_manifest_exposes_new_v2_intents_as_experimental(self):
+        manifest = capability_manifest()
+
+        self.assertEqual(
+            "experimental",
+            manifest["v2_intents"]["market_limit_state"]["status"],
+        )
+        self.assertEqual(
+            "experimental",
+            manifest["v2_intents"]["stock_event"]["status"],
         )
 
     def test_manifest_exposes_current_v1_sidecars_and_manual_boundary(self):
