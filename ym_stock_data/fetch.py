@@ -54,6 +54,7 @@ _ROUTES = {
     "limit_state":   ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
     "market_limit_state": ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
     "stock_event":   ("stock_events", "fetch_stock_event", {"layer": 4, "desc": "解禁/两融/大宗/股东户数/分红低频事实"}),
+    "iwencai_content": ("iwencai_content", "search_content", {"layer": 4, "desc": "问财研报/公告/新闻自然语言内容搜索"}),
 }
 
 
