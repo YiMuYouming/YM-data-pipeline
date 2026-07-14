@@ -51,6 +51,8 @@ _ROUTES = {
     "research":      ("research", "fetch_reports",    {"layer": 4, "desc": "个股研报(东财reportapi)"}),
     "filings":       ("filings", "fetch_filings",     {"layer": 4, "desc": "公司公告(巨潮cninfo)"}),
     "news":          ("news", "fetch_news",           {"layer": 4, "desc": "实时新闻(财联社电报)"}),
+    "limit_state":   ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
+    "market_limit_state": ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
 }
 
 

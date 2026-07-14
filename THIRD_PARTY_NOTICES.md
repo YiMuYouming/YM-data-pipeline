@@ -1,0 +1,12 @@
+# Third-party notices
+
+## a-stock-data endpoint research
+
+The Eastmoney limit-pool endpoint discovery used by
+`ym_stock_data/sources/limit_state.py` was informed by
+`simonlin1212/a-stock-data` commit
+`9ed665cc9773457bc23fed6b770b2b5a8cede40f`, licensed under Apache-2.0.
+
+The implementation in this repository was rewritten for YM-data-pipeline's
+thread-safety, error, provenance, and compatibility contracts. No upstream
+source code is vendored.
