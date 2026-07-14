@@ -72,6 +72,7 @@ PY
 - 使用 TDX MCP 时，输出必须标注 `source=tdx_mcp` 和查询时间。
 - 如果 `tdx-finance` 未暴露工具、`tools/list` 失败、token 过期、HTTP 401/400、或 WorkBuddy OAuth 缓存失效，必须直接告诉弈沐需要重新授权；禁止猜测、补齐或基于旧缓存下结论。
 - TDX MCP 只补“宽度”和“细节”，不能单独触发交易建议。
+- TDX MCP 不由 `fetch()`/`resolve()` 自动调用；只有完成 20 例与连续 5 个交易日对账，才讨论把个别字段从 `cross_check_only` 提升为 `fallback_candidate`，本轮不执行提升。
 
 ## 投研输出约定
 

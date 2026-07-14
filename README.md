@@ -75,6 +75,11 @@ TDX MCP 是授权型增强源，只用于 Agent 投研、问财故障兜底和�
 3. TDX 结果必须在输出里标注 `source=tdx_mcp`，不能伪装成本地 V2 结果。
 4. TDX 授权失效、`tools/list` 失败、token 过期或返回 HTTP 401/400 时，必须向弈沐请求重新授权；禁止猜测、补齐或基于旧结果下结论。
 
+TDX MCP 不由 `fetch()`/`resolve()` 自动调用，也不读取旧结果伪装本地
+source。只有完成 [`docs/TDX-MCP-备用源验证清单.md`](docs/TDX-MCP-备用源验证清单.md)
+中的 20 例和连续 5 个交易日对账，才讨论把个别字段从
+`cross_check_only` 提升为 `fallback_candidate`；本轮不执行提升。
+
 常用 TDX MCP 工具：
 
 | 工具 | 用途 | 适合场景 |
