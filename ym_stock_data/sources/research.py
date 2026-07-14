@@ -22,8 +22,7 @@ _HEADERS = {
 def fetch_reports(code: str, days: int = 90, max_pages: int = 15) -> dict:
     """获取个股研报列表
 
-    API 不支持服务端 stockCode 过滤，采用拉取+客户端过滤策略。
-    大盘股研报可能在后几页，max_pages 默认 15。
+    服务端按股票代码筛选，并保留客户端防御性代码校验。
 
     Args:
         code: 6位股票代码, 如 "600519"
@@ -45,24 +44,30 @@ def fetch_reports(code: str, days: int = 90, max_pages: int = 15) -> dict:
             "qType": 0,
             "beginTime": start,
             "endTime": end,
+            "industryCode": "*",
+            "industry": "*",
+            "rating": "*",
+            "ratingChange": "*",
+            "orgCode": "",
+            "code": code,
+            "rcode": "",
         }
         try:
             r = requests.get(_URL, params=params, headers=_HEADERS, timeout=10)
             if r.status_code != 200:
                 break
             data = r.json()
-            items = data.get("data", [])
+            items = data.get("data") or []
             if not items:
                 break
-            all_reports.extend(items)
+            all_reports.extend(item for item in items if item.get("stockCode") == code)
+            if page >= int(data.get("TotalPage") or 1):
+                break
         except Exception:
             break
 
-    # 客户端过滤指定股票
-    matched = [r for r in all_reports if r.get("stockCode", "") == code]
-
     reports = []
-    for item in matched:
+    for item in all_reports:
         reports.append({
             "title": item.get("title", ""),
             "publish_date": str(item.get("publishDate", ""))[:10],
