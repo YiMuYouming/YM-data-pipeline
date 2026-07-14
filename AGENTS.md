@@ -33,6 +33,8 @@ print(resolve("sector_index", names=["半导体"])["_meta"])
 print(resolve("stock_snapshot", codes=["603290", "688187"])["_meta"])
 print(resolve("stock_kline", code="603290", period="daily", count=20)["_meta"])
 print(resolve("review_sentiment", query="A股 IGBT 概念股 非ST 总市值 PE PB", limit=20)["_meta"])
+print(resolve("market_limit_state")["_meta"])
+print(resolve("stock_event", event="lockup", code="600519")["_meta"])
 PY
 ```
 
@@ -45,8 +47,12 @@ PY
 | `stock_snapshot` | 个股实时行情/均线快照 | `resolve("stock_snapshot", codes=["603290"])` |
 | `stock_kline` | 个股 K 线/均线 | `resolve("stock_kline", code="603290", period="daily", count=20)` |
 | `review_sentiment` | 问财 query 执行与复盘情绪聚合 | `resolve("review_sentiment", query="涨停 非ST", limit=20)` |
+| `market_limit_state` | 涨停/炸板/跌停池聚合（旁路实验） | `resolve("market_limit_state")` |
+| `stock_event` | 个股低频事件（旁路实验） | `resolve("stock_event", event="lockup", code="600519")` |
 
 额度规则：`resolve("review_sentiment")` 不传 `query` 时默认先走 PyTDX breadth，不调用问财；PyTDX breadth 不可用时最多降级为 1 次问财。显式字符串 `query=...` 才执行单次自然语言查询；只有显式列表 `query=[...]` 才允许批量问财。成功的 OpenAPI 结果默认缓存 300 秒，可通过 `IWENCAI_QUERY_CACHE_TTL=0..1800` 调整。
+
+`market_limit_state` 与 `stock_event` 当前均为 `experimental` 旁路能力，只用于研究和连续五个交易日对账；未通过 Gate 3 前不改变任何现有消费者路由。
 
 注意：旧 flat 入口 `fetch("iwencai", query="...")` 当前可能因参数名兼容问题报 `query() got an unexpected keyword argument 'query'`。这不代表 V2 或问财源不可用。遇到该错误时，优先改用 `resolve("review_sentiment", query=...)`；若只需底层原始问财结果，可直接调用 `ym_stock_data.sources.iwencai.query("...", limit=...)`。
 

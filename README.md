@@ -48,6 +48,8 @@ resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fe
 resolve("stock_kline", code="002475", period="15m", count=20)  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
 resolve("review_sentiment")   # 默认走 PyTDX breadth，不消耗问财额度
 resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st")  # 显式自然语言查询才走问财
+resolve("market_limit_state")  # 东财涨跌停池聚合，仍为旁路实验能力
+resolve("stock_event", event="lockup", code="600519")  # 个股低频事件，仍为旁路实验能力
 ```
 
 边界：
@@ -61,6 +63,7 @@ resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st")  # 显�
 - PyTDX 节点不能只看 TCP 握手；连接后会执行轻量报价探针，空节点自动跳过。服务器池全部不可用时短期熔断，直接走无鉴权 HTTP fallback。
 - `review_sentiment` 不传 `query` 时优先走零鉴权 PyTDX breadth，直接计算涨跌家数、涨跌停家数和红盘率；PyTDX 不可用时最多降级为 1 次问财，不再隐式批量执行 6 个 query。
 - 传入字符串 `query=...` 时只执行 1 次问财；确需批量聚合时必须显式传入 `query=[...]`。批量结果带 `query_summary`，不会由默认调用暗中消耗多次额度。
+- `market_limit_state` 和 `stock_event` 当前标记为 `experimental`，只做旁路研究与五交易日对账，不切换任何现有消费者。
 - 问财 OpenAPI 成功结果按“标准化 query + limit + page”做 300 秒进程内缓存；命中时 `_meta.cache_hit=true`。可用 `IWENCAI_QUERY_CACHE_TTL=0..1800` 调整，设为 `0` 可关闭。
 - v2 与 v1 冲突时，以当前 v1 生产链路为准。
 
