@@ -8,7 +8,8 @@
 
 from datetime import datetime
 from typing import Optional
-import requests
+
+from .eastmoney_http import CLIENT
 
 _EM_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -49,7 +50,13 @@ def fetch_daily_dragon_tiger(
         "client": "WEB",
     }
 
-    resp = requests.get(url, params=params, headers=_EM_HEADERS, timeout=15)
+    resp = CLIENT.get(url, params=params, headers=_EM_HEADERS, timeout=15)
+    if getattr(resp, "skipped_by_breaker", False) is True:
+        return {
+            "error": resp.reason,
+            "error_type": "breaker_open",
+            "_source": "none",
+        }
     resp.raise_for_status()
     d = resp.json()
 

@@ -12,6 +12,8 @@
 import requests
 from datetime import date, timedelta
 
+from .eastmoney_http import CLIENT
+
 _URL = "https://reportapi.eastmoney.com/report/list"
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
@@ -53,7 +55,13 @@ def fetch_reports(code: str, days: int = 90, max_pages: int = 15) -> dict:
             "rcode": "",
         }
         try:
-            r = requests.get(_URL, params=params, headers=_HEADERS, timeout=10)
+            r = CLIENT.get(_URL, params=params, headers=_HEADERS, timeout=10)
+            if getattr(r, "skipped_by_breaker", False) is True:
+                return {
+                    "error": r.reason,
+                    "error_type": "breaker_open",
+                    "_source": "none",
+                }
             if r.status_code != 200:
                 break
             data = r.json()

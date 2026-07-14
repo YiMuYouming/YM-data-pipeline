@@ -35,7 +35,7 @@ class NewsContractTests(unittest.TestCase):
 
 
 class ResearchContractTests(unittest.TestCase):
-    @patch("ym_stock_data.sources.research.requests.get")
+    @patch("ym_stock_data.sources.research.CLIENT.get")
     def test_fetch_reports_sends_code_to_server(self, get):
         response = Mock()
         response.status_code = 200
