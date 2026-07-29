@@ -17,6 +17,7 @@ class ProviderOutcome:
     latency_ms: int = 0
     quality: dict | None = None
     auth: dict | None = None
+    provenance: dict | None = None
 
 
 class Provider(Protocol):

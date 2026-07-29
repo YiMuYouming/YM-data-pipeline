@@ -110,6 +110,68 @@ class PublicApiTests(unittest.TestCase):
         )
         self.assertEqual("INVALID_EMPTY", result["_meta"]["attempts"][0]["error_code"])
 
+    def test_sector_empty_is_a_semantically_valid_empty_set(self):
+        first = FakeProvider(
+            "ths_industry",
+            [outcome("ths_industry", "empty", data={"items": [], "missing": ["不存在板块"]})],
+        )
+        with self.provider_patch({"ths_industry": first}):
+            result = query("sector_index", names=["不存在板块"])
+
+        self.assertEqual("empty", result["_meta"]["status"])
+        self.assertEqual("ths_industry", result["_meta"]["provider_used"])
+
+    def test_uniform_row_level_fallback_promotes_actual_provider(self):
+        raw = {
+            "600519": {"price": 1400, "_source": "tencent_fallback"},
+            "000858": {"price": 120, "_source": "tencent_fallback"},
+        }
+        with patch(
+            "ym_stock_data.providers.local.pytdx.fetch_quotes",
+            return_value=raw,
+        ):
+            result = query("stock_snapshot", codes=["600519", "000858"])
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["pytdx", "tencent"],
+            result["_meta"]["source_chain"],
+        )
+
+    def test_mixed_row_provenance_is_not_reported_as_pytdx(self):
+        mixed = {
+            "600519": {"price": 1400},
+            "000858": {"price": 120, "_source": "tencent_fallback"},
+        }
+        tencent_rows = {
+            "600519": {"price": 1400},
+            "000858": {"price": 120},
+        }
+        with patch(
+            "ym_stock_data.providers.local.pytdx.fetch_quotes",
+            return_value=mixed,
+        ), patch(
+            "ym_stock_data.providers.local.tencent.fetch_quotes",
+            return_value=tencent_rows,
+        ):
+            result = query("stock_snapshot", codes=["600519", "000858"])
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual("MIXED_PROVENANCE", result["_meta"]["attempts"][0]["error_code"])
+
+    def test_stock_kline_count_is_applied_on_primary_path(self):
+        raw = {"code": "600519", "bars": [{"time": str(index)} for index in range(5)]}
+        with patch(
+            "ym_stock_data.providers.local.pytdx.fetch_kline",
+            return_value=raw,
+        ):
+            result = query("stock_kline", code="600519", period="daily", count=2)
+
+        self.assertEqual([{"time": "3"}, {"time": "4"}], result["data"]["bars"])
+        self.assertEqual(2, result["data"]["requested_count"])
+
     def test_compatible_failures_continue_and_degrade_success(self):
         for failed_status in (
             "auth_error",
@@ -159,11 +221,60 @@ class PublicApiTests(unittest.TestCase):
             result["_meta"]["attempts"][1]["error_code"],
         )
 
+    def test_route_external_provider_claim_is_rejected(self):
+        spoof = FakeProvider(
+            "pytdx",
+            [outcome("wind_mcp", "success", data={"上证指数": 3200})],
+        )
+        fallback = FakeProvider(
+            "eastmoney",
+            [outcome("eastmoney", "success", data={"上证指数": 3200})],
+        )
+        with self.provider_patch({"pytdx": spoof, "eastmoney": fallback}):
+            result = query("realtime_market")
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("eastmoney", result["_meta"]["provider_used"])
+        self.assertEqual(
+            "INCOMPATIBLE_PROVIDER",
+            result["_meta"]["attempts"][0]["error_code"],
+        )
+
+    def test_unverified_route_internal_provider_claim_is_rejected(self):
+        spoof = FakeProvider(
+            "pytdx",
+            [outcome("tencent", "success", data={"600519": {"price": 1400}})],
+        )
+        fallback = FakeProvider(
+            "tencent",
+            [outcome("tencent", "success", data={"600519": {"price": 1400}})],
+        )
+        with self.provider_patch({"pytdx": spoof, "tencent": fallback}):
+            result = query("stock_snapshot", codes=["600519"])
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual(
+            "INCOMPATIBLE_PROVIDER",
+            result["_meta"]["attempts"][0]["error_code"],
+        )
+
     def test_parameter_validation_happens_before_provider_call(self):
         provider = FakeProvider("pytdx", [AssertionError("must not run")])
         with self.provider_patch({"pytdx": provider}):
             with self.assertRaises(ValueError):
                 query("stock_snapshot")
+        self.assertEqual([], provider.calls)
+
+    def test_invalid_numeric_and_unknown_params_fail_before_provider_call(self):
+        provider = FakeProvider("pytdx", [AssertionError("must not run")])
+        with self.provider_patch({"pytdx": provider}):
+            with self.assertRaises(ValueError):
+                query("stock_kline", code="600519", count="not-a-number")
+            with self.assertRaises(ValueError):
+                query("stock_snapshot", codes=["600519"], mystery=True)
+            with self.assertRaises(ValueError):
+                query("review_sentiment", query=["涨停", "连板"])
         self.assertEqual([], provider.calls)
 
     def test_breaker_is_an_auditable_attempt_and_provider_is_skipped(self):

@@ -25,6 +25,19 @@ _CONTINUE_STATUSES = {
     "breaker_open",
     "incompatible",
 }
+_ALLOWED_PARAMS = {
+    "realtime_market": frozenset(),
+    "sector_index": frozenset({"codes", "names"}),
+    "stock_snapshot": frozenset({"codes"}),
+    "stock_kline": frozenset({"code", "period", "count"}),
+    "review_sentiment": frozenset({"query", "limit", "date"}),
+    "market_limit_state": frozenset({"date"}),
+    "stock_event": frozenset({"event", "code", "page_size"}),
+    "research": frozenset({"code", "days", "max_pages"}),
+    "filings": frozenset({"code", "days", "max_pages"}),
+    "news": frozenset({"limit"}),
+    "wind_enrichment": frozenset({"capability", "code", "codes", "fields", "params"}),
+}
 
 
 class UnavailableProvider:
@@ -78,6 +91,9 @@ def _safe_error_code(value: object, default: str) -> str:
 
 
 def _validate_params(intent: str, params: dict) -> None:
+    unknown = set(params) - _ALLOWED_PARAMS[intent]
+    if unknown:
+        raise ValueError(f"unsupported {intent} params: {', '.join(sorted(unknown))}")
     if intent == "stock_snapshot":
         codes = params.get("codes")
         if isinstance(codes, str):
@@ -171,7 +187,7 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
     if intent == "sector_index":
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
-        return count > 0, False, count
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
     if intent == "stock_snapshot":
         codes = params["codes"]
         count = sum(
@@ -262,6 +278,22 @@ def query(intent: str, **params) -> dict:
         error_code = outcome.error_code
         actual_provider = outcome.provider or provider_name
         if actual_provider != provider_name and outcome_status in {"success", "empty"}:
+            provenance = outcome.provenance or {}
+            verified_fallback = (
+                provenance.get("verified") is True
+                and provenance.get("fallback_from") == provider_name
+                and provenance.get("kind") == "source_internal"
+            )
+            if actual_provider not in spec.providers or not verified_fallback:
+                attempts.append(
+                    ProviderAttempt(
+                        provider_name,
+                        "provider_error",
+                        "INCOMPATIBLE_PROVIDER",
+                        max(0, int(outcome.latency_ms)),
+                    )
+                )
+                continue
             attempts.append(
                 ProviderAttempt(provider_name, "provider_error", "INTERNAL_FALLBACK", 0)
             )

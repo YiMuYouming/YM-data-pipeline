@@ -63,6 +63,23 @@ def _actual_source(provider: str, raw: dict) -> str:
     return aliases.get(source, source.removesuffix("_fallback"))
 
 
+def _row_sources(provider: str, raw: dict) -> set[str]:
+    """Return effective sources for quote rows, including unmarked PyTDX rows."""
+
+    sources: set[str] = set()
+    for key, value in raw.items():
+        if key in {"_meta", "_source", "error", "error_type"}:
+            continue
+        if not isinstance(value, dict) or value.get("error"):
+            continue
+        marker = value.get("_source")
+        if isinstance(marker, str) and marker:
+            sources.add(_actual_source(provider, {"_source": marker}))
+        else:
+            sources.add(provider)
+    return sources
+
+
 def _row_count(intent: str, raw: dict) -> int:
     if intent == "review_sentiment" and "_total" in raw:
         try:
@@ -131,8 +148,22 @@ class LocalProvider:
             return self._failure(started, status, _error_code(error_type))
 
         count = _row_count(intent, raw)
+        actual_source = _actual_source(self.name, raw)
+        if intent == "stock_snapshot":
+            row_sources = _row_sources(self.name, raw)
+            if len(row_sources) > 1:
+                return self._failure(started, "provider_error", "MIXED_PROVENANCE")
+            if row_sources:
+                actual_source = next(iter(row_sources))
+        provenance = None
+        if actual_source != self.name:
+            provenance = {
+                "verified": True,
+                "fallback_from": self.name,
+                "kind": "source_internal",
+            }
         return ProviderOutcome(
-            provider=_actual_source(self.name, raw),
+            provider=actual_source,
             status="success" if count else "empty",
             data=raw,
             fetched_at=meta.get("fetched_at") or _now_iso(),
@@ -143,6 +174,7 @@ class LocalProvider:
                 "reason_codes": [],
             },
             auth={"required": False, "status": "not_required"},
+            provenance=provenance,
         )
 
     def _failure(self, started: float, status: str, error_code: str) -> ProviderOutcome:
@@ -161,9 +193,7 @@ class LocalProvider:
             ("tencent", "realtime_market"): pytdx._fallback_index_tencent,
             ("pytdx", "stock_snapshot"): lambda: pytdx.fetch_quotes(params["codes"]),
             ("tencent", "stock_snapshot"): lambda: tencent.fetch_quotes(params["codes"]),
-            ("pytdx", "stock_kline"): lambda: pytdx.fetch_kline(
-                params["code"], period=params.get("period", "daily")
-            ),
+            ("pytdx", "stock_kline"): lambda: self._pytdx_kline(params),
             ("tencent", "stock_kline"): lambda: self._http_kline(
                 provider="tencent", params=params
             ),
@@ -209,6 +239,22 @@ class LocalProvider:
                 else "INCOMPATIBLE_INTENT",
             )
         return callback()
+
+    @staticmethod
+    def _pytdx_kline(params: dict) -> dict:
+        raw = pytdx.fetch_kline(
+            params["code"], period=params.get("period", "daily")
+        )
+        if not isinstance(raw, dict) or params.get("count") is None:
+            return raw
+        result = dict(raw)
+        bars = raw.get("bars")
+        if isinstance(bars, list):
+            count = params["count"]
+            result["bars"] = list(bars[-count:])
+            result["requested_count"] = count
+            result["returned_bars"] = len(result["bars"])
+        return result
 
     @staticmethod
     def _http_kline(*, provider: str, params: dict) -> dict:
