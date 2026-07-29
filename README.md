@@ -1,195 +1,114 @@
-# YM-data-pipeline v2.0
+# ym-stock-data
 
-弈沐资本 A 股统一数据管道。为看板/复盘/投研提供统一数据基座。
+弈沐资本 A 股统一数据通道。正式公共入口只有 `ym_stock_data.query()`；所有成功、合法空集和失败都返回 contract 1.0，并在 `_meta` 中保留真实 provider、attempt chain、质量与错误码。
 
-## v2.0 治理方案
+## 快速开始
 
-v2.0 的目标是从“统一数据源路由”升级为“统一入口、统一策略、统一口径、按场景调用”。详细方案见：
-
-- [YM-data-pipeline-2.0-数据源治理方案.md](docs/YM-data-pipeline-2.0-数据源治理方案.md)
-- [YM-data-pipeline-v2.0-MVP-试运行记录.md](docs/YM-data-pipeline-v2.0-MVP-试运行记录.md)
-
-## 用法
-
-### v1 生产入口
-
-```python
-from ym_stock_data import fetch
-
-# L2 技术分析 (PyTDX TCP 长连接)
-fetch("quotes", codes=["688017"])          # 个股实时报价
-fetch("index")                              # 三大指数
-fetch("breadth")                            # 涨跌分布
-fetch("sector_index", names=["算力"])       # 板块指数
-fetch("kline", code="688017", period="daily")
-
-# L1 基础行情
-# 问财请用下方 V2 resolve("review_sentiment", query=...)；旧 flat 参数不兼容
-fetch("ths_hot")                            # 同花顺热点+题材归因
-fetch("tencent", codes=["688017"])          # PE/PB/市值
-
-# L3 资金流向
-fetch("northbound")                         # 北向资金分钟级
-fetch("dragon_tiger")                       # 龙虎榜
-fetch("sector_inflow", top_n=20)            # 行业板块净流入
-```
-
-### v2.0 MVP 旁路入口
-
-v2.0 新增 `ym_stock_data.v2.resolve()`，当前只用于 Agent 验证、红方草稿和方案调试，不切 live-dashboard、不切正式复盘、不用于盘中交易决策。
-
-```python
-from ym_stock_data.v2 import resolve
-
-resolve("realtime_market")    # 直连 sources.pytdx.fetch_index，补 source_chain/data_scope/staleness
-resolve("sector_index", codes=["881124"])  # 直连同花顺 881 行业板块，返回涨跌幅/主力净流入
-resolve("sector_index", names=["消费电子", "通信设备"])  # 名称查询同样映射到 881xxx
-resolve("stock_snapshot", codes=["002475", "002281"])  # 直连 sources.pytdx.fetch_quotes
-resolve("stock_kline", code="002475", period="15m", count=20)  # 直连 sources.pytdx.fetch_kline，返回 bars/MA
-resolve("review_sentiment")   # 默认走 PyTDX breadth，不消耗问财额度
-resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st")  # 显式自然语言查询才走问财
-resolve("market_limit_state")  # 东财涨跌停池聚合，仍为旁路实验能力
-resolve("stock_event", event="lockup", code="600519")  # 个股低频事件，仍为旁路实验能力
-```
-
-边界：
-- 生产脚本继续使用 `from ym_stock_data import fetch`。
-- v2 直接复用 `sources/*`，不再经过 v1 `fetch()` 路由。
-- v2 返回统一 `_meta`，包含 `source_chain`、`data_scope`、`fetched_at`、`confidence`。
-- 超过字段 `staleness_sec` 的数据会标注 `confidence: "stale"`。
-- `sector_index` 只使用同花顺行业 881xxx 口径，不使用中证 931xxx，也不复用 V1 的 TDX 880xxx 板块线。
-- `stock_snapshot` 当前只承诺 v1 `quotes` 已有字段，不承诺 MACD 和资金流。
-- `stock_kline` 主源为 PyTDX，支持 `daily` / `weekly` / `monthly` / `60m` / `15m` / `5m` 和 `count` 截断；PyTDX 无业务数据时，日/周/月自动降级腾讯，5/15/60 分钟自动降级新浪，并在 `_meta.source_chain` 标注真实来源。
-- PyTDX 节点不能只看 TCP 握手；连接后会执行轻量报价探针，空节点自动跳过。服务器池全部不可用时短期熔断，直接走无鉴权 HTTP fallback。
-- `review_sentiment` 不传 `query` 时优先走零鉴权 PyTDX breadth，直接计算涨跌家数、涨跌停家数和红盘率；PyTDX 不可用时最多降级为 1 次问财，不再隐式批量执行 6 个 query。
-- 传入字符串 `query=...` 时只执行 1 次问财；确需批量聚合时必须显式传入 `query=[...]`。批量结果带 `query_summary`，不会由默认调用暗中消耗多次额度。
-- `market_limit_state` 和 `stock_event` 当前标记为 `experimental`，只做旁路研究与五交易日对账，不切换任何现有消费者。
-- 问财 OpenAPI 成功结果按“标准化 query + limit + page”做 300 秒进程内缓存；命中时 `_meta.cache_hit=true`。可用 `IWENCAI_QUERY_CACHE_TTL=0..1800` 调整，设为 `0` 可关闭。
-- v2 与 v1 冲突时，以当前 v1 生产链路为准。
-
-### TDX MCP 备用源规则
-
-TDX MCP 是授权型增强源，只用于 Agent 投研、问财故障兜底和交叉验证，不进入自动交易主链路。
-
-优先级：
-
-1. 主流程仍用 `resolve(...)` / `fetch(...)` 的本地管道结果。
-2. 问财 OpenAPI + pywencai 都失败、额度耗尽或返回空结果时，可使用 Codex MCP `tdx-finance` 备用。
-3. TDX 结果必须在输出里标注 `source=tdx_mcp`，不能伪装成本地 V2 结果。
-4. TDX 授权失效、`tools/list` 失败、token 过期或返回 HTTP 401/400 时，必须向弈沐请求重新授权；禁止猜测、补齐或基于旧结果下结论。
-
-TDX MCP 不由 `fetch()`/`resolve()` 自动调用，也不读取旧结果伪装本地
-source。只有完成 [`docs/TDX-MCP-备用源验证清单.md`](docs/TDX-MCP-备用源验证清单.md)
-中的 20 例和连续 5 个交易日对账，才讨论把个别字段从
-`cross_check_only` 提升为 `fallback_candidate`；本轮不执行提升。
-
-常用 TDX MCP 工具：
-
-| 工具 | 用途 | 适合场景 |
-|---|---|---|
-| `tdx_screener` | 自然语言条件选股 | 问财挂了时筛主题/板块候选 |
-| `tdx_quotes` | 个股实时行情、换手、成交额、盘口、估值 | 单票细节补充和交叉验证 |
-| `tdx_kline` | K 线数据 | 与 PyTDX K 线做一致性校验 |
-| `tdx_lookup_stock` | 名称查代码和市场码 | 不确定代码时先查 |
-| `wenda_report_query` | 研报 | 单票基本面补充 |
-| `wenda_notice_query` | 公告 | 业绩、减持、重大事项核对 |
-| `wenda_news_query` | 新闻资讯 | 个股催化和题材归因补充 |
-
-TDX 适合补“宽度”和“细节”，但不替代 V2 的 `_meta`、时效、均线和规则治理。
-
-### Wind MCP 受治理研究补充源
-
-Wind MCP 已进入正式 provider registry，但仍是 `registered_experimental`：只允许显式
-`wind_enrichment` 研究增强，以及在巨潮和 TDX 公告源失败后的 `filings` 兼容降级。
-它不接实时行情、K 线、分钟数据、新闻、泛选股或 `stock_event` 自动路由。
-
-显式研究增强统一走 canonical `query()`：
+在项目环境中调用，避免把系统 Python 缺依赖误判为 provider 不可用：
 
 ```bash
+cd /Users/yimu/Documents/YM_Capital/YM-data-pipeline
 uv run python - <<'PY'
+from ym_stock_data import query
+
+print(query("realtime_market")["_meta"])
+print(query("sector_index", names=["半导体"])["_meta"])
+print(query("stock_snapshot", codes=["603290", "688187"])["_meta"])
+print(query("stock_kline", code="603290", period="daily", count=20)["_meta"])
+print(query("review_sentiment", query="A股 IGBT 概念股 非ST", limit=20)["_meta"])
+PY
+```
+
+主要 intent：
+
+| intent | 用途 | 关键参数 |
+| --- | --- | --- |
+| `realtime_market` | 指数、成交额、涨跌家数 | 无 |
+| `sector_index` | 行业板块 | `names` / `codes` |
+| `stock_snapshot` | 个股行情与均线快照 | `codes` |
+| `stock_kline` | 个股 K 线 | `code`, `period`, `count` |
+| `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `page` |
+| `market_limit_state` | 涨跌停池聚合 | 无 |
+| `stock_event` | 个股低频事件 | `event`, `code` |
+| `research` / `filings` / `news` | 研报、公告、新闻 | `code` 等 intent 参数 |
+| `wind_enrichment` | 显式 Wind 研究增强 | `capability`, `code` / `codes`, `fields`, `params` |
+
+先看公开能力和脱敏状态：
+
+```bash
+uv run ym-data list
+uv run ym-data doctor --json
+```
+
+`doctor` 不联网验证数据业务，不打印 token、Key、异常正文或业务行。只有显式 `uv run ym-data smoke --live` 才运行只读在线探针；默认 smoke 不联网。
+
+## 统一结果契约
+
+每次 canonical 调用都返回：
+
+```text
+{
+  "data": ...,
+  "_meta": {
+    "contract_version": "1.0",
+    "status": "success | empty | degraded | error",
+    "provider_used": "真实成功 provider，失败时为 null",
+    "attempts": [{"provider": "...", "status": "...", "error_code": "..."}],
+    "quality": {"status": "...", "returned_count": 0},
+    "fetched_at": "带时区时间"
+  }
+}
+```
+
+仅语义有效的空集会终止路由；无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
+
+## Provider ownership 与路由边界
+
+| provider 类 | ownership | setup | doctor 状态 | intended capabilities | automatic fallback |
+| --- | --- | --- | --- | --- | --- |
+| PyTDX、东财、腾讯、新浪、同花顺、财联社、巨潮等本地/HTTP provider | 零鉴权 | 无 | `configured_unverified` 或明确错误 | 行情、板块、宽度、涨跌停、研报、公告、新闻等各自白名单能力 | 允许；只在 RouteSpec 中按语义兼容顺序降级 |
+| 问财 OpenAPI | API key | 由既有安全环境提供，不打印配置值 | `configured_unverified`、breaker 或 auth 错误 | 显式 `review_sentiment` | 允许；失败后进入可移植 runtime，再进入兼容 TDX 能力 |
+| pywencai | 可移植 runtime | `uv run ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 兼容源 | 允许；只在 OpenAPI 失败后调用 |
+| TDX MCP | owned OAuth | `uv run ym-data auth import-tdx --from-workbuddy` | 总状态与六能力分别为 `ready` / `auth_missing` / `auth_expired` | `tdx_screener→review_sentiment`、`tdx_quotes→stock_snapshot`、`tdx_kline→stock_kline`、研报、公告、新闻 | 允许；仅在零鉴权兼容源失败后，不进入 realtime/default breadth/sector |
+| Wind MCP | official CLI | 由官方 CLI 按其配置优先级管理；管道不读取或复制 Key | `configured_unverified` / runtime 错误 | 显式 `wind_enrichment`，及严格验证后的 `filings` 兼容源 | 仅 `filings` 白名单 fallback；不接价格、K 线、分钟、新闻、泛选股或 `stock_event` |
+
+`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。`auth import-tdx --from-workbuddy` 只读取唯一明确候选并 fail closed；不会扫描整个 WorkBuddy，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
+
+TDX 与 Wind 只允许固定只读工具白名单。它们不是交易入口，不发交易 POST，不调用券商，也不能单独触发交易建议。
+
+## Wind 显式研究增强
+
+```python
 from ym_stock_data import query
 
 result = query(
     "wind_enrichment",
-    capability="fundamentals",
-    params={"question": "600519.SH 2025年ROE和净利润增速", "lang": "中文"},
+    capability="company_profile",
+    code="600519.SH",
+    params={"question": "公司主营业务", "lang": "中文"},
 )
 print(result["_meta"])
-PY
 ```
 
-当前允许的 capability：
+单次只允许一个标的；`code` 与 `codes` 不可同时提供，`codes` 最多一个。`top_k` 仅适用于 `announcements`。未知参数在调用 provider 前直接拒绝，不会静默丢弃。
 
-| capability | Wind 能力 | 研究用途 |
-|---|---|---|
-| `company_profile` | 公司档案/主营/行业 | 业务映射补充 |
-| `fundamentals` | 财务与增长指标 | 财务口径交叉核验 |
-| `equity_holders` | 股本、股东、实控人、限售 | 股权与供给风险补充 |
-| `company_events` | 增发、并购、ST、分红等 | 公司事件补充 |
-| `risk_metrics` | Beta、波动率、Sharpe、VaR 等 | 风险指标补充 |
-| `index_fundamentals` | PE/PB/PS 与历史分位 | 指数估值补充 |
-| `announcements` | 官方公告与定期报告检索 | 文档证据补充 |
+## 兼容入口
 
-硬边界：
+V1 `fetch()` 和 V2 `resolve()` 仅为旧消费者保留的 compatibility wrapper，不再是推荐入口，也不拥有第二套路由。它们投影 canonical 结果并维持既有业务形状；暂未拥有 canonical intent 的旧 key 明确标记为 `legacy_direct`。在下游迁移和 side-by-side 证据完成前不承诺删除日期，且不会用强制 `DeprecationWarning` 破坏现有消费者。
 
-- 成功、空集和失败都使用统一 contract 1.0 `_meta`，真实 provider/attempt 可审计。
-- Key 由 Wind 官方 CLI 自行从安全配置读取，不进入 Python 参数、命令行或结果。
-- 错误只暴露固定枚举，不透传 CLI stderr、payload message 或 agent action。
-- `filings` 只接受显式且类型正确的 `filings` 容器；`stock_event` 尚无等价性证明，不接 Wind。
-- 发现顺序为显式配置、全局 Skill、YiMu_IR 项目兼容路径；doctor 只报告 scope 和脱敏状态。
-- 晋升前继续执行 [`docs/Wind-MCP-补充源验证清单.md`](docs/Wind-MCP-补充源验证清单.md)。
+仍待迁移的 production 消费者必须集中在一个 rollback switch 后；新代码不得直接 import `ym_stock_data.sources` 或 `ym_stock_data.v2`。
 
-## 架构（5 层）
-
-| 层 | 内容 | 工具 |
-|---|---|---|
-| L0 | 复盘基线 | gen_dashboard_data.py（不动） |
-| L1 | 基础行情 | 腾讯 PE/PB / 同花顺热点 / 问财 |
-| L2 | 技术分析 | PyTDX TCP（5s-30s 实时） |
-| L3 | 资金流向 | 北向 / 龙虎榜 / 行业净流入 |
-| L4 | 研报/公告/新闻 | 东财 reportapi / 巨潮 / 财联社 |
-
-## 数据源与人工备用源
-
-| 数据源 | 协议 | 鉴权 | 文件 |
-|--------|------|------|------|
-| PyTDX (通达信) | TCP 7709 | 无 | `sources/pytdx.py` |
-| 问财 OpenAPI | HTTP POST | API KEY | `sources/iwencai.py` |
-| TDX MCP | MCP/HTTP | WorkBuddy OAuth | Codex `tdx-finance` 备用源 |
-| 同花顺热点 | HTTP GET | 无 | `sources/ths_hot.py` |
-| 腾讯财经 | HTTP GET | 无 | `sources/tencent.py` |
-| 东财龙虎榜 | HTTP GET | Referer | `sources/eastmoney.py` |
-| 北向资金(同花顺) | HTTP GET | 无 | `sources/northbound.py` |
-| 行业板块(同花顺) | HTTP GET | 无 | `sources/ths_industry.py` |
-| 东财研报 | HTTP GET | Referer | `sources/research.py` |
-| 巨潮公告 | HTTP POST | 无 | `sources/filings.py` |
-| 财联社新闻 | HTTP GET | 无 | `sources/news.py` |
-
-## 安装
+## 安装与验证
 
 ```bash
-pip install -e ~/Documents/YM_Capital/YM-data-pipeline
+uv sync
+uv run python -m compileall -q ym_stock_data scripts tests
+uv run python -m unittest discover -s tests -v
+git diff --check
 ```
 
-## 测试
+不要使用系统 Python 的缺依赖结果判断供应商状态。pywencai 的锁文件依赖来自 `pyproject.toml` 与 `uv.lock`；运行时隔离环境由显式 setup 命令管理。
 
-```bash
-python3 tests/test_pytdx.py     # PyTDX 连接/报价/指数/K线
-python3 tests/test_iwencai.py   # 问财查询/批量/热度
-python3 tests/test_sources.py   # 7 个 HTTP 源端到端
-```
+## 投研输出约定
 
-## 本地
-
-```
-YM-data-pipeline/
-├── ym_stock_data/             # Python 包 (23 文件, 2635 行)
-│   ├── fetch.py               # 统一路由 → 15 种 data_type
-│   ├── config.py              # 全局配置
-│   ├── sources/               # 数据源适配器
-│   ├── v2/                    # v2.0 MVP 旁路 resolve()
-│   ├── utils/                 # 缓存 + 重试
-│   └── consumer/              # 看板适配器
-├── tests/                     # 17 项测试
-└── scripts/compare.py         # 新老系统对比
-```
+在 `/Users/yimu/Documents/YM_Capital/YiMu_IR/` 做主题研究时，输出到 `outputs/`，保留数据快照、时间、入口与验证方式。研究观察不构成投资建议。
