@@ -98,7 +98,7 @@ _STOCK_KLINE_MINUTE = RouteSpec(
 )
 _REVIEW_SENTIMENT_DEFAULT = RouteSpec(
     intent="review_sentiment",
-    providers=("pytdx_breadth", "eastmoney_limit_pool"),
+    providers=("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
     data_scope="A股市场宽度与涨跌停聚合口径",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,

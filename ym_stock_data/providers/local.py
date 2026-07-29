@@ -25,6 +25,7 @@ LOCAL_PROVIDER_NAMES = frozenset(
         "sina",
         "ths_industry",
         "pytdx_breadth",
+        "eastmoney_breadth",
         "eastmoney_limit_pool",
         "eastmoney_datacenter",
         "eastmoney_research",
@@ -52,6 +53,12 @@ def _actual_source(provider: str, raw: dict) -> str:
         source = marker
     if not isinstance(source, str) or not source or source == "none":
         return provider
+    if provider in {"pytdx_breadth", "eastmoney_breadth"} and source in {
+        "eastmoney",
+        "eastmoney_fallback",
+        "eastmoney_index_fallback",
+    }:
+        return "eastmoney_breadth"
     aliases = {
         "eastmoney_fallback": "eastmoney",
         "eastmoney_index_fallback": "eastmoney",
@@ -212,6 +219,7 @@ class LocalProvider:
                 codes=params.get("codes"), names=params.get("names")
             ),
             ("pytdx_breadth", "review_sentiment"): pytdx.fetch_breadth,
+            ("eastmoney_breadth", "review_sentiment"): pytdx._fallback_breadth,
             ("eastmoney_limit_pool", "review_sentiment"): lambda: fetch_limit_state(
                 date=params.get("date")
             ),

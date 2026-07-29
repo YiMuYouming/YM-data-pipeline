@@ -131,6 +131,7 @@ class V2QualityTests(unittest.TestCase):
         }
 
         with patch("ym_stock_data.sources.pytdx.fetch_breadth", return_value={}) as fetch_breadth, \
+             patch("ym_stock_data.sources.pytdx._fallback_breadth", return_value={}) as fallback_breadth, \
              patch("ym_stock_data.providers.local.fetch_limit_state", return_value=limit_state), \
              patch("ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call") as query:
             result = resolve(
@@ -139,6 +140,7 @@ class V2QualityTests(unittest.TestCase):
             )
 
         fetch_breadth.assert_called_once_with()
+        fallback_breadth.assert_called_once_with()
         query.assert_not_called()
         self.assertIn("query_summary", result["data"])
         summary = result["data"]["query_summary"]
@@ -148,7 +150,7 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual(summary["batch_status"], "partial")
         self.assertEqual(
             result["_meta"]["source_chain"],
-            ["pytdx_breadth", "eastmoney_limit_pool"],
+            ["pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"],
         )
 
     def test_sector_expectation_rejects_stock_rows_even_with_industry_fields(self):

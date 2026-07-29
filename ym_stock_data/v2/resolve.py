@@ -123,7 +123,11 @@ def _batch_review(
         meta = result.get("_meta", {})
         items = data.get("queries") if isinstance(data, dict) else None
         if isinstance(items, list) and items:
-            query_items.append(items[0])
+            query_item = dict(items[0])
+            item_meta = dict(query_item.get("_meta", {}))
+            item_meta["canonical_meta"] = dict(meta)
+            query_item["_meta"] = item_meta
+            query_items.append(query_item)
         else:
             query_items.append(
                 {
@@ -134,6 +138,7 @@ def _batch_review(
                         "source": meta.get("source"),
                         "source_chain": meta.get("source_chain", []),
                         "quality": meta.get("quality", {}),
+                        "canonical_meta": dict(meta),
                     },
                 }
             )
@@ -183,8 +188,10 @@ def _batch_review(
         if key not in {"涨停收益均值", "红盘率", "炸板率", "最高板"}
     }
     first_meta = dict(results[0].get("_meta", {}))
-    unique_providers = set(providers)
-    provider_used = next(iter(unique_providers)) if len(unique_providers) == 1 else None
+    providers_used = list(dict.fromkeys(providers))
+    first_meta.pop("contract_version", None)
+    first_meta.pop("provider_used", None)
+    first_meta.pop("source", None)
     first_meta.update(
         {
             "status": "error" if batch_status == "error" else (
@@ -192,8 +199,8 @@ def _batch_review(
                     "degraded" if batch_status != "normal" else "success"
                 )
             ),
-            "provider_used": provider_used,
-            "source": provider_used,
+            "compatibility_contract": "v2-review-batch",
+            "providers_used": providers_used,
             "source_chain": source_chain,
             "attempts": attempts,
             "quality": rolled,

@@ -14,7 +14,7 @@ class RoutingTests(unittest.TestCase):
     def test_default_sentiment_never_calls_natural_language_sources(self):
         spec = route_for("review_sentiment", {})
         self.assertEqual(
-            ("pytdx_breadth", "eastmoney_limit_pool"),
+            ("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
             spec.providers,
         )
 

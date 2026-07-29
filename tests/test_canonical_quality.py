@@ -60,6 +60,41 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertEqual("partial", result["_meta"]["quality"]["status"])
         self.assertIn("炸板率", result["_meta"]["quality"]["missing"])
 
+    def test_pytdx_internal_eastmoney_breadth_fallback_keeps_bins_and_provenance(self):
+        breadth = {
+            "涨停": 72,
+            ">7%": 31,
+            "5~7%": 64,
+            "3~5%": 180,
+            "0~3%": 2600,
+            "-0~-3%": 1800,
+            "-3~-5%": 210,
+            "-5~-7%": 80,
+            "<-7%": 45,
+            "跌停": 12,
+            "_total": 5094,
+            "_source": "eastmoney_fallback",
+        }
+        with patch(
+            "ym_stock_data.providers.local.pytdx.fetch_breadth",
+            return_value=breadth,
+        ):
+            result = query("review_sentiment")
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("eastmoney_breadth", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["pytdx_breadth", "eastmoney_breadth"],
+            result["_meta"]["source_chain"],
+        )
+        self.assertEqual(
+            ["provider_error", "success"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+        self.assertEqual(5094, result["data"]["aggregates"]["breadth"]["_total"])
+        self.assertEqual(2947, result["data"]["上涨家数"])
+        self.assertEqual(2147, result["data"]["下跌家数"])
+
     def test_snapshot_quality_reports_partial_coverage_and_missing_codes(self):
         provider = StaticProvider("pytdx", {"600519": {"price": 1400}})
         with patch.object(api, "_provider_for", return_value=provider):

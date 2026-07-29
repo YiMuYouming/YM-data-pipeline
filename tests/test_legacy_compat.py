@@ -7,8 +7,10 @@ from unittest.mock import Mock, patch
 
 import ym_stock_data.api as api
 from ym_stock_data import fetch, list_supported, query
+from ym_stock_data.contracts import validate_result
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.providers.local import LocalProvider
 from ym_stock_data.v2.resolve import resolve
 
 
@@ -202,6 +204,89 @@ class LegacyCompatibilityTests(unittest.TestCase):
         self.assertNotIn("query_summary", result)
         self.assertNotIn("aggregates", result)
         self.assertEqual("canonical", result["_meta"]["compatibility_route"])
+
+    def test_legacy_breadth_keeps_bins_under_eastmoney_breadth_fallback(self):
+        breadth = {
+            "涨停": 72,
+            ">7%": 31,
+            "5~7%": 64,
+            "3~5%": 180,
+            "0~3%": 2600,
+            "-0~-3%": 1800,
+            "-3~-5%": 210,
+            "-5~-7%": 80,
+            "<-7%": 45,
+            "跌停": 12,
+            "_total": 5094,
+            "_source": "eastmoney_fallback",
+        }
+        with patch.object(
+            api,
+            "_provider_for",
+            side_effect=lambda name: LocalProvider(name)
+            if name in {"pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"}
+            else api.UnavailableProvider(name),
+        ), patch(
+            "ym_stock_data.providers.local.pytdx.fetch_breadth",
+            return_value=breadth,
+        ):
+            result = fetch("breadth")
+
+        self.assertEqual(5094, result["_total"])
+        self.assertEqual(72, result["涨停"])
+        self.assertEqual(12, result["跌停"])
+        self.assertNotIn("query_summary", result)
+        self.assertEqual("eastmoney_breadth", result["_meta"]["provider_used"])
+
+    def test_mixed_provider_review_batch_uses_explicit_compatibility_contract(self):
+        class MixedProvider:
+            def __init__(self, name):
+                self.name = name
+
+            def call(self, intent, params):
+                if self.name == "iwencai_openapi" and params["query"] == "q2":
+                    return ProviderOutcome(
+                        provider=self.name,
+                        status="auth_error",
+                        error_code="HTTP_401",
+                        latency_ms=1,
+                    )
+                return ProviderOutcome(
+                    provider=self.name,
+                    status="success",
+                    data={
+                        "datas": [{"股票代码": "600519", "查询": params["query"]}],
+                        "row_count": 1,
+                    },
+                    latency_ms=1,
+                    quality={"status": "normal", "returned_count": 1, "reason_codes": []},
+                    auth={"required": False, "status": "not_required"},
+                )
+
+        with patch.object(
+            api,
+            "_provider_for",
+            side_effect=lambda name: MixedProvider(name)
+            if name in {"iwencai_openapi", "pywencai"}
+            else api.UnavailableProvider(name),
+        ):
+            result = resolve("review_sentiment", query=["q1", "q2"], limit=1)
+
+        meta = result["_meta"]
+        self.assertNotIn("contract_version", meta)
+        self.assertNotIn("provider_used", meta)
+        self.assertNotIn("source", meta)
+        self.assertEqual("v2-review-batch", meta["compatibility_contract"])
+        self.assertEqual(["iwencai_openapi", "pywencai"], meta["providers_used"])
+        for item in result["data"]["queries"]:
+            canonical_meta = item["_meta"]["canonical_meta"]
+            validate_result({"data": item["result"], "_meta": canonical_meta})
+
+    def test_resolve_single_string_remains_valid_canonical_contract(self):
+        result = resolve("review_sentiment", query="今日涨停", limit=3)
+
+        self.assertEqual("1.0", result["_meta"]["contract_version"])
+        validate_result(result)
 
     def test_representative_canonical_fetch_shapes_and_metadata(self):
         cases = {
