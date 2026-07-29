@@ -25,6 +25,8 @@
 from datetime import datetime
 from importlib import import_module
 
+from .api import query as canonical_query
+
 
 # 路由表: data_type → (模块名, 函数名, {元数据})
 _ROUTES = {
@@ -62,6 +64,40 @@ _ROUTES = {
 _SOURCE_CACHE = {}
 
 
+# Only semantically equivalent V1 routes may enter the canonical router.
+# In particular, V1 sector_index is PyTDX 880 while the canonical intent is
+# THS 881, so it stays explicit legacy_direct until Task 13 adds an equivalent
+# canonical intent or removes the consumer.
+CANONICAL_ROUTES = {
+    "quotes": "stock_snapshot",
+    "index": "realtime_market",
+    "breadth": "review_sentiment",
+    "kline": "stock_kline",
+    "iwencai": "review_sentiment",
+    "research": "research",
+    "filings": "filings",
+    "news": "news",
+    "limit_state": "market_limit_state",
+    "market_limit_state": "market_limit_state",
+    "stock_event": "stock_event",
+}
+LEGACY_DIRECT_ROUTES = {
+    key: _ROUTES[key]
+    for key in (
+        "sector_index",
+        "kline_15m",
+        "ths_hot",
+        "tencent",
+        "northbound",
+        "dragon_tiger",
+        "sector_inflow",
+        "iwencai_content",
+        "industry_research",
+    )
+}
+TASK13_LEGACY_DIRECT = tuple(LEGACY_DIRECT_ROUTES)
+
+
 def _load_source(name: str):
     """惰性加载数据源模块"""
     if name not in _SOURCE_CACHE:
@@ -91,6 +127,29 @@ def fetch(data_type: str, **kwargs) -> dict:
 
     module_name, func_name, meta = _ROUTES[data_type]
 
+    if data_type in CANONICAL_ROUTES:
+        intent = CANONICAL_ROUTES[data_type]
+        result = canonical_query(intent, **kwargs)
+        data = result.get("data")
+        if data_type == "breadth" and isinstance(data, dict):
+            aggregates = data.get("aggregates")
+            breadth = aggregates.get("breadth") if isinstance(aggregates, dict) else None
+            if isinstance(breadth, dict):
+                data = breadth
+        projected = dict(data) if isinstance(data, dict) else {"data": data}
+        canonical_meta = dict(result.get("_meta", {}))
+        canonical_meta.setdefault("data_type", data_type)
+        canonical_meta.setdefault("layer", meta["layer"])
+        canonical_meta["compatibility_route"] = "canonical"
+        canonical_meta["canonical_intent"] = intent
+        projected["_meta"] = canonical_meta
+        if canonical_meta.get("status") == "error":
+            attempts = canonical_meta.get("attempts", [])
+            last_code = attempts[-1].get("error_code") if attempts else None
+            projected.setdefault("error", last_code or "QUERY_FAILED")
+            projected.setdefault("error_type", "ProviderError")
+        return projected
+
     try:
         source = _load_source(module_name)
         func = getattr(source, func_name)
@@ -99,12 +158,23 @@ def fetch(data_type: str, **kwargs) -> dict:
         if not isinstance(result, dict):
             result = {"data": result}
 
-        result["_meta"] = {
-            "data_type": data_type,
-            "source": module_name,
-            "layer": meta["layer"],
-            "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-        }
+        result_meta = dict(result.get("_meta", {}))
+        marker = result.get("_source")
+        if isinstance(marker, str) and marker:
+            aliases = {
+                "tencent_fallback": "tencent",
+                "sina_fallback": "sina",
+                "eastmoney_fallback": "eastmoney",
+            }
+            result_meta.setdefault("source", aliases.get(marker, marker))
+        result_meta.setdefault("data_type", data_type)
+        result_meta.setdefault("source", module_name)
+        result_meta.setdefault("layer", meta["layer"])
+        result_meta.setdefault(
+            "fetched_at", datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        )
+        result_meta["compatibility_route"] = "legacy_direct"
+        result["_meta"] = result_meta
         return result
 
     except Exception as e:
@@ -117,6 +187,7 @@ def fetch(data_type: str, **kwargs) -> dict:
                 "layer": meta["layer"],
                 "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
                 "error": True,
+                "compatibility_route": "legacy_direct",
             },
         }
 

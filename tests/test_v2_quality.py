@@ -3,9 +3,10 @@
 import os
 import sys
 import unittest
-import urllib.error
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+from ym_stock_data.providers.base import ProviderOutcome
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -43,6 +44,24 @@ IWENCAI_TEST_STATE = {
 }
 
 
+def iwencai_outcome(raw, *, provider="iwencai_openapi"):
+    rows = raw.get("datas", []) if isinstance(raw, dict) else []
+    if raw.get("error"):
+        return ProviderOutcome(
+            provider=provider,
+            status="provider_error",
+            error_code=str(raw.get("error_type") or "PROVIDER_ERROR"),
+            latency_ms=1,
+        )
+    return ProviderOutcome(
+        provider=provider,
+        status="success" if rows else "empty",
+        data=raw,
+        fetched_at=(raw.get("_meta", {}) or {}).get("fetched_at"),
+        latency_ms=1,
+    )
+
+
 class V2QualityTests(unittest.TestCase):
     def setUp(self):
         from ym_stock_data.sources import iwencai
@@ -69,7 +88,10 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.iwencai.query", return_value=raw):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            return_value=iwencai_outcome(raw),
+        ):
             result = resolve(
                 "review_sentiment",
                 query="近3日板块涨幅前20",
@@ -93,40 +115,41 @@ class V2QualityTests(unittest.TestCase):
 
         query_meta = result["data"]["queries"][0]["_meta"]
         self.assertEqual(quality, query_meta["quality"])
-        self.assertEqual(["iwencai", "openapi"], query_meta["source_chain"])
+        self.assertEqual(["iwencai_openapi"], query_meta["source_chain"])
 
-    def test_review_sentiment_breadth_failure_falls_back_to_one_iwencai_query(self):
+    def test_review_sentiment_breadth_failure_uses_compatible_limit_pool(self):
         from ym_stock_data.v2 import resolve
 
-        def fake_query(query_str, limit=50):
-            rows = [{"股票代码": "600000", "今日涨跌幅": 1.2}]
-            return {
-                "datas": rows,
-                "row_count": len(rows),
-                "_source": "openapi",
-                "_meta": {
-                    "data_type": "iwencai",
-                    "source": "iwencai",
-                    "fetched_at": "2026-07-13T15:10:00+08:00",
-                },
-            }
+        limit_state = {
+            "zt_count": 30,
+            "zb_count": 10,
+            "dt_count": 5,
+            "break_rate": 25.0,
+            "max_board": 4,
+            "pools": {"zt": [{}], "zb": [{}], "dt": [{}]},
+            "_meta": {"fetched_at": "2026-07-13T15:10:00+08:00"},
+        }
 
         with patch("ym_stock_data.sources.pytdx.fetch_breadth", return_value={}) as fetch_breadth, \
-             patch("ym_stock_data.sources.iwencai.query", side_effect=fake_query) as query:
+             patch("ym_stock_data.providers.local.fetch_limit_state", return_value=limit_state), \
+             patch("ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call") as query:
             result = resolve(
                 "review_sentiment",
                 _now=ts("2026-07-13T15:10:20+08:00"),
             )
 
         fetch_breadth.assert_called_once_with()
-        query.assert_called_once_with("昨日涨停 今日涨跌幅 非st", limit=50)
+        query.assert_not_called()
         self.assertIn("query_summary", result["data"])
         summary = result["data"]["query_summary"]
         self.assertEqual(summary["total_queries"], 1)
         self.assertEqual(summary["empty_queries"], 0)
         self.assertEqual(summary["nonempty_queries"], 1)
-        self.assertEqual(summary["batch_status"], "normal")
-        self.assertEqual(result["_meta"]["source_chain"], ["iwencai", "openapi"])
+        self.assertEqual(summary["batch_status"], "partial")
+        self.assertEqual(
+            result["_meta"]["source_chain"],
+            ["pytdx_breadth", "eastmoney_limit_pool"],
+        )
 
     def test_sector_expectation_rejects_stock_rows_even_with_industry_fields(self):
         from ym_stock_data.v2 import resolve
@@ -147,7 +170,10 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.iwencai.query", return_value=raw):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            return_value=iwencai_outcome(raw),
+        ):
             result = resolve(
                 "review_sentiment",
                 query="近3日板块涨幅前20",
@@ -216,7 +242,10 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.iwencai.query", return_value=raw):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            return_value=iwencai_outcome(raw),
+        ):
             result = resolve(
                 "review_sentiment",
                 query="板块涨幅前2",
@@ -249,7 +278,10 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.iwencai.query", return_value=raw):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            return_value=iwencai_outcome(raw),
+        ):
             result = resolve(
                 "review_sentiment",
                 query="近3日板块涨幅前20",
@@ -403,7 +435,12 @@ class V2QualityTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=lambda query, limit=50: raw_results[query]):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            side_effect=lambda _intent, params: iwencai_outcome(
+                raw_results[params["query"]]
+            ),
+        ):
             result = resolve(
                 "review_sentiment",
                 query=list(raw_results),
@@ -424,17 +461,7 @@ class V2QualityTests(unittest.TestCase):
             self.assertIn(reason, rollup["reason_codes"])
 
     def test_review_query_retains_fallback_provenance_and_consistent_coverage(self):
-        from ym_stock_data.sources import iwencai
         from ym_stock_data.v2 import resolve
-
-        failure = urllib.error.HTTPError(
-            iwencai.IWENCAI_BASE,
-            503,
-            "unavailable",
-            hdrs=None,
-            fp=None,
-        )
-        self.addCleanup(failure.close)
         fallback = {
             "datas": [
                 {"股票代码": f"600{index:03d}", "股票简称": f"测试{index}"}
@@ -444,8 +471,18 @@ class V2QualityTests(unittest.TestCase):
             "_source": "pywencai",
         }
 
-        with patch.object(iwencai.urllib.request, "urlopen", side_effect=failure), \
-             patch.object(iwencai, "_pywencai_query", return_value=fallback):
+        with patch(
+            "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
+            return_value=ProviderOutcome(
+                provider="iwencai_openapi",
+                status="provider_error",
+                error_code="HTTP_503",
+                latency_ms=1,
+            ),
+        ), patch(
+            "ym_stock_data.providers.iwencai.PyWenCaiProvider.call",
+            return_value=iwencai_outcome(fallback, provider="pywencai"),
+        ):
             result = resolve(
                 "review_sentiment",
                 query="银行股",
@@ -459,7 +496,7 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual("pywencai", query_meta["provider"])
         datetime.fromisoformat(query_meta["query_time"])
         self.assertEqual("http_5xx", query_meta["fallback_reason"])
-        self.assertEqual(["iwencai", "openapi", "pywencai"], query_meta["source_chain"])
+        self.assertEqual(["iwencai_openapi", "pywencai"], query_meta["source_chain"])
         self.assertEqual({
             "requested_count": 20,
             "returned_count": 20,

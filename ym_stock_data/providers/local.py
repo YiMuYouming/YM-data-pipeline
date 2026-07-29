@@ -67,6 +67,7 @@ def _row_sources(provider: str, raw: dict) -> set[str]:
     """Return effective sources for quote rows, including unmarked PyTDX rows."""
 
     sources: set[str] = set()
+    default_source = _actual_source(provider, raw)
     for key, value in raw.items():
         if key in {"_meta", "_source", "error", "error_type"}:
             continue
@@ -76,7 +77,7 @@ def _row_sources(provider: str, raw: dict) -> set[str]:
         if isinstance(marker, str) and marker:
             sources.add(_actual_source(provider, {"_source": marker}))
         else:
-            sources.add(provider)
+            sources.add(default_source)
     return sources
 
 
@@ -90,7 +91,9 @@ def _row_count(intent: str, raw: dict) -> int:
         value = raw.get(key)
         if isinstance(value, list):
             return len(value)
-    if intent == "market_limit_state":
+    if intent in {"market_limit_state", "review_sentiment"} and {
+        "zt_count", "zb_count", "dt_count"
+    }.issubset(raw):
         return sum(int(raw.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
     if intent == "stock_snapshot":
         return sum(
@@ -136,6 +139,11 @@ class LocalProvider:
             return raw
         if not isinstance(raw, dict):
             return self._failure(started, "provider_error", "INVALID_RESPONSE")
+        nested_data = raw.get("data")
+        if isinstance(nested_data, dict):
+            flattened = dict(nested_data)
+            flattened.update({key: value for key, value in raw.items() if key != "data"})
+            raw = flattened
 
         meta = raw.get("_meta", {}) if isinstance(raw.get("_meta"), dict) else {}
         if raw.get("error") or meta.get("error"):
@@ -245,9 +253,17 @@ class LocalProvider:
         raw = pytdx.fetch_kline(
             params["code"], period=params.get("period", "daily")
         )
-        if not isinstance(raw, dict) or params.get("count") is None:
+        if not isinstance(raw, dict):
             return raw
+        nested_data = raw.get("data")
+        if isinstance(nested_data, dict):
+            flattened = dict(nested_data)
+            flattened.update({key: value for key, value in raw.items() if key != "data"})
+            raw = flattened
         result = dict(raw)
+        result.setdefault("period", params.get("period", "daily"))
+        if params.get("count") is None:
+            return result
         bars = raw.get("bars")
         if isinstance(bars, list):
             count = params["count"]

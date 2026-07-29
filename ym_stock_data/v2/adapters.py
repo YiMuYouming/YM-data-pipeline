@@ -1,172 +1,109 @@
-"""V2 adapters over stable source modules.
+"""Legacy V2 shape projections over the one canonical query router.
 
-The v2 layer owns intent/policy/meta handling. It reuses the proven source
-modules, but does not route through v1 fetch().
+This module performs no transport, retry, breaker, or provider selection.
 """
 
-import time
-from datetime import datetime
+from __future__ import annotations
+
 from typing import Any
 
-from ym_stock_data.sources import iwencai, pytdx, ths_industry
-from ym_stock_data.sources.limit_state import (
-    fetch_limit_state as _fetch_limit_state,
-)
-from ym_stock_data.sources.stock_events import (
-    fetch_stock_event as _fetch_stock_event,
-)
-
-_PYTDX_MAX_RETRIES = 3
-_PYTDX_RETRY_SLEEP = 1.0
+import ym_stock_data.api as public_api
 
 
-def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
-
-
-def _with_meta(raw: Any, *, data_type: str, source: str) -> dict:
-    if isinstance(raw, dict):
-        nested_data = raw.get("data")
-        if isinstance(nested_data, dict):
-            result = dict(nested_data)
-            for key, value in raw.items():
-                if key != "data":
-                    result[key] = value
-        else:
-            result = dict(raw)
-    else:
-        result = {"data": raw}
+def _project(result: dict, *, data_type: str) -> dict:
+    data: Any = result.get("data")
+    projected = dict(data) if isinstance(data, dict) else {"data": data}
     meta = dict(result.get("_meta", {}))
-    fallback_marker = result.get("_source")
-    if not fallback_marker:
-        row_markers = {
-            value.get("_source")
-            for key, value in result.items()
-            if key != "_meta" and isinstance(value, dict) and value.get("_source")
-        }
-        if len(row_markers) == 1:
-            fallback_marker = next(iter(row_markers))
-            result["_source"] = fallback_marker
-    if isinstance(fallback_marker, str) and fallback_marker.endswith("_fallback"):
-        actual_source = fallback_marker.removesuffix("_fallback")
-        if actual_source == "tencent_index":
-            actual_source = "tencent"
-        meta.setdefault("fallback_from", source)
-        meta.setdefault("fallback_to", actual_source)
-        meta["source"] = actual_source
-        meta["degraded"] = True
     meta.setdefault("data_type", data_type)
-    meta.setdefault("source", source)
-    meta.setdefault("fetched_at", _now_iso())
-    if result.get("error"):
-        meta["error"] = True
-    result["_meta"] = meta
-    return result
-
-
-def _pytdx_call(fn, *args, **kwargs):
-    """Retry only transient transport failures without masking the root error."""
-    for attempt in range(_PYTDX_MAX_RETRIES):
-        try:
-            return fn(*args, **kwargs)
-        except (ConnectionError, TimeoutError, OSError):
-            if attempt >= _PYTDX_MAX_RETRIES - 1:
-                raise
-            try:
-                pytdx.disconnect()
-            except Exception:
-                # Reconnect cleanup is best effort; the next source call owns
-                # connection creation.  Never replace the original call path
-                # with a cleanup exception.
-                pass
-            time.sleep(_PYTDX_RETRY_SLEEP)
-    raise RuntimeError("unreachable pytdx retry state")
+    projected["_meta"] = meta
+    if meta.get("status") == "error":
+        attempts = meta.get("attempts", [])
+        error_code = attempts[-1].get("error_code") if attempts else None
+        projected.setdefault("error", error_code or "QUERY_FAILED")
+        projected.setdefault("error_type", "ProviderError")
+    return projected
 
 
 def fetch_index() -> dict:
-    try:
-        return _with_meta(
-            _pytdx_call(pytdx.fetch_index), data_type="index", source="pytdx"
-        )
-    except Exception as e:
-        return _with_meta({"error": str(e)}, data_type="index", source="pytdx")
+    return _project(public_api.query("realtime_market"), data_type="index")
 
 
 def fetch_breadth() -> dict:
-    try:
-        return _with_meta(
-            _pytdx_call(pytdx.fetch_breadth),
-            data_type="breadth",
-            source="pytdx",
-        )
-    except Exception as e:
-        return _with_meta(
-            {"error": str(e)},
-            data_type="breadth",
-            source="pytdx",
-        )
+    result = public_api.query("review_sentiment")
+    projected = _project(result, data_type="breadth")
+    aggregates = projected.get("aggregates")
+    breadth = aggregates.get("breadth") if isinstance(aggregates, dict) else None
+    if isinstance(breadth, dict):
+        raw = dict(breadth)
+        raw["_meta"] = dict(projected["_meta"])
+        return raw
+    return projected
 
 
 def fetch_quotes(codes: list[str]) -> dict:
-    try:
-        return _with_meta(
-            _pytdx_call(pytdx.fetch_quotes, codes), data_type="quotes", source="pytdx"
-        )
-    except Exception as e:
-        return _with_meta({"error": str(e), "quotes": {}}, data_type="quotes", source="pytdx")
-
-
-def fetch_kline(code: str, *, period: str = "daily", count: int | None = None) -> dict:
-    try:
-        result = _with_meta(
-            _pytdx_call(pytdx.fetch_kline, code, period=period),
-            data_type="kline",
-            source="pytdx",
-        )
-    except Exception as e:
-        return _with_meta(
-            {"error": str(e), "bars": []}, data_type="kline", source="pytdx"
-        )
-    result.setdefault("period", period)
-    if count is not None:
-        bars = result.get("bars", [])
-        if isinstance(bars, list):
-            result["bars"] = bars[-count:]
-            result["requested_count"] = count
-            result["returned_bars"] = len(result["bars"])
-    return result
-
-
-def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None = None) -> dict:
-    return _with_meta(
-        ths_industry.fetch_sector_index(codes=codes, names=names),
-        data_type="sector_index",
-        source="ths_industry",
+    return _project(
+        public_api.query("stock_snapshot", codes=codes),
+        data_type="quotes",
     )
 
 
-def query_iwencai(query_str: str, *, limit: int = 50) -> dict:
-    return _with_meta(iwencai.query(query_str, limit=limit), data_type="iwencai", source="iwencai")
+def fetch_kline(code: str, *, period: str = "daily", count: int | None = None) -> dict:
+    params = {"code": code, "period": period}
+    if count is not None:
+        params["count"] = count
+    return _project(public_api.query("stock_kline", **params), data_type="kline")
+
+
+def fetch_sector_index(
+    codes: list[str] | None = None,
+    names: list[str] | None = None,
+) -> dict:
+    return _project(
+        public_api.query("sector_index", codes=codes, names=names),
+        data_type="sector_index",
+    )
+
+
+def query_iwencai(
+    query_str: str,
+    *,
+    limit: int = 50,
+    expected_row_shape: str | None = None,
+    expected_count: int | None = None,
+) -> dict:
+    params: dict[str, object] = {"query": query_str, "limit": limit}
+    if expected_row_shape is not None:
+        params["expected_row_shape"] = expected_row_shape
+    if expected_count is not None:
+        params["expected_count"] = expected_count
+    return _project(
+        public_api.query("review_sentiment", **params),
+        data_type="iwencai",
+    )
 
 
 def fetch_limit_state(date: str | None = None) -> dict:
-    return _with_meta(
-        _fetch_limit_state(date=date),
+    return _project(
+        public_api.query("market_limit_state", date=date),
         data_type="limit_state",
-        source="eastmoney_limit_pool",
     )
 
 
 def fetch_stock_event(event: str, code: str, page_size: int = 30) -> dict:
-    return _with_meta(
-        _fetch_stock_event(event=event, code=code, page_size=page_size),
+    return _project(
+        public_api.query(
+            "stock_event",
+            event=event,
+            code=code,
+            page_size=page_size,
+        ),
         data_type="stock_event",
-        source="eastmoney_datacenter",
     )
 
 
 def fetch_v1(data_type: str, **kwargs) -> dict:
-    """Compatibility escape hatch; resolve() should not call this."""
-    from ym_stock_data import fetch
+    """Removed provider escape hatch retained only for import compatibility."""
 
-    return fetch(data_type, **kwargs)
+    raise RuntimeError(
+        f"V2 direct source escape hatch removed for {data_type}; use ym_stock_data.query"
+    )

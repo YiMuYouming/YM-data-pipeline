@@ -131,6 +131,23 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertEqual(1.0, result["_meta"]["quality"]["coverage"])
         self.assertEqual("normal", result["data"]["query_summary"]["batch_status"])
 
+    def test_empty_limit_pool_has_consistent_empty_result_and_quality(self):
+        empty_pool = {
+            "zt_count": 0,
+            "zb_count": 0,
+            "dt_count": 0,
+            "break_rate": 0.0,
+            "max_board": 0,
+            "pools": {"zt": [], "zb": [], "dt": []},
+        }
+        provider = StaticProvider("eastmoney_limit_pool", empty_pool)
+        with patch.object(api, "_provider_for", return_value=provider):
+            result = query("market_limit_state")
+
+        self.assertEqual("empty", result["_meta"]["status"])
+        self.assertEqual("empty", result["_meta"]["quality"]["status"])
+        self.assertEqual(0, result["_meta"]["quality"]["returned_count"])
+
 
 if __name__ == "__main__":
     unittest.main()
