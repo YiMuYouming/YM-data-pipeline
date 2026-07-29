@@ -4,7 +4,7 @@
 
 状态：`integration_blocked`。本文是只读 readiness 证据，不表示已经集成，也不授权 Task 14。
 
-正式路径 `/Users/yimu/Documents/YM_Capital/YM-data-pipeline` 仍停在不含 public `query` 的 `f246fef`。冻结范围共有 11 个受保护叶子路径：9 个 Git-visible 源码/文档状态路径，以及 2 个被 `.gitignore` 折叠的 generated `.pyc`。implementation 分支包含统一入口，但不能把 canonical dirty patch 机械重放到 `88fa1a1`；必须先建立可恢复的 dirty preservation ref，再单独授权切换 canonical checkout。
+正式路径 `/Users/yimu/Documents/YM_Capital/YM-data-pipeline` 仍停在不含 public `query` 的 `f246fef`。冻结范围共有 11 个受保护叶子路径：9 个 Git-visible 源码/文档状态路径，以及 2 个被 `.gitignore` 折叠的 generated `.pyc`。9 个源码/文档文件现已通过临时 Git index 保存到独立 preservation ref，并逐项验证 blob 一致；两个 `.pyc` 只保留在本文 SHA256 清单中。canonical switch 仍未授权、未执行，因此状态继续是 `integration_blocked`。
 
 ## 冻结快照
 
@@ -22,6 +22,15 @@ canonical_resolver_exception: ImportError
 implementation_path: /Users/yimu/.codex/worktrees/47a4/YM-data-pipeline
 implementation_branch: codex/unified-a-share-data-channel-checkpoint4
 implementation_reference_head: 88fa1a1bcbc6f7368d93d97c6e723ea056e6cfbc
+implementation_head_at_preservation_audit: 8543bcd82dd311b045ee66cce0e84e1aa6c06e88
+preservation_branch: codex/wind-sidecar-preservation-f246fef
+preservation_commit: 0e802995f9987fac0b3574c241c0184a3d36722a
+preservation_parent: f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea
+preservation_method: temporary_git_index
+preservation_verified_paths: 9
+canonical_real_index_unchanged: true
+canonical_switch_authorized: false
+canonical_switch_executed: false
 merge_base: f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea
 left_right_count_f246fef_vs_88fa1a1: 0 20
 classification_counts: exact_same=1 incorporated_and_evolved=5 intentionally_removed_after_parity=3 generated_binary_excluded=2 unresolved_conflict=0
@@ -90,22 +99,35 @@ SHA256 均为冻结时工作区文件内容，不是 Git blob id。普通 `git s
 4. 两个 Wind 文档和计划按“新增文件”检查时报告目标已存在；其中计划 hash 相同，Wind 文档 hash 不同且已演化。
 5. 三个旧 experimental/test 文件按“新增文件”检查会通过，但 active-reference 和 parity 证据判定不得重新引入。
 
+## Preservation ref 复核
+
+后续保护动作使用临时 Git index 建立 `codex/wind-sidecar-preservation-f246fef`，没有切换或写入 canonical worktree，也没有改动 canonical 真实 index。只读复核结果：
+
+1. branch 与 commit 均解析为 `0e802995f9987fac0b3574c241c0184a3d36722a`，唯一父提交为 `f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea`。
+2. 对表内 9 个 Git-visible 源码/文档文件逐项执行 canonical 工作树 `git hash-object`，均与 `0e802995:<path>` 的 blob OID 相等，结果 `9/9 MATCH`。
+3. preservation commit 相对父提交恰好包含这 9 个显式路径；canonical staged 仍为 0，原有 tracked/untracked 状态保持不变。
+4. 两个 ignored `.pyc` 不进入 preservation commit；其 SHA256 仍为表内值，未删除、未改写。
+
+这个 ref 解决的是 dirty 源码/文档字节的可恢复性，不等于 unified implementation 已进入 canonical，也不授权 branch switch。
+
 ## 推荐的可恢复集成步骤
 
-以下步骤尚未执行；每一阶段都必须由用户另行明确授权。
+preservation ref 已建立并验证；以下集成与切换步骤尚未执行，每一阶段都必须由用户另行明确授权。
 
-1. 保留 implementation ref：`codex/unified-a-share-data-channel-checkpoint4`。本报告的代码比较基准是 `88fa1a1`；纠偏前回滚 ref 是 `edf1ca7`。
-2. 在新的隔离 worktree 中从 `f246fef` 创建 dirty-preservation 分支；源码/文档只按表内 9 个 Git-visible 路径处理并逐项核对 SHA256。两个 `.pyc` 只进入外部 leaf manifest/hash 证据，不进入 Git commit，也不得从 canonical 删除。不得 stage canonical checkout。
+1. 保留 implementation ref：`codex/unified-a-share-data-channel-checkpoint4`。本报告的代码比较基准是 `88fa1a1`，preservation 复核开始时 implementation HEAD 是 `8543bcd`；纠偏前回滚 ref 是 `edf1ca7`。
+2. 保留 preservation ref：`codex/wind-sidecar-preservation-f246fef` / `0e802995`。两个 `.pyc` 继续只由本文 leaf manifest/hash 保护，不进入 Git commit，也不得从 canonical 删除。
 3. 使用 implementation worktree 做消费者集成验证，通过显式 `YM_DATA_PIPELINE_PATH` 指向该路径；Market_Watch、live-dashboard 均使用临时输出/no-save，不进入 Task 14。
 4. 只有业务 shape、provider/attempts、合法 empty、error overwrite guard 和 canonical invocation 全部通过后，才讨论正式路径切换。
-5. 正式切换前必须先得到一个包含 canonical dirty 字节的 Git commit。若用户选择在 canonical checkout 上完成这一步，只允许显式路径 stage/commit；禁止 reset/stash。工作树变干净后，才可切到新的 canonical integration branch。
+5. 如获正式切换授权，必须以已验证的 preservation ref 为可恢复基线，先规划独立 integration branch/worktree；不得直接在仍 dirty 的 canonical checkout 上切 branch、reset 或 stash。
 
 ## 精确回滚与授权边界
 
-- 当前 canonical 代码 ref：`f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea`。它不包含 9 个 Git-visible dirty 文件或 2 个 generated binary 的工作区字节，因此单独使用该 ref 不能恢复冻结状态；在 preservation commit 与 generated leaf manifest 建立前禁止切换 canonical。
+- 当前 canonical 代码 ref：`f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea`。它本身不包含 9 个 Git-visible dirty 文件或 2 个 generated binary 的工作区字节。
+- 已验证的源码/文档保护 ref：`codex/wind-sidecar-preservation-f246fef` / `0e802995f9987fac0b3574c241c0184a3d36722a`；父提交为 `f246fef`，包含 9 个显式路径。两个 generated binary 仅由本文 SHA256 清单保护。
 - 当前 implementation 比较 ref：`88fa1a1bcbc6f7368d93d97c6e723ea056e6cfbc`。
+- preservation 复核开始时 implementation HEAD：`8543bcd82dd311b045ee66cce0e84e1aa6c06e88`。
 - Task 13 ownership 纠偏前回滚 ref：`edf1ca72472f581c83e8d5a200ce8c1a8a12fd1c`。
 - 消费者临时验证的回滚是移除 `YM_DATA_PIPELINE_PATH` / 保持 `YM_DATA_API_MODE=legacy`；不需要 Git 变更。
-- 未来切换后的回滚目标必须是已建立且通过表内 SHA256 验证的 dirty-preservation commit，而不能是未提交工作树或只有 `f246fef` 的 branch ref。
+- 未来切换后的回滚目标必须包含已验证的 `0e802995` preservation ref 和本文两个 `.pyc` 的外部哈希证据，而不能只依赖未提交工作树或 `f246fef`。
 
-需要用户明确授权的边界：创建并写入 dirty-preservation worktree、复制 canonical dirty 内容、任何 canonical staging/commit/branch switch、删除 worktree、部署、push、Task 14。本文未执行这些动作。
+仍需用户明确授权的边界：任何 canonical staging/commit/branch switch、创建或删除 integration worktree、把 unified implementation 集成到正式路径、部署、push、Task 14。本文 follow-up 仅只读复核已存在的 preservation ref，并更新 implementation 内的审计文档与静态门禁；未执行上述动作。

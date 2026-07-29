@@ -74,6 +74,31 @@ class CanonicalIntegrationAuditTests(unittest.TestCase):
                 self.assertIn(ref, text)
         self.assertNotRegex(text, re.compile(r"(?i)(access|refresh)[_-]?token\s*[:=]"))
 
+    def test_report_records_verified_preservation_without_claiming_switch(self):
+        text = REPORT.read_text(encoding="utf-8")
+        self.assertIn(
+            "preservation_branch: codex/wind-sidecar-preservation-f246fef",
+            text,
+        )
+        self.assertIn(
+            "preservation_commit: 0e802995f9987fac0b3574c241c0184a3d36722a",
+            text,
+        )
+        self.assertIn(
+            "preservation_parent: f246fefd7b8f143c81f2bdf5da8d4f8900f7bfea",
+            text,
+        )
+        self.assertIn(
+            "implementation_head_at_preservation_audit: 8543bcd82dd311b045ee66cce0e84e1aa6c06e88",
+            text,
+        )
+        self.assertIn("preservation_verified_paths: 9", text)
+        self.assertIn("preservation_method: temporary_git_index", text)
+        self.assertIn("canonical_real_index_unchanged: true", text)
+        self.assertIn("canonical_switch_authorized: false", text)
+        self.assertIn("canonical_switch_executed: false", text)
+        self.assertNotIn("尚未建立 preservation commit", text)
+
 
 if __name__ == "__main__":
     unittest.main()
