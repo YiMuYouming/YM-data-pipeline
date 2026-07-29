@@ -7,6 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import ym_stock_data.api as api
 from ym_stock_data.__main__ import main
 from ym_stock_data.doctor import (
     ALLOWED_PROVIDER_STATES,
@@ -56,6 +57,24 @@ class DoctorTests(unittest.TestCase):
             all(item["status"] in ALLOWED_PROVIDER_STATES for item in report["providers"].values())
         )
         self.assertNotIn("pipeline unavailable", json.dumps(report))
+
+    def test_doctor_instantiates_registry_provider_classes_before_probe(self):
+        class RegisteredProbeProvider:
+            def probe(self):
+                return {"provider": "registered_probe", "status": "ready"}
+
+        with patch.dict(
+            api.PROVIDER_REGISTRY,
+            {"registered_probe": RegisteredProbeProvider},
+        ):
+            report = collect_diagnostics(
+                provider_names=("registered_probe",),
+                provider_loader=api._provider_for,
+                tdx_auth_path=self.root / "tdx.json",
+                wind_config_path=self.root / "wind",
+            )
+
+        self.assertEqual("ready", report["providers"]["registered_probe"]["status"])
 
     def test_doctor_never_prints_exception_text_tokens_or_query_rows(self):
         class BrokenProvider:

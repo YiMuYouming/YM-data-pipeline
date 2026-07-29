@@ -84,6 +84,8 @@ def _provider_for(name: str):
     registered = PROVIDER_REGISTRY.get(name)
     if registered is None:
         return UnavailableProvider(name)
+    if isinstance(registered, type):
+        return registered()
     if callable(registered) and not hasattr(registered, "call"):
         return registered()
     return registered

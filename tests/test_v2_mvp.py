@@ -3,12 +3,15 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_state import ProviderState
+import ym_stock_data.api as api
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,6 +35,14 @@ def ts(value: str) -> datetime:
 
 
 class V2MvpTests(unittest.TestCase):
+    def setUp(self):
+        self.provider_state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.provider_state_dir.cleanup)
+        state = ProviderState(Path(self.provider_state_dir.name) / "providers.sqlite3")
+        state_patch = patch.object(api, "_STATE", state)
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
+
     def test_v2_adapter_delegates_to_canonical_router_exactly_once(self):
         from ym_stock_data.v2 import adapters
 

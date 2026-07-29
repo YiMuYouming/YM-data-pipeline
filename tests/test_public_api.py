@@ -57,6 +57,19 @@ class PublicApiTests(unittest.TestCase):
     def test_public_import_is_query(self):
         self.assertIs(query, api.query)
 
+    def test_registry_provider_classes_are_instantiated_before_use(self):
+        class RegisteredProvider:
+            def call(self, intent, params):
+                return outcome("registered", "dependency_missing")
+
+        with patch.dict(
+            api.PROVIDER_REGISTRY,
+            {"registered": RegisteredProvider},
+        ):
+            provider = api._provider_for("registered")
+
+        self.assertIsInstance(provider, RegisteredProvider)
+
     def test_success_stops_the_chain(self):
         first = FakeProvider(
             "pytdx",

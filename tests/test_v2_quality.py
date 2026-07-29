@@ -2,10 +2,14 @@
 
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
+import ym_stock_data.api as api
+from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -66,6 +70,12 @@ class V2QualityTests(unittest.TestCase):
     def setUp(self):
         from ym_stock_data.sources import iwencai
 
+        self.provider_state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.provider_state_dir.cleanup)
+        state = ProviderState(Path(self.provider_state_dir.name) / "providers.sqlite3")
+        state_patch = patch.object(api, "_STATE", state)
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
         self.iwencai_state = patch.multiple(iwencai, **IWENCAI_TEST_STATE)
         self.iwencai_state.start()
         self.addCleanup(self.iwencai_state.stop)
