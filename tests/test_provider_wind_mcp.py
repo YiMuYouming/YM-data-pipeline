@@ -47,6 +47,70 @@ class WindProviderTests(unittest.TestCase):
             runner=runner or Mock(),
         )
 
+    def test_real_cli_tabular_shape_is_normalized_without_relaxing_unknown_shapes(self):
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "wind_company_profile_success.json"
+        )
+        envelope = json.loads(fixture_path.read_text(encoding="utf-8"))
+        runner = Mock(return_value=self.completed(envelope))
+
+        outcome = self.provider(runner=runner).call(
+            "wind_enrichment",
+            {"capability": "company_profile", "code": "SAMPLE_CODE"},
+        )
+
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(
+            [
+                {
+                    "sample_code": "SAMPLE_CODE",
+                    "sample_label": "SAMPLE_LABEL",
+                }
+            ],
+            outcome.data["items"],
+        )
+        self.assertEqual(1, outcome.quality["returned_count"])
+
+        malformed_payloads = (
+            {"data": {"data": [{"rows": [["value"]]}]}},
+            {"data": {"data": [{"columns": [], "rows": "not-a-list"}]}},
+            {
+                "data": {
+                    "data": [
+                        {
+                            "columns": [{"name": "only", "type": "string"}],
+                            "rows": [["one", "extra"]],
+                        }
+                    ]
+                }
+            },
+            {"data": {"unknown": []}},
+        )
+        for payload in malformed_payloads:
+            with self.subTest(payload=payload):
+                rejected = self.provider(
+                    runner=Mock(
+                        return_value=self.completed(
+                            {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(payload),
+                                    }
+                                ],
+                                "isError": False,
+                            }
+                        )
+                    )
+                ).call(
+                    "wind_enrichment",
+                    {"capability": "company_profile", "code": "SAMPLE_CODE"},
+                )
+                self.assertEqual("provider_error", rejected.status)
+                self.assertEqual("INVALID_RESPONSE", rejected.error_code)
+
     def test_only_non_realtime_research_capabilities_are_exposed(self):
         self.assertEqual(
             {

@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"data\":{\"data\":[{\"columns\":[{\"name\":\"sample_code\",\"type\":\"string\"},{\"name\":\"sample_label\",\"type\":\"string\"}],\"rows\":[[\"SAMPLE_CODE\",\"SAMPLE_LABEL\"]]}]},\"error\":null}"
+    }
+  ],
+  "isError": false
+}

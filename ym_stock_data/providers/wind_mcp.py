@@ -149,13 +149,53 @@ def _extract_payload(envelope: object) -> dict:
 
 
 def _enrichment_rows(payload: dict) -> list:
-    for key in ("rows", "items", "data"):
+    for key in ("rows", "items"):
         if key in payload:
             value = payload[key]
             if not isinstance(value, list):
                 raise ValueError("INVALID_RESPONSE")
             return value
+    if "data" in payload:
+        value = payload["data"]
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return _tabular_rows(value)
+        raise ValueError("INVALID_RESPONSE")
     raise ValueError("INVALID_RESPONSE")
+
+
+def _tabular_rows(container: dict) -> list[dict]:
+    """Normalize the Wind CLI's explicit column/row table envelope."""
+
+    tables = container.get("data")
+    if not isinstance(tables, list):
+        raise ValueError("INVALID_RESPONSE")
+    normalized = []
+    for table in tables:
+        if not isinstance(table, dict):
+            raise ValueError("INVALID_RESPONSE")
+        columns = table.get("columns")
+        rows = table.get("rows")
+        if not isinstance(columns, list) or not isinstance(rows, list):
+            raise ValueError("INVALID_RESPONSE")
+        names = []
+        for column in columns:
+            if (
+                not isinstance(column, dict)
+                or not isinstance(column.get("name"), str)
+                or not column["name"].strip()
+                or not isinstance(column.get("type"), str)
+            ):
+                raise ValueError("INVALID_RESPONSE")
+            names.append(column["name"].strip())
+        if len(names) != len(set(names)):
+            raise ValueError("INVALID_RESPONSE")
+        for row in rows:
+            if not isinstance(row, list) or len(row) != len(names):
+                raise ValueError("INVALID_RESPONSE")
+            normalized.append(dict(zip(names, row, strict=True)))
+    return normalized
 
 
 def _filing_rows(payload: dict) -> list:
