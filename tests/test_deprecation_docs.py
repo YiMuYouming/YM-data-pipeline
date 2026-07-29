@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib
 import warnings
 import unittest
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from ym_stock_data import fetch
+from ym_stock_data.api import PROVIDER_REGISTRY
+from ym_stock_data.routing import all_route_specs
 from ym_stock_data.v2.resolve import resolve
 
 
@@ -39,6 +42,32 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, readme)
+
+        ownership = readme.split("## Provider ownership 与路由边界", 1)[1].split(
+            "## Wind 显式研究增强", 1
+        )[0]
+        rows = {}
+        for line in ownership.splitlines():
+            if not line.startswith("| `"):
+                continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            rows[cells[0].strip("`")] = line
+
+        self.assertEqual(set(PROVIDER_REGISTRY), set(rows))
+        self.assertNotIn("等本地/HTTP provider", ownership)
+
+        routed_intents = defaultdict(set)
+        for spec in all_route_specs():
+            for provider in spec.providers:
+                routed_intents[provider].add(spec.intent)
+        for provider, intents in routed_intents.items():
+            with self.subTest(provider=provider):
+                for intent in intents:
+                    self.assertIn(f"`{intent}`", rows[provider])
+
+        self.assertIn("诊断聚合，无 RouteSpec", rows["tdx_mcp"])
+        self.assertIn("所有排在其前的语义兼容源失败后", ownership)
+        self.assertNotIn("仅在零鉴权兼容源失败后", ownership)
 
     def test_v2_design_documents_are_explicitly_historical(self):
         for relative in (

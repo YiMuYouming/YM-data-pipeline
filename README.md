@@ -64,13 +64,33 @@ uv run ym-data doctor --json
 
 ## Provider ownership 与路由边界
 
-| provider 类 | ownership | setup | doctor 状态 | intended capabilities | automatic fallback |
-| --- | --- | --- | --- | --- | --- |
-| PyTDX、东财、腾讯、新浪、同花顺、财联社、巨潮等本地/HTTP provider | 零鉴权 | 无 | `configured_unverified` 或明确错误 | 行情、板块、宽度、涨跌停、研报、公告、新闻等各自白名单能力 | 允许；只在 RouteSpec 中按语义兼容顺序降级 |
-| 问财 OpenAPI | API key | 由既有安全环境提供，不打印配置值 | `configured_unverified`、breaker 或 auth 错误 | 显式 `review_sentiment` | 允许；失败后进入可移植 runtime，再进入兼容 TDX 能力 |
-| pywencai | 可移植 runtime | `uv run ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 兼容源 | 允许；只在 OpenAPI 失败后调用 |
-| TDX MCP | owned OAuth | `uv run ym-data auth import-tdx --from-workbuddy` | 总状态与六能力分别为 `ready` / `auth_missing` / `auth_expired` | `tdx_screener→review_sentiment`、`tdx_quotes→stock_snapshot`、`tdx_kline→stock_kline`、研报、公告、新闻 | 允许；仅在零鉴权兼容源失败后，不进入 realtime/default breadth/sector |
-| Wind MCP | official CLI | 由官方 CLI 按其配置优先级管理；管道不读取或复制 Key | `configured_unverified` / runtime 错误 | 显式 `wind_enrichment`，及严格验证后的 `filings` 兼容源 | 仅 `filings` 白名单 fallback；不接价格、K 线、分钟、新闻、泛选股或 `stock_event` |
+TDX route provider 只在所有排在其前的语义兼容源失败后调用；这既包括零鉴权源，也包括显式 `review_sentiment` 中的 OpenAPI 与 pywencai。`tdx_mcp` 只聚合诊断状态，不参与 RouteSpec。
+
+| provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
+| --- | --- | --- | --- | --- |
+| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market`、`stock_snapshot`、`stock_kline` 第一源 | 允许；失败后按对应 RouteSpec 继续 |
+| `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market` 第二源 | 允许；仅在 `pytdx` 失败后 |
+| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market` 第三源；`stock_snapshot` 第二源；日周月 `stock_kline` 第二源 | 允许；只按上述 RouteSpec 次序 |
+| `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `stock_snapshot` 第三源；分钟 `stock_kline` 第二源 | 允许；只按上述 RouteSpec 次序 |
+| `ths_industry` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `sector_index` 唯一源 | 否；当前无语义兼容后继源 |
+| `pytdx_breadth` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 默认 `review_sentiment` 第一源 | 允许；失败后进入 `eastmoney_breadth` |
+| `eastmoney_breadth` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 默认 `review_sentiment` 第二源 | 允许；仅在 `pytdx_breadth` 失败后 |
+| `eastmoney_limit_pool` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `market_limit_state` 唯一源；默认 `review_sentiment` 第三源 | 仅作为默认情绪链末级 fallback；自身 intent 无后继源 |
+| `eastmoney_datacenter` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `stock_event` 唯一源 | 否；当前无语义兼容后继源 |
+| `eastmoney_research` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `research` 第一源 | 允许；失败后进入 `tdx_report` |
+| `cninfo` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `filings` 第一源 | 允许；失败后进入 `tdx_notice` |
+| `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
+| `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败后进入 `pywencai` |
+| `pywencai` | 可移植 runtime；`uv run ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
+| `tdx_mcp` | owned OAuth；`uv run ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
+| `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败后 |
+| `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
+| `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日周月及分钟 `stock_kline` 第三源 | 允许；仅在对应周期前置兼容源失败后 |
+| `tdx_report` | owned OAuth；同上 | 独立能力状态 | `research` 第二源 | 允许；仅在 `eastmoney_research` 失败后 |
+| `tdx_notice` | owned OAuth；同上 | 独立能力状态 | `filings` 第二源 | 允许；仅在 `cninfo` 失败后 |
+| `tdx_news` | owned OAuth；同上 | 独立能力状态 | `news` 第二源 | 允许；仅在 `cls` 失败后 |
+| `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
+| `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 
 `setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。`auth import-tdx --from-workbuddy` 只读取唯一明确候选并 fail closed；不会扫描整个 WorkBuddy，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 
