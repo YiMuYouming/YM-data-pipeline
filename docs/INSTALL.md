@@ -39,13 +39,13 @@ uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选�
 
 ## TDX profile
 
-TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代源。Task 8 只提供安全命令入口：
+TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代源。凭据导入必须显式执行：
 
 ```bash
 ./ym-data auth import-tdx --from-workbuddy
 ```
 
-当前命令会先打印计划目标 `~/.ym-stock-data/auth/tdx.json`，随后明确报告 Task 9 尚未就绪；它不会扫描 WorkBuddy，也不会写入凭据。凭据导入、刷新和 MCP 只读适配必须在 Task 9 完成后才能使用。
+`auth import-tdx --from-workbuddy` 只读取唯一明确候选；候选不唯一或包含多条 TDX 凭据时 fail closed。命令仅提取刷新所需的最小 TDX OAuth/client 元数据，原子写入 `~/.ym-stock-data/auth/tdx.json` 并设为 `0600`。它不会自动扫描、导入或打印凭据。未导入凭据时，doctor 报告 `auth_missing`；在真实 `tools/list` 与一个白名单只读小调用成功前，不称为在线。
 
 ## Wind profile
 
@@ -61,4 +61,4 @@ from ym_stock_data import query
 result = query("stock_snapshot", codes=["600519"])
 ```
 
-`fetch()` 与 `v2.resolve()` 仅是兼容投影。旧 880 板块、15 分钟指数、热点、北向、资金流与部分内容检索仍明确标记为 `legacy_direct`，等待 Task 13 补齐等价 intent 或迁移消费者；不会把 880 语义偷换成同花顺 881。
+`fetch()` 与 `v2.resolve()` 仅是兼容投影。没有 canonical 等价 intent 的旧 880 板块、15 分钟指数、热点、北向、资金流与部分内容检索仍明确标记为 `legacy_direct`，构成永久兼容边界。它们不推荐新代码使用，不承诺迁移时间，也不会把 880 语义偷换成同花顺 881。

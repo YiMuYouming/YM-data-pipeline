@@ -27,6 +27,43 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
                 self.assertNotIn("from ym_stock_data import fetch", text)
                 self.assertIn("./ym-data doctor --json", text)
 
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        review_row = next(
+            line
+            for line in readme.splitlines()
+            if line.startswith("| `review_sentiment` |")
+        )
+        params = {
+            value.strip().strip("`")
+            for value in review_row.split("|")[3].split(", ")
+        }
+        self.assertEqual(
+            {"query", "limit", "expected_row_shape", "expected_count", "date"},
+            params,
+        )
+        self.assertNotIn("page", review_row)
+
+        install = (ROOT / "docs/INSTALL.md").read_text(encoding="utf-8")
+        for stale in ("Task 8 只提供", "Task 9 尚未就绪", "等待 Task 13"):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, install)
+        for current in (
+            "唯一明确候选",
+            "最小 TDX OAuth/client 元数据",
+            "原子写入",
+            "`0600`",
+            "不会自动扫描、导入或打印凭据",
+            "`auth_missing`",
+            "`tools/list`",
+            "只读小调用",
+            "不称为在线",
+            "永久兼容边界",
+            "不推荐新代码",
+            "不承诺迁移时间",
+        ):
+            with self.subTest(current=current):
+                self.assertIn(current, install)
+
     def test_provider_ownership_table_covers_all_governed_classes(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for marker in (
@@ -68,6 +105,14 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertIn("诊断聚合，无 RouteSpec", rows["tdx_mcp"])
         self.assertIn("所有排在其前的语义兼容源失败后", ownership)
         self.assertNotIn("仅在零鉴权兼容源失败后", ownership)
+
+        pywencai_row = rows["pywencai"]
+        for state in ("configured_unverified", "dependency_missing", "unavailable"):
+            with self.subTest(state=state):
+                self.assertIn(state, pywencai_row)
+        self.assertNotIn("`ready`", pywencai_row)
+        self.assertIn("runtime installed", readme)
+        self.assertIn("不证明在线", readme)
 
     def test_v2_design_documents_are_explicitly_historical(self):
         for relative in (

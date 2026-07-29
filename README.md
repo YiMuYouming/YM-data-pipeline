@@ -27,7 +27,7 @@ PY
 | `sector_index` | 行业板块 | `names` / `codes` |
 | `stock_snapshot` | 个股行情与均线快照 | `codes` |
 | `stock_kline` | 个股 K 线 | `code`, `period`, `count` |
-| `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `page` |
+| `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date` |
 | `market_limit_state` | 涨跌停池聚合 | 无 |
 | `stock_event` | 个股低频事件 | `event`, `code` |
 | `research` / `filings` / `news` | 研报、公告、新闻 | `code` 等 intent 参数 |
@@ -87,7 +87,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败后调用；�
 | `cninfo` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `filings` 第一源 | 允许；失败后进入 `tdx_notice` |
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
 | `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败后进入 `pywencai` |
-| `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
+| `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
 | `tdx_mcp` | owned OAuth；`./ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
@@ -98,7 +98,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败后调用；�
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 
-`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。`auth import-tdx --from-workbuddy` 只读取唯一明确候选并 fail closed；不会扫描整个 WorkBuddy，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
+`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。`auth import-tdx --from-workbuddy` 只读取唯一明确候选并 fail closed；不会扫描整个 WorkBuddy，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 
 TDX 与 Wind 只允许固定只读工具白名单。它们不是交易入口，不发交易 POST，不调用券商，也不能单独触发交易建议。
 
