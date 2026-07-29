@@ -23,6 +23,9 @@ REQUIRED_TRADING_DAYS = 5
 EARLIEST_ACCEPTANCE_TIME = time(16, 10)
 ACCEPTANCE_DIR = Path.home() / ".ym-stock-data" / "acceptance"
 TZ_SHANGHAI = timezone(timedelta(hours=8))
+SSE_EXCHANGE = "Shanghai Stock Exchange"
+SSE_CALENDAR_BASE_URL = "https://www.sse.com.cn/"
+PENDING_STATUS = "pending"
 
 _SAFE_ENUM = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -470,10 +473,10 @@ def _project_calendar(value: dict, expected_date: str) -> dict:
         _raise("INVALID_CALENDAR")
     official = _mapping(value["official_calendar"])
     _exact_keys(official, required={"exchange", "url", "basis"})
-    if official["exchange"] != "Shanghai Stock Exchange":
+    if official["exchange"] != SSE_EXCHANGE:
         _raise("INVALID_CALENDAR")
-    if not isinstance(official["url"], str) or not re.fullmatch(
-        r"https://(?:www\.)?sse\.com\.cn(?:/.*)?", official["url"]
+    if not isinstance(official["url"], str) or not official["url"].startswith(
+        SSE_CALENDAR_BASE_URL
     ):
         _raise("INVALID_CALENDAR")
     return {
@@ -486,6 +489,83 @@ def _project_calendar(value: dict, expected_date: str) -> dict:
             "exchange": _short_text(official["exchange"], limit=64),
             "url": _short_text(official["url"], limit=512),
             "basis": _short_text(official["basis"], limit=256),
+        },
+    }
+
+
+def _pending_provider_result() -> dict:
+    return {
+        "status": PENDING_STATUS,
+        "provider_used": None,
+        "attempts": [],
+    }
+
+
+def acceptance_template(date: str) -> dict:
+    """Return fail-closed calendar/downstream inputs without I/O."""
+
+    observed_date = _date(date)
+    mutation_gates = _SAFETY_KEYS - {"metadata_only", "zero_secret_scan"}
+    safety = {key: False for key in sorted(mutation_gates)}
+    safety.update({"metadata_only": True, "zero_secret_scan": PENDING_STATUS})
+    return {
+        "calendar": {
+            "schema_version": "1",
+            "date": observed_date,
+            "timezone": "Asia/Shanghai",
+            "weekday": date_type.fromisoformat(observed_date).strftime("%A"),
+            "is_trading_day": False,
+            "confirmed": False,
+            "official_calendar": {
+                "exchange": SSE_EXCHANGE,
+                "url": SSE_CALENDAR_BASE_URL,
+                "basis": PENDING_STATUS,
+            },
+        },
+        "downstream": {
+            "schema_version": "1",
+            "breaker_verification": {
+                **_pending_provider_result(),
+                "row_count": 0,
+                "error_code": None,
+                "latency_ms": 0,
+            },
+            "market_watch": {
+                **_pending_provider_result(),
+                "quality_status": PENDING_STATUS,
+                "returned_count": 0,
+                "observation_only": True,
+            },
+            "live_dashboard": {
+                **_pending_provider_result(),
+                "row_count": 0,
+                "api_mode_tested": "unified",
+                "default_api_mode": "legacy",
+                "comparison_status": PENDING_STATUS,
+                "saved": False,
+            },
+            "safety": safety,
+        },
+        "template_meta": {
+            "pending_sentinel": PENDING_STATUS,
+            "allowed_result_statuses": sorted(_CASE_STATUSES),
+            "allowed_attempt_statuses": sorted(_ATTEMPT_STATUSES),
+            "required_replacements": [
+                "calendar.is_trading_day",
+                "calendar.confirmed",
+                "calendar.official_calendar.basis",
+                "downstream.breaker_verification.status",
+                "downstream.market_watch.status",
+                "downstream.market_watch.quality_status",
+                "downstream.live_dashboard.status",
+                "downstream.live_dashboard.comparison_status",
+                "downstream.safety.zero_secret_scan",
+            ],
+            "safety_gate": {
+                "must_remain_false": sorted(mutation_gates),
+                "metadata_only_required": True,
+                "zero_secret_scan_required": "pass",
+            },
         },
     }
 

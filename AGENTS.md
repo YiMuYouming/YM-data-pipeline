@@ -17,7 +17,7 @@ print(result["_meta"])
 - 改动按失败测试 → 最小实现 → 聚焦测试 → 全量测试推进。
 - 基础健康检查：`./ym-data doctor --json`。doctor 只报告脱敏状态，不证明在线。
 - 只有显式 `./ym-data smoke --live` 才联网；报告不得保存业务行、Key、token、stderr 或异常正文。
-- 五日验收使用 `./ym-data acceptance build` 消费已存在的 doctor、smoke、下游与官方交易日 JSON；builder/validator 本身不联网、不调用 provider，且 16:10（Asia/Shanghai）前拒绝生成当日记录。用 `./ym-data acceptance validate <receipt>` 做离线复核。
+- 五日验收从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始；唯一执行入口与安全探针见 `docs/ACCEPTANCE_RUNBOOK.md`，不要自行拼装 schema 或重复 live 调用。
 - 完成前运行 `uv run python -m compileall -q ym_stock_data scripts tests`、`uv run python -m unittest discover -s tests -v`、`git diff --check` 和敏感路径扫描。
 
 ## 公共 API 与契约

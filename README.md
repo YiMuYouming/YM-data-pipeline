@@ -46,23 +46,7 @@ PY
 
 ## 五日验收记录
 
-盘后先由受控 runbook 分别保存一次 doctor JSON、一次 smoke receipt、脱敏下游 probe JSON 和官方交易日 JSON；随后用离线 builder 投影元数据：
-
-```bash
-./ym-data acceptance build \
-  --date 2026-07-30 \
-  --doctor /tmp/ym-data-doctor-2026-07-30.json \
-  --smoke /Users/yimu/.ym-stock-data/smoke/<receipt>.json \
-  --downstream /tmp/ym-data-downstream-2026-07-30.json \
-  --calendar /tmp/ym-data-calendar-2026-07-30.json
-
-./ym-data acceptance validate \
-  /Users/yimu/.ym-stock-data/acceptance/2026-07-30.json
-```
-
-`acceptance build` 不联网、不运行 doctor/smoke/provider，也不执行下游 probe；它只消费现有 JSON。交易日输入必须确认 `Asia/Shanghai` 日期、英文 weekday、`Shanghai Stock Exchange` 和 `https://www.sse.com.cn/...` 官方日历来源。当日 16:10 前、仓库不干净、smoke 非 0600/非 10 cases、两个受保护 pyc 缺失或未被 Git ignore、日期重复/倒退、输入含业务行或敏感字段时均 fail closed。输出目录为 0700、文件为原子写入 0600，目标已存在时不覆盖。
-
-新记录使用 acceptance schema 1.1：validator 重算 smoke hash、Git commit tree/launcher、provider 汇总、下游投影和 nearest-rank P50/P95，并校验 receipt 完整性哈希。历史 Day1 schema 1.0 只读兼容，不会被重写；无密钥 SHA-256 是完整性校验，不是身份签名。`day_count=5` 之前 `window_complete=false`，不能宣称五日闭环。
+盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。
 
 ## 统一结果契约
 

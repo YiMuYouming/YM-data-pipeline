@@ -621,6 +621,108 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(before, path.read_bytes())
         self.assertEqual(before_mode, stat.S_IMODE(path.stat().st_mode))
 
+    def test_template_reuses_exact_builder_keys_and_fails_closed(self) -> None:
+        module = self.require_module()
+        self.assertTrue(
+            hasattr(module, "acceptance_template"),
+            "acceptance_template must be the single offline template owner",
+        )
+        template = module.acceptance_template("2026-07-30")
+        calendar = template["calendar"]
+        downstream = template["downstream"]
+
+        self.assertEqual(set(self.calendar_report("2026-07-30")), set(calendar))
+        expected_downstream = self.downstream_report()
+        self.assertEqual(set(expected_downstream), set(downstream))
+        for key in ("breaker_verification", "market_watch", "live_dashboard", "safety"):
+            self.assertEqual(set(expected_downstream[key]), set(downstream[key]))
+        self.assertEqual("Thursday", calendar["weekday"])
+        self.assertFalse(calendar["confirmed"])
+        self.assertFalse(calendar["is_trading_day"])
+        self.assertEqual("pending", downstream["safety"]["zero_secret_scan"])
+        self.assertEqual("pending", template["template_meta"]["pending_sentinel"])
+        self.assertEqual(
+            sorted(module._CASE_STATUSES),
+            template["template_meta"]["allowed_result_statuses"],
+        )
+        self.assertEqual(
+            sorted(module._ATTEMPT_STATUSES),
+            template["template_meta"]["allowed_attempt_statuses"],
+        )
+        with self.assertRaises(module.AcceptanceError):
+            module._project_calendar(calendar, "2026-07-30")
+        with self.assertRaises(module.AcceptanceError):
+            module._project_downstream(downstream)
+
+    def test_template_and_calendar_validator_share_sse_constants(self) -> None:
+        module = self.require_module()
+        with patch.object(module, "SSE_CALENDAR_BASE_URL", "https://calendar.example.invalid/"), patch.object(
+            module, "SSE_EXCHANGE", "Example Exchange"
+        ):
+            calendar = module.acceptance_template("2026-07-30")["calendar"]
+            calendar["is_trading_day"] = True
+            calendar["confirmed"] = True
+            calendar["official_calendar"]["basis"] = "verified fixture"
+            try:
+                projected = module._project_calendar(calendar, "2026-07-30")
+            except module.AcceptanceError:
+                self.fail("calendar validator must reuse the template SSE constants")
+        self.assertEqual("Example Exchange", projected["official_calendar"]["exchange"])
+        self.assertEqual(
+            "https://calendar.example.invalid/",
+            projected["official_calendar"]["url"],
+        )
+
+    def test_template_provider_attempt_lists_are_independent(self) -> None:
+        module = self.require_module()
+        downstream = module.acceptance_template("2026-07-30")["downstream"]
+        breaker_attempts = downstream["breaker_verification"]["attempts"]
+        market_attempts = downstream["market_watch"]["attempts"]
+        dashboard_attempts = downstream["live_dashboard"]["attempts"]
+
+        self.assertIsNot(breaker_attempts, market_attempts)
+        self.assertIsNot(breaker_attempts, dashboard_attempts)
+        self.assertIsNot(market_attempts, dashboard_attempts)
+        breaker_attempts.append({"provider": "fixture"})
+        self.assertEqual([], market_attempts)
+        self.assertEqual([], dashboard_attempts)
+
+    def test_template_cli_is_stdout_only_offline_and_sanitized(self) -> None:
+        module = self.require_module()
+        output = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with patch("ym_stock_data.__main__.run_live_smoke") as smoke, patch(
+                "ym_stock_data.__main__.collect_diagnostics"
+            ) as doctor, patch(
+                "ym_stock_data.__main__.canonical_query"
+            ) as provider, redirect_stdout(output), redirect_stderr(stderr):
+                exit_code = main(["acceptance", "template", "--date", "2026-07-30"])
+        except SystemExit:
+            self.fail("acceptance template CLI must be registered")
+        self.assertEqual(0, exit_code)
+        smoke.assert_not_called()
+        doctor.assert_not_called()
+        provider.assert_not_called()
+        self.assertEqual("", stderr.getvalue())
+        value = json.loads(output.getvalue())
+        self.assertEqual({"calendar", "downstream", "template_meta"}, set(value))
+        self.assertFalse((self.root / "2026-07-30.json").exists())
+
+        output = io.StringIO()
+        with patch(
+            "ym_stock_data.__main__.acceptance_template",
+            side_effect=RuntimeError("Bearer SECRET"),
+            create=True,
+        ), redirect_stdout(output):
+            exit_code = main(["acceptance", "template", "--date", "2026-07-30"])
+        self.assertEqual(1, exit_code)
+        self.assertEqual(
+            {"status": "unavailable", "error_code": "ACCEPTANCE_FAILED"},
+            json.loads(output.getvalue()),
+        )
+        self.assertNotIn("SECRET", output.getvalue())
+
     def test_cli_build_and_validate_are_sanitized_and_never_call_live_functions(self) -> None:
         module = self.require_module()
         output = io.StringIO()

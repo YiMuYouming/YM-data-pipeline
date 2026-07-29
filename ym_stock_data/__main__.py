@@ -7,7 +7,12 @@ import json
 import subprocess
 from pathlib import Path
 
-from .acceptance import AcceptanceError, build_daily_acceptance, validate_daily_acceptance
+from .acceptance import (
+    AcceptanceError,
+    acceptance_template,
+    build_daily_acceptance,
+    validate_daily_acceptance,
+)
 from .api import query as canonical_query
 from .doctor import (
     collect_diagnostics,
@@ -53,6 +58,8 @@ def _parser() -> argparse.ArgumentParser:
     acceptance_commands = acceptance_parser.add_subparsers(
         dest="acceptance_command", required=True
     )
+    acceptance_template_parser = acceptance_commands.add_parser("template")
+    acceptance_template_parser.add_argument("--date", required=True)
     acceptance_build = acceptance_commands.add_parser("build")
     acceptance_build.add_argument("--date", required=True)
     acceptance_build.add_argument("--doctor", required=True, type=Path)
@@ -141,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "acceptance":
         try:
+            if args.acceptance_command == "template":
+                _print_json(acceptance_template(args.date))
+                return 0
             if args.acceptance_command == "build":
                 kwargs = {
                     "date": args.date,
