@@ -189,17 +189,39 @@ def _validate_params(intent: str, params: dict) -> None:
             raise ValueError("news limit must be positive")
         params["limit"] = limit
     elif intent == "wind_enrichment":
-        if params.get("capability") not in WIND_ENRICHMENT_CAPABILITIES:
+        capability = params.get("capability")
+        if capability not in WIND_ENRICHMENT_CAPABILITIES:
             raise ValueError("wind_enrichment requires a supported capability")
         for key in ("codes", "fields"):
             value = params.get(key)
             if value is not None and not isinstance(value, (list, tuple)):
                 raise ValueError(f"wind_enrichment {key} must be a list")
+            if value is not None:
+                params[key] = list(value)
+        code = params.get("code")
+        codes = params.get("codes")
+        if code is not None and not str(code).strip():
+            raise ValueError("wind_enrichment code must be non-empty")
+        if codes is not None and any(not str(item).strip() for item in codes):
+            raise ValueError("wind_enrichment codes cannot contain empty values")
+        if (codes is not None and len(codes) > 1) or (
+            code is not None and codes is not None
+        ):
+            raise ValueError("wind_enrichment supports a single target")
         nested = params.get("params")
         if nested is not None and not isinstance(nested, dict):
             raise ValueError("wind_enrichment params must be a mapping")
         nested = nested or {}
-        unknown_nested = set(nested) - {"question", "top_k", "lang"}
+        if capability != "announcements" and "top_k" in nested:
+            raise ValueError(
+                "wind_enrichment top_k is only supported for announcements"
+            )
+        allowed_nested = (
+            {"question", "top_k"}
+            if capability == "announcements"
+            else {"question", "lang"}
+        )
+        unknown_nested = set(nested) - allowed_nested
         if unknown_nested:
             raise ValueError(
                 "unsupported wind_enrichment params: "

@@ -231,8 +231,6 @@ class WindMcpProvider:
             return self._failure("provider_error", "INVALID_PARAMS", "present")
         if spec["parameter"] == "question":
             arguments["lang"] = lang
-            if top_k is not None:
-                arguments["top_k"] = top_k
         else:
             arguments["top_k"] = top_k or 5
         command = [
@@ -312,6 +310,18 @@ class WindMcpProvider:
                 return None
             nested = params.get("params") or {}
             if not isinstance(nested, dict):
+                return None
+            if capability == "announcements":
+                if set(nested) - {"question", "top_k"}:
+                    return None
+            elif set(nested) - {"question", "lang"}:
+                return None
+            codes = params.get("codes")
+            if codes is not None and (
+                not isinstance(codes, (list, tuple)) or len(codes) > 1
+            ):
+                return None
+            if params.get("code") is not None and codes is not None:
                 return None
             question = nested.get("question")
             if not question:

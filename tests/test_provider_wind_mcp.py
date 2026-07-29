@@ -353,7 +353,6 @@ class WindProviderTests(unittest.TestCase):
                     params={
                         "question": "600519.SH 2025 ROE",
                         "lang": "英文",
-                        "top_k": 2,
                     },
                 )
 
@@ -363,11 +362,111 @@ class WindProviderTests(unittest.TestCase):
                         capability="fundamentals",
                         params={"question": "600519.SH", "unexpected": True},
                     )
+                with self.assertRaisesRegex(
+                    ValueError, "top_k is only supported for announcements"
+                ):
+                    api.query(
+                        "wind_enrichment",
+                        capability="fundamentals",
+                        params={"question": "600519.SH", "top_k": 2},
+                    )
 
         self.assertEqual("success", result["_meta"]["status"])
         command_params = json.loads(runner.call_args.args[0][5])
         self.assertEqual("英文", command_params["lang"])
         self.assertEqual("600519.SH2025ROE", command_params["question"])
+        self.assertNotIn("top_k", command_params)
+
+    def test_announcements_use_query_top_k_and_never_send_lang(self):
+        runner = Mock(
+            return_value=self.completed(
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps({"rows": [{"title": "年报"}]}),
+                        }
+                    ]
+                }
+            )
+        )
+        provider = self.provider(runner=runner)
+        with tempfile.TemporaryDirectory() as directory:
+            state = ProviderState(Path(directory) / "state.sqlite3")
+            with patch.object(api, "_STATE", state), patch.object(
+                api, "_provider_for", return_value=provider
+            ):
+                result = api.query(
+                    "wind_enrichment",
+                    capability="announcements",
+                    params={"question": "600519.SH 2025年报", "top_k": 3},
+                )
+
+        self.assertEqual("success", result["_meta"]["status"])
+        command = runner.call_args.args[0]
+        self.assertEqual(
+            [
+                "node",
+                str(self.skill_dir.resolve() / "scripts" / "cli.mjs"),
+                "call",
+                "financial_docs",
+                "get_company_announcements",
+                '{"query":"600519.SH2025年报","top_k":3}',
+            ],
+            command,
+        )
+        self.assertNotIn("lang", json.loads(command[5]))
+
+    def test_canonical_wind_enrichment_enforces_single_target(self):
+        invalid_params = (
+            {"codes": ["600519", "000001"]},
+            {"code": "600519", "codes": ["600519"]},
+        )
+        provider_loader = Mock(side_effect=AssertionError("provider must not run"))
+        for target_params in invalid_params:
+            with self.subTest(target_params=target_params), patch.object(
+                api, "_provider_for", provider_loader
+            ):
+                with self.assertRaisesRegex(ValueError, "single target"):
+                    api.query(
+                        "wind_enrichment",
+                        capability="fundamentals",
+                        **target_params,
+                    )
+        self.assertEqual(0, provider_loader.call_count)
+
+        runner = Mock(
+            return_value=self.completed(
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps({"rows": [{"value": 1}]}),
+                        }
+                    ]
+                }
+            )
+        )
+        provider = self.provider(runner=runner)
+        with tempfile.TemporaryDirectory() as directory:
+            state = ProviderState(Path(directory) / "state.sqlite3")
+            with patch.object(api, "_STATE", state), patch.object(
+                api, "_provider_for", return_value=provider
+            ):
+                result = api.query(
+                    "wind_enrichment",
+                    capability="fundamentals",
+                    codes=["600519"],
+                )
+
+        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual(
+            {
+                "question": "600519",
+                "lang": "中文",
+            },
+            json.loads(runner.call_args.args[0][5]),
+        )
 
     def test_forbidden_intents_never_call_wind(self):
         provider = self.provider(runner=Mock(side_effect=AssertionError("must not run")))
