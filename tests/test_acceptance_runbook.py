@@ -36,7 +36,7 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "_effective_meta",
             "compat_iwencai_query",
             'mode="unified"',
-            "legacy_fn=empty_legacy",
+            "empty_legacy",
             "zero_secret_scan",
             "shasum -a 256",
             "check-ignore",
@@ -87,6 +87,7 @@ class AcceptanceRunbookTests(unittest.TestCase):
             (MARKET_WATCH / "scripts/c15_contract.py", "def extract_rows"),
             (MARKET_WATCH / "scripts/c15_contract.py", "def _effective_meta"),
             (LIVE_DASHBOARD / "scripts/ym_data_query.py", "def compat_iwencai_query"),
+            (LIVE_DASHBOARD / "scripts/ym_data_query.py", "def compare_review_results"),
         )
         for path, definition in owners:
             with self.subTest(path=path, definition=definition):
@@ -124,6 +125,32 @@ class AcceptanceRunbookTests(unittest.TestCase):
             snippets,
             r'rg -n -i .*?"\$acceptance_tmp" "\$smoke_receipt"',
         )
+
+        dashboard_block = re.search(
+            r"## 7\. live-dashboard unified no-save 探针.*?```bash\n(.*?)```",
+            text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(dashboard_block)
+        assert dashboard_block is not None
+        dashboard = dashboard_block.group(1)
+        self.assertEqual(
+            1,
+            dashboard.count('query("review_sentiment", query="A股 非ST 涨停", limit=3)'),
+        )
+        for required in (
+            "compare_review_results",
+            "legacy_review_query",
+            'if default_mode == "legacy":',
+            'comparison_status = "unified_default_observed"',
+            "canonical_fn=lambda",
+            "legacy_fn=legacy_call",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, dashboard)
+        self.assertNotIn('"query":', dashboard)
+        self.assertNotIn('"rows":', dashboard)
+        self.assertNotIn("sha256", dashboard.lower())
 
     def test_other_entry_docs_link_runbook_without_copying_input_schema(self) -> None:
         documents = {

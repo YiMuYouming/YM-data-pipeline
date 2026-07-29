@@ -278,7 +278,7 @@ class AcceptanceTests(unittest.TestCase):
                 "row_count": 0,
                 "api_mode_tested": "unified",
                 "default_api_mode": "legacy",
-                "comparison_status": "not_comparable",
+                "comparison_status": "exact_code_set_match",
                 "saved": False,
             },
             "safety": {
@@ -686,6 +686,43 @@ class AcceptanceTests(unittest.TestCase):
         breaker_attempts.append({"provider": "fixture"})
         self.assertEqual([], market_attempts)
         self.assertEqual([], dashboard_attempts)
+
+    def test_v11_downstream_requires_reviewed_mode_comparison_pairs(self) -> None:
+        module = self.require_module()
+        legacy = self.downstream_report()
+        self.assertEqual(
+            "exact_code_set_match",
+            module._project_downstream(legacy)["live_dashboard"]["comparison_status"],
+        )
+
+        unified = json.loads(json.dumps(legacy))
+        unified["live_dashboard"]["default_api_mode"] = "unified"
+        unified["live_dashboard"]["comparison_status"] = "unified_default_observed"
+        self.assertEqual(
+            "unified_default_observed",
+            module._project_downstream(unified)["live_dashboard"]["comparison_status"],
+        )
+
+        invalid_pairs = (
+            ("legacy", "not_comparable", "unified"),
+            ("legacy", "unified_default_observed", "unified"),
+            ("unified", "exact_code_set_match", "unified"),
+            ("future", "unified_default_observed", "unified"),
+            ("legacy", "exact_code_set_match", "legacy"),
+        )
+        for default_mode, comparison, tested_mode in invalid_pairs:
+            report = json.loads(json.dumps(legacy))
+            report["live_dashboard"].update(
+                default_api_mode=default_mode,
+                comparison_status=comparison,
+                api_mode_tested=tested_mode,
+            )
+            with self.subTest(
+                default_mode=default_mode,
+                comparison=comparison,
+                tested_mode=tested_mode,
+            ), self.assertRaises(module.AcceptanceError):
+                module._project_downstream(report)
 
     def test_template_cli_is_stdout_only_offline_and_sanitized(self) -> None:
         module = self.require_module()

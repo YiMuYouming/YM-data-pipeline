@@ -197,7 +197,7 @@ PY
 
 ## 7. live-dashboard unified no-save 探针
 
-只调用 `compat_iwencai_query(mode="unified", legacy_fn=empty_legacy)`。空 legacy mock 保证没有旧数据读取或写入；不运行 collector、poll、snapshot 或任何持久化入口。
+先取得一次 canonical 结果。若当前默认仍为 `legacy`，只额外调用一次现有 legacy 查询，以规范六位代码集合做同点比较；比较不完全一致立即停止，不能 build。随后把已经取得的结果通过 lambda 交给 unified guard，禁止再次调用 provider。若默认已为 `unified`，使用空 legacy mock，不调用旧链。不运行 collector、poll、snapshot 或任何持久化入口。
 
 ```bash
 UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/live-dashboard.json" > /dev/null 2>/dev/null <<'PY'
@@ -208,17 +208,35 @@ from pathlib import Path
 
 dashboard_root = Path("/Users/yimu/Documents/YM_Capital/live-dashboard")
 sys.path.insert(0, str(dashboard_root))
-from scripts.ym_data_query import compat_iwencai_query, data_api_mode
+from scripts.ym_data_query import (
+    compare_review_results,
+    compat_iwencai_query,
+    data_api_mode,
+    legacy_review_query,
+)
+from ym_stock_data import query
 from ym_stock_data.smoke import summarize_query_result
 
 def empty_legacy(*args, **kwargs):
     return {"datas": []}
 
+canonical_result = query("review_sentiment", query="A股 非ST 涨停", limit=3)
+default_mode = data_api_mode({})
+legacy_call = empty_legacy
+comparison_status = "unified_default_observed"
+if default_mode == "legacy":
+    legacy_result = legacy_review_query("A股 非ST 涨停", limit=3)
+    comparison_status = compare_review_results(canonical_result, legacy_result)
+    if comparison_status != "exact_code_set_match":
+        raise SystemExit("DASHBOARD_COMPARISON_FAILED")
+    legacy_call = lambda *args, **kwargs: legacy_result
+
 result = compat_iwencai_query(
     "A股 非ST 涨停",
     limit=3,
     mode="unified",
-    legacy_fn=empty_legacy,
+    canonical_fn=lambda *args, **kwargs: canonical_result,
+    legacy_fn=legacy_call,
 )
 rows = result.get("datas") if isinstance(result.get("datas"), list) else []
 compat = result.get("_ym_data_compat") if isinstance(result.get("_ym_data_compat"), dict) else {}
@@ -230,8 +248,8 @@ value = {
     "attempts": summary["attempts"],
     "row_count": len(rows),
     "api_mode_tested": "unified",
-    "default_api_mode": data_api_mode({}),
-    "comparison_status": "not_comparable",
+    "default_api_mode": default_mode,
+    "comparison_status": comparison_status,
     "saved": False,
 }
 path = Path(sys.argv[1])

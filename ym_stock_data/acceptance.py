@@ -665,6 +665,17 @@ def _project_downstream(value: dict) -> dict:
     )
     if dashboard_base["saved"] is not False:
         _raise("INVALID_SAFETY_FLAGS")
+    expected_comparison = {
+        "legacy": "exact_code_set_match",
+        "unified": "unified_default_observed",
+    }
+    default_mode = dashboard_base["default_api_mode"]
+    if (
+        dashboard_base["api_mode_tested"] != "unified"
+        or default_mode not in expected_comparison
+        or dashboard_base["comparison_status"] != expected_comparison[default_mode]
+    ):
+        _raise("INVALID_INPUT")
     return {
         "breaker_verification": breaker,
         "market_watch": market_base,
