@@ -25,7 +25,7 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
                 self.assertIn("from ym_stock_data import query", text)
                 self.assertNotIn("from ym_stock_data.v2.resolve import resolve", text)
                 self.assertNotIn("from ym_stock_data import fetch", text)
-                self.assertIn("uv run ym-data doctor --json", text)
+                self.assertIn("./ym-data doctor --json", text)
 
     def test_provider_ownership_table_covers_all_governed_classes(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -35,8 +35,8 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             "可移植 runtime",
             "owned OAuth",
             "official CLI",
-            "ym-data setup pywencai",
-            "ym-data auth import-tdx --from-workbuddy",
+            "./ym-data setup pywencai",
+            "./ym-data auth import-tdx --from-workbuddy",
             "wind_enrichment",
             "automatic fallback",
         ):

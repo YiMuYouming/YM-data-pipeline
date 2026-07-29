@@ -13,10 +13,10 @@ print(result["_meta"])
 
 - 先读本文件、`README.md` 和当前实施计划，再检查 `git status --short`。
 - 保护已有 dirty work；禁止 reset、clean、stash。所有 staging 使用显式文件路径。
-- 使用项目环境：`uv run ...`。系统 Python 缺依赖不能证明 provider 不可用。
+- 正式 repo CLI 使用根目录 `./ym-data ...`；它为每个 checkout/worktree 选择 uv cache 外置环境，避免 macOS File Provider 的 hidden editable `.pth`。裸 `uv run ...` 仅用于不受该问题影响的底层开发验证。系统 Python 缺依赖不能证明 provider 不可用。
 - 改动按失败测试 → 最小实现 → 聚焦测试 → 全量测试推进。
-- 基础健康检查：`uv run ym-data doctor --json`。doctor 只报告脱敏状态，不证明在线。
-- 只有显式 `uv run ym-data smoke --live` 才联网；报告不得保存业务行、Key、token、stderr 或异常正文。
+- 基础健康检查：`./ym-data doctor --json`。doctor 只报告脱敏状态，不证明在线。
+- 只有显式 `./ym-data smoke --live` 才联网；报告不得保存业务行、Key、token、stderr 或异常正文。
 - 完成前运行 `uv run python -m compileall -q ym_stock_data scripts tests`、`uv run python -m unittest discover -s tests -v`、`git diff --check` 和敏感路径扫描。
 
 ## 公共 API 与契约

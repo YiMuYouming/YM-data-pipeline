@@ -1039,6 +1039,8 @@ Review the staged file list first so this command does not capture unrelated dir
 
 ### Task 14: Five-trading-day acceptance and closure receipt
 
+> **2026-07-29 CLI environment amendment:** The formal repo CLI entry is the root launcher `./ym-data`. It selects a checkout-specific external uv environment so canonical checkouts managed by macOS File Provider do not depend on a hidden project-local editable `.pth`. Bare `uv run ym-data ...` remains a lower-level command for environments not affected by File Provider metadata.
+
 **Files:**
 - Create outside Git: `~/.ym-stock-data/acceptance/YYYY-MM-DD.json`
 - Create after the observation window: `docs/audit/YYYY-MM-DD-unified-channel-acceptance.md`
@@ -1047,8 +1049,8 @@ Review the staged file list first so this command does not capture unrelated dir
 
 ```bash
 cd /Users/yimu/Documents/YM_Capital/YM-data-pipeline
-uv run ym-data doctor --json
-uv run ym-data smoke --live
+./ym-data doctor --json
+./ym-data smoke --live
 ```
 
 Run once on each of five trading days. Weekends and market holidays do not count.

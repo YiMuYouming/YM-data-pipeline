@@ -3,9 +3,14 @@
 ## 基础安装与诊断
 
 ```bash
-uv sync
-uv run ym-data doctor --json
+./ym-data doctor --json
 ```
+
+`./ym-data` 是正式 repo CLI 入口。它解析 launcher 所在目录的绝对路径；调用方没有显式设置 `UV_PROJECT_ENVIRONMENT` 时，使用 `uv cache dir` 和项目路径 SHA-256 选择 checkout/worktree 独立的外置环境，再运行项目 console entry。它不会把环境放在项目根目录，也不会记录参数或凭据。显式 `UV_PROJECT_ENVIRONMENT` 始终由调用方所有并原样保留。
+
+uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选、macOS 常见位置 `/opt/homebrew/bin/uv` 与 `/usr/local/bin/uv`。每个候选必须先通过脱敏的 `--version` 探针。显式 override 无效时 fail-fast，不会偷偷降级到其它 uv。
+
+在 macOS Documents File Provider 管理的 checkout 中，项目内 `.venv`、editable `.pth` 可能被重新标记为 hidden。外置环境可避免 Python 因 hidden `.pth` 跳过 editable 安装。裸 `uv run ym-data ...` 仅作为非 File Provider 环境的底层调用，不是正式使用入口。
 
 `doctor` 只读检查每个 provider，不发在线查询，不输出 token、异常正文或查询结果行。供应商在线状态必须通过显式只读探针验证，不能由单元测试或 `configured_unverified` 推断。
 
@@ -14,9 +19,8 @@ uv run ym-data doctor --json
 基础安装提供 PyTDX、腾讯、东方财富、同花顺、巨潮与财联社等零鉴权通道。先运行：
 
 ```bash
-uv sync
-uv run ym-data doctor --json
-uv run ym-data query realtime_market
+./ym-data doctor --json
+./ym-data query realtime_market
 ```
 
 零鉴权不代表在线可用；以 query 返回的 `provider_used`、`attempts`、`quality` 与 freshness 为准。
@@ -26,10 +30,9 @@ uv run ym-data query realtime_market
 问财网页降级运行时由项目统一安装到 `~/.ym-stock-data/runtimes/pywencai`：
 
 ```bash
-uv sync
-uv run ym-data doctor --json
-uv run ym-data setup pywencai
-uv run ym-data doctor --json
+./ym-data doctor --json
+./ym-data setup pywencai
+./ym-data doctor --json
 ```
 
 `setup pywencai` 是显式写入命令，会先打印目标目录，再用 `uv venv --python 3.12` 创建隔离环境，并通过 `uv pip install --python <runtime-python> pywencai==0.13.1 pandas numpy` 安装固定兼容链。两个子进程均使用参数列表和 `shell=False`，失败输出只报告脱敏状态。问财 OpenAPI Key 应由进程环境或密钥管理器注入；不把编辑 shell rc 文件作为主要配置方式，也不要把 Key 写入仓库。
@@ -39,7 +42,7 @@ uv run ym-data doctor --json
 TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代源。Task 8 只提供安全命令入口：
 
 ```bash
-uv run ym-data auth import-tdx --from-workbuddy
+./ym-data auth import-tdx --from-workbuddy
 ```
 
 当前命令会先打印计划目标 `~/.ym-stock-data/auth/tdx.json`，随后明确报告 Task 9 尚未就绪；它不会扫描 WorkBuddy，也不会写入凭据。凭据导入、刷新和 MCP 只读适配必须在 Task 9 完成后才能使用。

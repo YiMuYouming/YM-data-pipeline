@@ -36,11 +36,13 @@ PY
 先看公开能力和脱敏状态：
 
 ```bash
-uv run ym-data list
-uv run ym-data doctor --json
+./ym-data list
+./ym-data doctor --json
 ```
 
-`doctor` 不联网验证数据业务，不打印 token、Key、异常正文或业务行。只有显式 `uv run ym-data smoke --live` 才运行只读在线探针；默认 smoke 不联网。
+根目录 `./ym-data` 是正式 repo CLI 入口。它按项目绝对路径为每个 checkout/worktree 选择独立的 uv cache 外置环境；调用方显式设置 `UV_PROJECT_ENVIRONMENT` 时会保留该值。launcher 会选择实际通过 `--version` 探针的 uv；需要固定二进制时可显式设置绝对路径 `YM_DATA_UV_BIN`，无效 override 会直接失败而不降级。这样 macOS Documents File Provider 即使给项目内 dotpath 标记 hidden，也不会影响外置环境中的 editable `.pth`。路径和参数都按参数边界传递，不写入凭据。
+
+`doctor` 不联网验证数据业务，不打印 token、Key、异常正文或业务行。只有显式 `./ym-data smoke --live` 才运行只读在线探针；默认 smoke 不联网。裸 `uv run ym-data ...` 是底层调用，只适用于不受 File Provider dotpath 影响的环境，不再作为正式 CLI 指引。
 
 ## 统一结果契约
 
@@ -81,8 +83,8 @@ TDX route provider 只在所有排在其前的语义兼容源失败后调用；�
 | `cninfo` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `filings` 第一源 | 允许；失败后进入 `tdx_notice` |
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
 | `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败后进入 `pywencai` |
-| `pywencai` | 可移植 runtime；`uv run ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
-| `tdx_mcp` | owned OAuth；`uv run ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
+| `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `ready` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
+| `tdx_mcp` | owned OAuth；`./ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
 | `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日周月及分钟 `stock_kline` 第三源 | 允许；仅在对应周期前置兼容源失败后 |
