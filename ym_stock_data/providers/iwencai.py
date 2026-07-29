@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import os
 import re
@@ -35,13 +35,12 @@ def _is_executable(path: Path) -> bool:
 
 
 def _current_runtime_has_dependencies() -> bool:
-    try:
-        return all(
-            importlib.util.find_spec(module) is not None
-            for module in ("pywencai", "pandas")
-        )
-    except (ImportError, AttributeError, ValueError):
-        return False
+    for module in ("pywencai", "pandas"):
+        try:
+            importlib.import_module(module)
+        except Exception:
+            return False
+    return True
 
 
 def discover_pywencai_runtime() -> PyWenCaiRuntime | None:

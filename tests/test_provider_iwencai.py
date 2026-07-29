@@ -1,3 +1,5 @@
+import importlib.util as importlib_util
+import os
 import tempfile
 import unittest
 import urllib.error
@@ -5,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from ym_stock_data.provider_state import ProviderState
+from ym_stock_data.providers import iwencai as iwencai_provider
 from ym_stock_data.providers.iwencai import (
     IWenCaiOpenAPIProvider,
     PyWenCaiProvider,
@@ -73,6 +76,29 @@ class IWenCaiProviderTests(unittest.TestCase):
         self.assertEqual("dependency_missing", outcome.status)
         self.assertEqual("PYWENCAI_RUNTIME_MISSING", outcome.error_code)
         self.assertEqual("ym-data setup pywencai", outcome.detail)
+
+    def test_discover_rejects_current_runtime_when_import_probe_fails(self):
+        with unittest.mock.patch.dict(
+            os.environ,
+            {"YM_PYWENCAI_PYTHON": ""},
+            clear=False,
+        ), unittest.mock.patch.object(
+            iwencai_provider,
+            "_is_executable",
+            return_value=False,
+        ), unittest.mock.patch.object(
+            importlib_util,
+            "find_spec",
+            return_value=object(),
+        ), unittest.mock.patch.object(
+            iwencai_provider.importlib,
+            "import_module",
+            side_effect=ImportError("binary initialization failed"),
+        ) as import_module:
+            runtime = iwencai_provider.discover_pywencai_runtime()
+
+        self.assertIsNone(runtime)
+        import_module.assert_called_once_with("pywencai")
 
     def test_pywencai_nonetype_get_is_sanitized_provider_error(self):
         def fail_runner(_python, _query, _limit):
