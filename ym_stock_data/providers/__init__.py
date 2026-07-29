@@ -2,5 +2,13 @@
 
 from .base import Provider, ProviderOutcome
 from .local import LOCAL_PROVIDER_NAMES, LocalProvider
+from .tdx_mcp import TDX_PROVIDER_NAMES, TdxMcpProvider
 
-__all__ = ["LOCAL_PROVIDER_NAMES", "LocalProvider", "Provider", "ProviderOutcome"]
+__all__ = [
+    "LOCAL_PROVIDER_NAMES",
+    "LocalProvider",
+    "Provider",
+    "ProviderOutcome",
+    "TDX_PROVIDER_NAMES",
+    "TdxMcpProvider",
+]

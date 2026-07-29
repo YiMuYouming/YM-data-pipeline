@@ -13,6 +13,7 @@ from .doctor import (
     setup_pywencai,
 )
 from .fetch import CANONICAL_ROUTES, LEGACY_DIRECT_ROUTES, list_supported
+from .providers.tdx_mcp import CredentialImportError, import_tdx_credentials
 from .routing import _ROUTES
 
 
@@ -88,11 +89,13 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(result)
         return 0
     if args.command == "auth" and args.auth_command == "import-tdx":
-        result = report_tdx_import_unavailable(
-            from_workbuddy=args.from_workbuddy
-        )
+        try:
+            result = import_tdx_credentials(from_workbuddy=args.from_workbuddy)
+        except CredentialImportError:
+            _print_json({"status": "unavailable", "error_code": "IMPORT_FAILED"})
+            return 2
         _print_json(result)
-        return 2
+        return 0 if result.get("status") == "ready" else 2
     if args.command == "smoke":
         _print_json(
             {

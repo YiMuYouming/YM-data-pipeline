@@ -12,6 +12,7 @@ from .provider_state import ProviderState
 from .providers.base import ProviderOutcome
 from .providers.iwencai import IWenCaiOpenAPIProvider, PyWenCaiProvider
 from .providers.local import LOCAL_PROVIDER_NAMES, LocalProvider
+from .providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TdxMcpProvider
 from .quality import assess_quality
 from .routing import RouteSpec, route_for
 from .sources.stock_events import EVENTS as STOCK_EVENTS
@@ -65,8 +66,13 @@ def _local_factory(name: str) -> Callable[[], LocalProvider]:
     return lambda: LocalProvider(name)
 
 
+def _tdx_factory(name: str) -> Callable[[], TdxMcpProvider]:
+    return lambda: TdxMcpProvider(name)
+
+
 PROVIDER_REGISTRY: dict[str, object] = {
     **{name: _local_factory(name) for name in LOCAL_PROVIDER_NAMES},
+    **{name: _tdx_factory(name) for name in TDX_DIAGNOSTIC_NAMES},
     "iwencai_openapi": IWenCaiOpenAPIProvider,
     "pywencai": PyWenCaiProvider,
 }

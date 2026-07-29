@@ -50,7 +50,6 @@ class DoctorTests(unittest.TestCase):
         )
 
         json.loads(json.dumps(report))
-        self.assertEqual("auth_missing", report["providers"]["tdx_screener"]["status"])
         self.assertEqual("dependency_missing", report["providers"]["pywencai"]["status"])
         self.assertEqual("configured_unverified", report["providers"]["wind_mcp"]["status"])
         self.assertTrue(

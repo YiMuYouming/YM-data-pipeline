@@ -33,7 +33,7 @@ _ROUTES = {
     ),
     "stock_snapshot": RouteSpec(
         intent="stock_snapshot",
-        providers=("pytdx", "tencent", "sina"),
+        providers=("pytdx", "tencent", "sina", "tdx_quotes"),
         data_scope="A股个股实时行情与标准化报价字段",
         trade_usage=_TRADE_USAGE,
         max_age_sec=60,
@@ -84,14 +84,14 @@ _ROUTES = {
 
 _STOCK_KLINE_DAILY = RouteSpec(
     intent="stock_kline",
-    providers=("pytdx", "tencent"),
+    providers=("pytdx", "tencent", "tdx_kline"),
     data_scope="A股个股日周月K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=86400,
 )
 _STOCK_KLINE_MINUTE = RouteSpec(
     intent="stock_kline",
-    providers=("pytdx", "sina"),
+    providers=("pytdx", "sina", "tdx_kline"),
     data_scope="A股个股分钟K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,

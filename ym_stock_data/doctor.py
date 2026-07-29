@@ -9,6 +9,12 @@ from typing import Callable, Iterable
 
 from . import api
 from .config import PYWENCAI_RUNTIME_DIR
+from .providers.tdx_mcp import (
+    TDX_AUTH_PATH,
+    TDX_DIAGNOSTIC_NAMES,
+    TdxCredentialStore,
+    TdxMcpProvider,
+)
 
 
 ALLOWED_PROVIDER_STATES = frozenset(
@@ -22,9 +28,7 @@ ALLOWED_PROVIDER_STATES = frozenset(
         "unavailable",
     }
 )
-TDX_AUTH_PATH = Path.home() / ".ym-stock-data" / "auth" / "tdx.json"
 WIND_CONFIG_PATH = Path.home() / ".wind-aifinmarket" / "config"
-TDX_PROVIDER_NAMES = ("tdx_screener", "tdx_report", "tdx_notice", "tdx_news")
 WIND_PROVIDER_NAMES = ("wind_mcp", "wind_documents")
 
 
@@ -62,11 +66,21 @@ def collect_diagnostics(
 ) -> dict:
     """Inspect every provider independently without making provider calls."""
 
-    names = tuple(provider_names or sorted(api.PROVIDER_REGISTRY))
-    providers = {name: _safe_probe(name, provider_loader) for name in names}
-    tdx_status = "configured_unverified" if Path(tdx_auth_path).is_file() else "auth_missing"
-    for name in TDX_PROVIDER_NAMES:
-        providers[name] = {"provider": name, "status": tdx_status}
+    names = tuple(sorted(api.PROVIDER_REGISTRY) if provider_names is None else provider_names)
+    providers = {}
+    for name in names:
+        if (
+            name in TDX_DIAGNOSTIC_NAMES
+            and provider_loader is api._provider_for
+            and Path(tdx_auth_path) != TDX_AUTH_PATH
+        ):
+            provider = TdxMcpProvider(
+                name,
+                credential_store=TdxCredentialStore(tdx_auth_path),
+            )
+            providers[name] = _safe_probe(name, lambda _name, value=provider: value)
+        else:
+            providers[name] = _safe_probe(name, provider_loader)
     wind_status = "configured_unverified" if Path(wind_config_path).exists() else "unavailable"
     for name in WIND_PROVIDER_NAMES:
         providers[name] = {"provider": name, "status": wind_status}
