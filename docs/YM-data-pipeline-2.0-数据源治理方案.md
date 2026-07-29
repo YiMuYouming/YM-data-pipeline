@@ -1,6 +1,6 @@
 # YM-data-pipeline v2.0 数据源治理实施方案
 
-> **2026-07-29 状态说明**：本文保留为历史治理设计记录，文中的 `fetch()`、V2 旁路、manual MCP 和 agent-board 派工描述不再是现行操作指引。正式公共入口已经收敛为 `from ym_stock_data import query`；provider registry、RouteSpec、contract 1.0 与 `uv run ym-data doctor --json` 是当前事实层。旧 `fetch()` / V2 `resolve()` 仅作兼容投影，不拥有第二条 provider chain。新实现与下游迁移请以根目录 `README.md`、`AGENTS.md` 和 `docs/superpowers/plans/2026-07-29-unified-a-share-data-channel.md` 为准。
+> **2026-07-29 状态说明**：本文保留为历史治理设计记录，文中的 `fetch()`、V2 旁路、manual MCP 和 agent-board 派工描述不再是现行操作指引。正式公共入口已经收敛为 `from ym_stock_data import query`；provider registry、RouteSpec、contract 1.0 与根目录 `./ym-data doctor --json` 是当前事实层。旧 `fetch()` / V2 `resolve()` 仅作兼容投影，不拥有第二条 provider chain。新实现与下游迁移请以根目录 `README.md`、`AGENTS.md` 和 `docs/superpowers/plans/2026-07-29-unified-a-share-data-channel.md` 为准。
 
 > 当前 provider ownership 分为零鉴权、API key、可移植 pywencai runtime、owned OAuth TDX 和 official CLI Wind；是否允许自动降级由实际 RouteSpec 决定，不能从本文历史设想推断。TDX/Wind 只读且受固定能力白名单约束，不构成交易入口。
 

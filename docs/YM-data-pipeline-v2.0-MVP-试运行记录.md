@@ -1,6 +1,6 @@
 # YM-data-pipeline v2.0 MVP 试运行记录
 
-> **2026-07-29 归档说明**：本文记录已经结束的 V2 MVP 试运行，以下 `resolve()` 示例和“不接生产消费端”等结论仅用于解释历史验证过程，不再是现行使用说明。正式公共入口为 `from ym_stock_data import query`，返回 contract 1.0；V1/V2 只保留兼容包装（compatibility wrapper）。实时 provider 状态使用 `uv run ym-data doctor --json`，只有显式 `uv run ym-data smoke --live` 才运行只读在线探针。
+> **2026-07-29 归档说明**：本文记录已经结束的 V2 MVP 试运行，以下 `resolve()` 示例和“不接生产消费端”等结论仅用于解释历史验证过程，不再是现行使用说明。正式公共入口为 `from ym_stock_data import query`，返回 contract 1.0；V1/V2 只保留兼容包装（compatibility wrapper）。实时 provider 状态使用根目录 `./ym-data doctor --json`，只有显式调用根目录 `./ym-data smoke --live` 才运行只读在线探针。
 
 > 当前迁移仍受 rollback switch 保护：默认是否切换必须由同一时点 side-by-side 的业务 shape、provider/attempts、合法 empty 与 error overwrite guard 证据决定。TDX/Wind provider 已进入受治理 registry，但没有鉴权或在线探针证据时不得宣称可用，也不得用于交易写入。
 
