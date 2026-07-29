@@ -79,6 +79,28 @@ class V2QualityTests(unittest.TestCase):
         self.iwencai_state = patch.multiple(iwencai, **IWENCAI_TEST_STATE)
         self.iwencai_state.start()
         self.addCleanup(self.iwencai_state.stop)
+        pywencai_patch = patch(
+            "ym_stock_data.providers.iwencai.PyWenCaiProvider.call",
+            return_value=ProviderOutcome(
+                provider="pywencai",
+                status="provider_error",
+                error_code="CONTROLLED_PROVIDER_ERROR",
+                latency_ms=1,
+            ),
+        )
+        self.pywencai_call = pywencai_patch.start()
+        self.addCleanup(pywencai_patch.stop)
+        tdx_patch = patch(
+            "ym_stock_data.providers.tdx_mcp.TdxMcpProvider.call",
+            return_value=ProviderOutcome(
+                provider="tdx_screener",
+                status="auth_error",
+                error_code="AUTH_MISSING",
+                latency_ms=1,
+            ),
+        )
+        self.tdx_call = tdx_patch.start()
+        self.addCleanup(tdx_patch.stop)
 
     def quality(self, result):
         self.assertIn("quality", result["_meta"])
@@ -303,6 +325,8 @@ class V2QualityTests(unittest.TestCase):
             )
 
         self.assertEqual("error", result["_meta"]["confidence"])
+        self.pywencai_call.assert_called_once()
+        self.tdx_call.assert_called_once()
         quality = self.quality(result)
         self.assertEqual("error", quality["status"])
         self.assertEqual("unknown", quality["row_shape"])
@@ -463,6 +487,20 @@ class V2QualityTests(unittest.TestCase):
 
         qualities = [item["_meta"]["quality"] for item in result["data"]["queries"]]
         self.assertEqual(["normal", "partial", "error"], [item["status"] for item in qualities])
+        self.pywencai_call.assert_called_once()
+        self.tdx_call.assert_called_once()
+        canonical_attempts = result["data"]["queries"][2]["_meta"]["canonical_meta"]["attempts"]
+        self.assertEqual(
+            [
+                ("iwencai_openapi", "provider_error", "PROVIDER_ERROR"),
+                ("pywencai", "provider_error", "CONTROLLED_PROVIDER_ERROR"),
+                ("tdx_screener", "auth_error", "AUTH_MISSING"),
+            ],
+            [
+                (attempt["provider"], attempt["status"], attempt["error_code"])
+                for attempt in canonical_attempts
+            ],
+        )
         rollup = self.quality(result)
         self.assertEqual("error", rollup["status"])
         self.assertEqual(6, rollup["requested_count"])
