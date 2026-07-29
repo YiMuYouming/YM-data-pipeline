@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pywencai = ["pywencai>=0.13", "pandas"]
+full = ["pywencai==0.13.1", "pandas", "numpy"]
 
 [project.scripts]
 ym-data = "ym_stock_data.__main__:main"

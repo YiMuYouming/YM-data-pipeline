@@ -13,7 +13,7 @@
 
 import copy
 import http.client
-import os, re, json, socket, urllib.error, urllib.request, secrets, sys, time
+import os, re, json, socket, urllib.error, urllib.request, secrets, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +35,10 @@ _DEFAULT_QUERY_CACHE_TTL = 300
 
 class _InvalidOpenAPIResponse(ValueError):
     """OpenAPI returned valid JSON that does not satisfy its object contract."""
+
+
+class IWenCaiAuthMissing(RuntimeError):
+    """The OpenAPI transport has no configured API key."""
 
 
 def _rows_from_openapi_container(value) -> list[dict] | None:
@@ -106,6 +110,30 @@ def _iwencai_headers() -> dict:
     }
 
 
+def _openapi_query(query_str: str, limit: int = 50, page: int = 1) -> dict:
+    """Execute one OpenAPI request without fallback or breaker decisions."""
+
+    if not _load_api_key():
+        raise IWenCaiAuthMissing("IWENCAI_API_KEY is not configured")
+    req = urllib.request.Request(
+        f"{IWENCAI_BASE}/v1/query2data",
+        data=json.dumps(
+            {
+                "query": query_str,
+                "page": str(page),
+                "limit": str(limit),
+                "is_cache": "1",
+                "expand_index": "true",
+            }
+        ).encode("utf-8"),
+        headers=_iwencai_headers(),
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = _validate_openapi_result(json.loads(resp.read().decode("utf-8")))
+    result["_source"] = "openapi"
+    return result
+
+
 def _query_cache_ttl() -> int:
     try:
         value = int(os.environ.get("IWENCAI_QUERY_CACHE_TTL", _DEFAULT_QUERY_CACHE_TTL))
@@ -162,20 +190,15 @@ def _query_cache_put(query_str: str, limit: int, page: int, result: dict) -> dic
 
 
 def _get_pywencai():
-    """惰性加载 pywencai（仅降级时触发）"""
+    """Load pywencai only from the current interpreter."""
     global _PYWENCAI
     if _PYWENCAI is not None:
         return _PYWENCAI
     try:
-        from ..config import PYWENCAI_VENV
-        if PYWENCAI_VENV not in sys.path:
-            sys.path.insert(0, PYWENCAI_VENV)
-    except ImportError:
-        pass
-    try:
         import pywencai as pw
         import pandas as pd
         import warnings
+
         warnings.filterwarnings("ignore")
         _PYWENCAI = (pw, pd)
         return _PYWENCAI
@@ -184,93 +207,145 @@ def _get_pywencai():
         return None
 
 
-def _pywencai_query(query_str: str, limit: int = 50) -> dict:
-    """pywencai 查询 → OpenAPI 兼容格式（subprocess 调用 data-venv Python，绕过代码签名冲突）"""
-    import subprocess as _sp
-    import json as _json
-    
-    try:
-        from ..config import PYWENCAI_PYTHON as _py
-    except ImportError:
-        _py = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")
-    
-    _code = f"""
-import sys, json, numpy as np
-sys.path.insert(0, '{str(Path(__file__).parent.parent)}')
+_PYWENCAI_RUNNER = r"""
+import json
+import sys
+
+import numpy as np
+import pandas as pd
+import pywencai as pw
+
+
+def native(value):
+    if value is None:
+        return None
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value) if value == value else None
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, float) and value != value:
+        return None
+    return value
+
+
+def frame_payload(frame):
+    if frame is None or frame.empty:
+        return {"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}
+    rows = frame.to_dict(orient="records")
+    for row in rows:
+        for key in row:
+            row[key] = native(row[key])
+    return {
+        "datas": rows,
+        "columns": [{"index_name": str(column)} for column in frame.columns],
+        "row_count": len(rows),
+        "_source": "pywencai",
+    }
+
+
 try:
-    import pywencai as pw
-    import pandas as pd
-    result = pw.get(query={_json.dumps(query_str)}, loop_first=True)
-    if result is None:
-        print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
-    elif isinstance(result, pd.DataFrame):
-        if result.empty:
-            print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
-        else:
-            datas = result.to_dict(orient="records")
-            def native(v):
-                if v is None: return None
-                if isinstance(v, (np.integer,)): return int(v)
-                if isinstance(v, (np.floating,)): return float(v) if v == v else None
-                if isinstance(v, np.ndarray): return v.tolist()
-                if isinstance(v, float) and (v != v): return None
-                return v
-            for row in datas:
-                for k in row:
-                    row[k] = native(row[k])
-            print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in result.columns],
-                    "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+    result = pw.get(query=sys.argv[1], loop_first=True)
+    if isinstance(result, pd.DataFrame) or result is None:
+        payload = frame_payload(result)
     elif isinstance(result, dict):
-        # 个股查询可能返回 dict 或 内含 DataFrame
-        import pandas as _pd
-        nested_df = None
-        for _v in result.values():
-            if isinstance(_v, _pd.DataFrame):
-                nested_df = _v
-                break
-        if nested_df is not None:
-            # dict 内含 DataFrame → 降级为 DataFrame 路径
-            if nested_df.empty:
-                print(json.dumps({{"datas": [], "columns": [], "row_count": 0, "_source": "pywencai"}}))
-            else:
-                datas = nested_df.to_dict(orient="records")
-                def native(v):
-                    if v is None: return None
-                    if isinstance(v, (np.integer,)): return int(v)
-                    if isinstance(v, (np.floating,)): return float(v) if v == v else None
-                    if isinstance(v, np.ndarray): return v.tolist()
-                    if isinstance(v, float) and (v != v): return None
-                    return v
-                for row in datas:
-                    for k in row:
-                        row[k] = native(row[k])
-                print(json.dumps({{"datas": datas, "columns": [{{"index_name": c}} for c in nested_df.columns],
-                        "row_count": len(datas), "_source": "pywencai"}}, ensure_ascii=False))
+        nested = next(
+            (value for value in result.values() if isinstance(value, pd.DataFrame)),
+            None,
+        )
+        if nested is not None:
+            payload = frame_payload(nested)
+        elif all(not isinstance(value, (list, dict, pd.DataFrame, pd.Series)) for value in result.values()):
+            payload = {
+                "datas": [{key: native(value) for key, value in result.items()}],
+                "columns": [{"index_name": str(key)} for key in result],
+                "row_count": 1,
+                "_source": "pywencai",
+            }
         else:
-            # 纯 dict（个股单行数据）
-            datas = [result]
-            has_nested = any(isinstance(v, (list, dict, _pd.DataFrame, _pd.Series)) for v in result.values())
-            if has_nested:
-                print(json.dumps({{"error": f"dict有嵌套:{{{{k:type(v).__name__ for k,v in result.items()}}}}",
-                        "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
-            else:
-                print(json.dumps({{"datas": datas, "columns": [{{"index_name": k}} for k in result.keys()],
-                        "row_count": 1, "_source": "pywencai"}}, ensure_ascii=False))
+            payload = {
+                "error": "pywencai returned an unsupported nested mapping",
+                "error_type": "UNSUPPORTED_SHAPE",
+                "_source": "pywencai",
+            }
     else:
-        print(json.dumps({{"error": f"未知类型: {{type(result).__name__}}", "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
-except Exception as e:
-    print(json.dumps({{"error": str(e), "query": {_json.dumps(query_str)}, "_source": "pywencai"}}))
+        payload = {
+            "error": "pywencai returned an unsupported result type",
+            "error_type": "UNSUPPORTED_SHAPE",
+            "_source": "pywencai",
+        }
+except Exception as error:
+    payload = {
+        "error": "pywencai execution failed",
+        "error_type": type(error).__name__,
+        "_source": "pywencai",
+    }
+
+print(json.dumps(payload, ensure_ascii=False))
 """
+
+
+def _pywencai_query(
+    query_str: str,
+    limit: int = 50,
+    *,
+    python_executable: str | Path | None = None,
+) -> dict:
+    """Run one pywencai subprocess using an explicitly resolved runtime."""
+
+    import subprocess
+
+    if python_executable is None:
+        from ..providers.iwencai import discover_pywencai_runtime
+
+        runtime = discover_pywencai_runtime()
+        if runtime is None:
+            return {
+                "error": "pywencai runtime is not installed",
+                "error_type": "PYWENCAI_RUNTIME_MISSING",
+                "_source": "pywencai",
+            }
+        python_executable = runtime.python
+
     try:
-        r = _sp.run([_py, "-c", _code], capture_output=True, text=True, timeout=45)
-        out = r.stdout.strip()
-        if out:
-            return _limit_pywencai_rows(_json.loads(out), limit)
-        return {"error": r.stderr[:200], "query": query_str, "_source": "pywencai"}
-    except _sp.TimeoutExpired:
-        return {"error": "timeout", "query": query_str, "_source": "pywencai"}
-    except Exception as e:
-        return {"error": str(e), "query": query_str, "_source": "pywencai"}
+        completed = subprocess.run(
+            [str(python_executable), "-c", _PYWENCAI_RUNNER, query_str],
+            capture_output=True,
+            text=True,
+            timeout=45,
+            shell=False,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "error": "pywencai execution timed out",
+            "error_type": "PYWENCAI_TIMEOUT",
+            "_source": "pywencai",
+        }
+    except (OSError, ValueError) as error:
+        return {
+            "error": "pywencai process could not start",
+            "error_type": type(error).__name__,
+            "_source": "pywencai",
+        }
+
+    output_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    if completed.returncode != 0 or not output_lines:
+        return {
+            "error": "pywencai process failed",
+            "error_type": f"PROCESS_EXIT_{completed.returncode}",
+            "_source": "pywencai",
+        }
+    try:
+        payload = json.loads(output_lines[-1])
+    except (json.JSONDecodeError, TypeError):
+        return {
+            "error": "pywencai returned invalid JSON",
+            "error_type": "INVALID_JSON",
+            "_source": "pywencai",
+        }
+    return _limit_pywencai_rows(payload, limit)
 
 
 def _limit_pywencai_rows(result: dict, limit: int) -> dict:
@@ -445,23 +520,10 @@ def query(query_str: str, limit: int = 50, page: int = 1) -> dict:
     if breaker:
         return _dispatch_pywencai_fallback(query_str, limit, context=breaker)
 
-    req = urllib.request.Request(
-        f"{IWENCAI_BASE}/v1/query2data",
-        data=json.dumps({
-            "query": query_str, "page": str(page),
-            "limit": str(limit), "is_cache": "1", "expand_index": "true",
-        }).encode("utf-8"),
-        headers=_iwencai_headers(),
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = _validate_openapi_result(
-                json.loads(resp.read().decode("utf-8"))
-            )
-            result["_source"] = "openapi"
-            _OPENAPI_DOWN_AT = 0  # 恢复
-            return _query_cache_put(query_str, limit, page, result)
+        result = _openapi_query(query_str, limit, page)
+        _OPENAPI_DOWN_AT = 0  # 恢复
+        return _query_cache_put(query_str, limit, page, result)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403, 429):
             failure_type = "rate_limit" if e.code == 429 else "auth"

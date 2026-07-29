@@ -40,8 +40,6 @@ EASTMONEY_RATE_BREAKER_SECONDS = 300
 # 问财 API KEY 路径
 IWENCAI_API_KEY_PATH = Path.home() / ".zshrc"
 
-# pywencai venv（OpenAPI 额度耗尽时自动降级）
-PYWENCAI_VENV = str(Path.home() / ".workbuddy/binaries/python/envs/default/lib/python3.13/site-packages")
-
-# pywencai + pytdx 降级 Python 路径（data-venv python3.12，已装 pywencai）
-PYWENCAI_PYTHON = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")
+# 项目托管的 pywencai 运行时；也可用 YM_PYWENCAI_PYTHON 显式覆盖。
+PYWENCAI_RUNTIME_DIR = Path.home() / ".ym-stock-data" / "runtimes" / "pywencai"
+PYWENCAI_MANAGED_PYTHON = PYWENCAI_RUNTIME_DIR / "bin" / "python"

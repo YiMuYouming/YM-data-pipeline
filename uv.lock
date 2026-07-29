@@ -1611,6 +1611,14 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+full = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pywencai" },
+]
 pywencai = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1620,9 +1628,12 @@ pywencai = [
 [package.metadata]
 requires-dist = [
     { name = "akshare", specifier = ">=1.18" },
+    { name = "numpy", marker = "extra == 'full'" },
+    { name = "pandas", marker = "extra == 'full'" },
     { name = "pandas", marker = "extra == 'pywencai'" },
     { name = "pytdx", specifier = ">=0.3" },
+    { name = "pywencai", marker = "extra == 'full'", specifier = "==0.13.1" },
     { name = "pywencai", marker = "extra == 'pywencai'", specifier = ">=0.13" },
     { name = "requests", specifier = ">=2.28" },
 ]
-provides-extras = ["pywencai"]
+provides-extras = ["pywencai", "full"]
