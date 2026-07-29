@@ -5,6 +5,9 @@ from pathlib import Path
 # 缓存目录
 CACHE_DIR = Path.home() / ".ym-stock-data" / "cache"
 
+# 跨进程 provider 健康与 breaker 状态
+PROVIDER_STATE_PATH = Path.home() / ".ym-stock-data" / "state" / "providers.sqlite3"
+
 # PyTDX 服务器列表 (IP, port)
 PYTDX_SERVERS = [
     # 2026-07-13 业务探针验证：报价与日线均非空。全部为 PyTDX 公共零鉴权节点。
