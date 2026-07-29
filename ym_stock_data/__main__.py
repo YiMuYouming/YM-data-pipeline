@@ -15,6 +15,7 @@ from .doctor import (
 from .fetch import CANONICAL_ROUTES, LEGACY_DIRECT_ROUTES, list_supported
 from .providers.tdx_mcp import CredentialImportError, import_tdx_credentials
 from .routing import _ROUTES
+from .smoke import run_live_smoke
 
 
 CANONICAL_INTENTS = frozenset(_ROUTES) | {"review_sentiment", "stock_kline"}
@@ -41,7 +42,9 @@ def _parser() -> argparse.ArgumentParser:
     import_tdx.add_argument("--from-workbuddy", action="store_true")
 
     smoke_parser = commands.add_parser("smoke", help="explicit live read-only probes")
-    smoke_parser.add_argument("--live", action="store_true", required=True)
+    smoke_parser.add_argument("--live", action="store_true")
+    smoke_parser.add_argument("--case-timeout", type=float, default=45.0)
+    smoke_parser.add_argument("--total-timeout", type=float, default=360.0)
     commands.add_parser("list", help="list canonical and compatibility routes")
     return parser
 
@@ -97,13 +100,27 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(result)
         return 0 if result.get("status") == "ready" else 2
     if args.command == "smoke":
+        if not args.live:
+            _print_json({"status": "not_run", "action": "pass --live explicitly"})
+            return 2
+        try:
+            receipt = run_live_smoke(
+                case_timeout_sec=args.case_timeout,
+                total_timeout_sec=args.total_timeout,
+            )
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            _print_json({"status": "unavailable", "error_code": "SMOKE_FAILED"})
+            return 1
         _print_json(
             {
-                "status": "unavailable",
-                "action": "live smoke probes are implemented in Task 11",
+                "status": "complete",
+                "receipt": receipt["receipt"],
+                "summary": receipt["summary"],
             }
         )
-        return 2
+        return 0
     if args.command == "list":
         _print_json(
             {
