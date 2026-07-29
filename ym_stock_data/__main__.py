@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from pathlib import Path
 
+from .acceptance import AcceptanceError, build_daily_acceptance, validate_daily_acceptance
 from .api import query as canonical_query
 from .doctor import (
     collect_diagnostics,
@@ -45,6 +47,22 @@ def _parser() -> argparse.ArgumentParser:
     smoke_parser.add_argument("--live", action="store_true")
     smoke_parser.add_argument("--case-timeout", type=float, default=45.0)
     smoke_parser.add_argument("--total-timeout", type=float, default=360.0)
+    acceptance_parser = commands.add_parser(
+        "acceptance", help="build or validate offline daily acceptance metadata"
+    )
+    acceptance_commands = acceptance_parser.add_subparsers(
+        dest="acceptance_command", required=True
+    )
+    acceptance_build = acceptance_commands.add_parser("build")
+    acceptance_build.add_argument("--date", required=True)
+    acceptance_build.add_argument("--doctor", required=True, type=Path)
+    acceptance_build.add_argument("--smoke", required=True, type=Path)
+    acceptance_build.add_argument("--downstream", required=True, type=Path)
+    acceptance_build.add_argument("--calendar", required=True, type=Path)
+    acceptance_build.add_argument("--output-dir", type=Path)
+    acceptance_build.add_argument("--repo-root", type=Path)
+    acceptance_validate = acceptance_commands.add_parser("validate")
+    acceptance_validate.add_argument("path", type=Path)
     commands.add_parser("list", help="list canonical and compatibility routes")
     return parser
 
@@ -121,6 +139,34 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         return 0
+    if args.command == "acceptance":
+        try:
+            if args.acceptance_command == "build":
+                kwargs = {
+                    "date": args.date,
+                    "doctor_path": args.doctor,
+                    "smoke_path": args.smoke,
+                    "downstream_path": args.downstream,
+                    "calendar_path": args.calendar,
+                }
+                if args.output_dir is not None:
+                    kwargs["output_dir"] = args.output_dir
+                if args.repo_root is not None:
+                    kwargs["repo_root"] = args.repo_root
+                result = build_daily_acceptance(**kwargs)
+                _print_json({"status": "complete", **result})
+                return 0
+            result = validate_daily_acceptance(args.path)
+            _print_json(result)
+            return 0
+        except AcceptanceError as error:
+            _print_json({"status": "unavailable", "error_code": error.code})
+            return 2
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            _print_json({"status": "unavailable", "error_code": "ACCEPTANCE_FAILED"})
+            return 1
     if args.command == "list":
         _print_json(
             {

@@ -1049,11 +1049,18 @@ Review the staged file list first so this command does not capture unrelated dir
 
 ```bash
 cd /Users/yimu/Documents/YM_Capital/YM-data-pipeline
-./ym-data doctor --json
+./ym-data doctor --json > /tmp/ym-data-doctor-YYYY-MM-DD.json
 ./ym-data smoke --live
+./ym-data acceptance build \
+  --date YYYY-MM-DD \
+  --doctor /tmp/ym-data-doctor-YYYY-MM-DD.json \
+  --smoke ~/.ym-stock-data/smoke/<receipt>.json \
+  --downstream /tmp/ym-data-downstream-YYYY-MM-DD.json \
+  --calendar /tmp/ym-data-calendar-YYYY-MM-DD.json
+./ym-data acceptance validate ~/.ym-stock-data/acceptance/YYYY-MM-DD.json
 ```
 
-Run once on each of five trading days. Weekends and market holidays do not count.
+Run the live commands once on each of five trading days after 16:10 Asia/Shanghai; weekends and market holidays do not count. The acceptance builder and validator are offline only: they consume the already-produced, sanitized metadata inputs and must not call providers, rerun smoke, or overwrite an existing daily receipt. Calendar metadata must identify the Shanghai Stock Exchange and an official HTTPS SSE URL. Schema 1.1 strictly validates projections and integrity while retaining read-only compatibility for the existing Day1 schema 1.0 receipt.
 
 - [ ] **Step 2: Record exact daily gates**
 

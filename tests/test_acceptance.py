@@ -1,0 +1,716 @@
+from __future__ import annotations
+
+import hashlib
+import importlib
+import io
+import json
+import os
+import stat
+import subprocess
+import tempfile
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+from ym_stock_data.__main__ import main
+
+
+try:
+    acceptance = importlib.import_module("ym_stock_data.acceptance")
+except ModuleNotFoundError:
+    acceptance = None
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_json(path: Path, value: object, mode: int = 0o600) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(path.parent, 0o700)
+    os.chmod(path, mode)
+
+
+class AcceptanceTests(unittest.TestCase):
+    shanghai = timezone(timedelta(hours=8))
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        subprocess.run(
+            ["git", "init", "-b", "codex/test-acceptance"],
+            cwd=self.repo,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.invalid"],
+            cwd=self.repo,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Acceptance Test"],
+            cwd=self.repo,
+            check=True,
+        )
+        (self.repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+        (self.repo / ".gitignore").write_text("__pycache__/\n*.pyc\n", encoding="utf-8")
+        package = self.repo / "ym_stock_data"
+        package.mkdir()
+        (package / "marker.py").write_text("MARKER = True\n", encoding="utf-8")
+        launcher = self.repo / "ym-data"
+        launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o755)
+        subprocess.run(
+            ["git", "add", ".gitignore", "tracked.txt", "ym-data", "ym_stock_data/marker.py"],
+            cwd=self.repo,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-m", "baseline"],
+            cwd=self.repo,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        protected = self.repo / "ym_stock_data/experimental/__pycache__"
+        protected.mkdir(parents=True)
+        (protected / "__init__.cpython-314.pyc").write_bytes(b"protected-init")
+        (protected / "wind_sidecar.cpython-314.pyc").write_bytes(b"protected-wind")
+
+        self.state = self.root / "state/acceptance"
+        self.doctor_path = self.root / "inputs/doctor.json"
+        self.smoke_path = self.root / "smoke/2026-07-30T161500+0800.json"
+        self.downstream_path = self.root / "inputs/downstream.json"
+        self.calendar_path = self.root / "inputs/calendar.json"
+        self.write_inputs("2026-07-30")
+
+    def require_module(self):
+        if acceptance is None:
+            self.fail("ym_stock_data.acceptance must exist")
+        return acceptance
+
+    def git_head(self) -> str:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def smoke_report(self, date: str) -> dict:
+        latencies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        cases = []
+        for index, latency in enumerate(latencies, start=1):
+            case = {
+                "case_id": f"case_{index}",
+                "category": "zero_auth",
+                "intent": "stock_snapshot",
+                "params": {"sample_id": f"sample_{index}"},
+                "status": "success",
+                "provider_used": "pytdx",
+                "attempts": [
+                    {
+                        "provider": "pytdx",
+                        "status": "success",
+                        "error_code": None,
+                        "latency_ms": latency,
+                    }
+                ],
+                "row_count": 1,
+                "error_code": None,
+                "latency_ms": latency,
+            }
+            cases.append(case)
+        cases[7].update(
+            {
+                "case_id": "explicit_wencai",
+                "category": "api_key",
+                "intent": "review_sentiment",
+                "status": "error",
+                "provider_used": None,
+                "attempts": [
+                    {
+                        "provider": "iwencai_openapi",
+                        "status": "auth_error",
+                        "error_code": "HTTP_401",
+                        "latency_ms": 8,
+                    },
+                    {
+                        "provider": "pywencai",
+                        "status": "dependency_missing",
+                        "error_code": "PYWENCAI_RUNTIME_MISSING",
+                        "latency_ms": 0,
+                    },
+                ],
+                "row_count": 0,
+                "error_code": "PYWENCAI_RUNTIME_MISSING",
+            }
+        )
+        cases[8].update(
+            {
+                "case_id": "tdx_probe",
+                "category": "owned_oauth",
+                "status": "auth_missing",
+                "provider_used": None,
+                "attempts": [],
+                "row_count": 0,
+                "error_code": None,
+            }
+        )
+        cases[9].update(
+            {
+                "case_id": "wind_probe",
+                "category": "official_cli",
+                "intent": "wind_enrichment",
+                "status": "success",
+                "provider_used": "wind_mcp",
+                "attempts": [
+                    {
+                        "provider": "wind_mcp",
+                        "status": "success",
+                        "error_code": None,
+                        "latency_ms": 10,
+                    }
+                ],
+            }
+        )
+        counts: dict[str, int] = {}
+        for case in cases:
+            counts[case["status"]] = counts.get(case["status"], 0) + 1
+        return {
+            "schema_version": "1",
+            "live": True,
+            "started_at": f"{date}T16:14:00+08:00",
+            "completed_at": f"{date}T16:15:00+08:00",
+            "summary": {"total": 10, "status_counts": counts},
+            "cases": cases,
+        }
+
+    def doctor_report(self) -> dict:
+        providers = {
+            "iwencai_openapi": {
+                "provider": "iwencai_openapi",
+                "status": "configured_unverified",
+                "breaker": False,
+                "auth": {"required": True, "status": "present"},
+            },
+            "pywencai": {
+                "provider": "pywencai",
+                "status": "dependency_missing",
+                "action": "ym-data setup pywencai",
+            },
+            "tdx_mcp": {
+                "provider": "tdx_mcp",
+                "status": "auth_missing",
+                "auth": {"required": True, "status": "missing"},
+            },
+            "tdx_quotes": {
+                "provider": "tdx_quotes",
+                "status": "auth_missing",
+                "auth": {"required": True, "status": "missing"},
+            },
+            "wind_mcp": {
+                "provider": "wind_mcp",
+                "status": "configured_unverified",
+                "runtime_scope": "project_compat",
+                "auth": {"required": True, "status": "unverified"},
+            },
+        }
+        counts: dict[str, int] = {}
+        for item in providers.values():
+            counts[item["status"]] = counts.get(item["status"], 0) + 1
+        return {"schema_version": "1", "providers": providers, "summary": counts}
+
+    def downstream_report(self) -> dict:
+        return {
+            "schema_version": "1",
+            "breaker_verification": {
+                "status": "error",
+                "provider_used": None,
+                "attempts": [
+                    {
+                        "provider": "iwencai_openapi",
+                        "status": "breaker_open",
+                        "error_code": "HTTP_401",
+                        "latency_ms": 0,
+                    }
+                ],
+                "row_count": 0,
+                "error_code": "HTTP_401",
+                "latency_ms": 2,
+            },
+            "market_watch": {
+                "status": "success",
+                "provider_used": "pytdx_breadth",
+                "attempts": [
+                    {
+                        "provider": "pytdx_breadth",
+                        "status": "success",
+                        "error_code": None,
+                        "latency_ms": 20,
+                    }
+                ],
+                "quality_status": "partial",
+                "returned_count": 1,
+                "observation_only": True,
+            },
+            "live_dashboard": {
+                "status": "error",
+                "provider_used": None,
+                "attempts": [
+                    {
+                        "provider": "iwencai_openapi",
+                        "status": "breaker_open",
+                        "error_code": "HTTP_401",
+                        "latency_ms": 0,
+                    }
+                ],
+                "row_count": 0,
+                "api_mode_tested": "unified",
+                "default_api_mode": "legacy",
+                "comparison_status": "not_comparable",
+                "saved": False,
+            },
+            "safety": {
+                "broker_or_trading_call": False,
+                "business_or_production_data_write": False,
+                "business_rows_stored": False,
+                "credential_values_stored": False,
+                "deployment": False,
+                "exception_or_stderr_text_stored": False,
+                "git_push": False,
+                "http_8088_post": False,
+                "metadata_only": True,
+                "zero_secret_scan": "pass",
+            },
+        }
+
+    def calendar_report(self, date: str) -> dict:
+        return {
+            "schema_version": "1",
+            "date": date,
+            "timezone": "Asia/Shanghai",
+            "weekday": "Thursday" if date.endswith("30") else "Wednesday",
+            "is_trading_day": True,
+            "confirmed": True,
+            "official_calendar": {
+                "exchange": "Shanghai Stock Exchange",
+                "url": "https://www.sse.com.cn/example",
+                "basis": f"{date} is not listed as a market closure",
+            },
+        }
+
+    def write_inputs(self, date: str) -> None:
+        write_json(self.doctor_path, self.doctor_report())
+        self.smoke_path = self.root / f"smoke/{date}T161500+0800.json"
+        write_json(self.smoke_path, self.smoke_report(date))
+        write_json(self.downstream_path, self.downstream_report())
+        write_json(self.calendar_path, self.calendar_report(date))
+
+    def build(
+        self,
+        date: str = "2026-07-30",
+        *,
+        now: datetime | None = None,
+    ) -> dict:
+        module = self.require_module()
+        return module.build_daily_acceptance(
+            date=date,
+            doctor_path=self.doctor_path,
+            smoke_path=self.smoke_path,
+            downstream_path=self.downstream_path,
+            calendar_path=self.calendar_path,
+            output_dir=self.state,
+            repo_root=self.repo,
+            now_fn=lambda: now
+            or datetime(2026, 7, 30, 16, 20, tzinfo=self.shanghai),
+        )
+
+    def write_legacy_day1(self, date: str = "2026-07-29") -> Path:
+        receipt = self.root / f"smoke/{date}T161500+0800.json"
+        write_json(receipt, self.smoke_report(date))
+        destination = self.state / f"{date}.json"
+        report = {
+            "schema": "ym-stock-data.acceptance.daily",
+            "schema_version": "1.0",
+            "generated_at": f"{date}T16:20:00+08:00",
+            "observation": {
+                "date": date,
+                "timezone": "Asia/Shanghai",
+                "weekday": "Wednesday",
+                "is_trading_day": True,
+                "day_count": 1,
+                "required_trading_days": 5,
+                "window_complete": False,
+            },
+            "canonical_checkout": {
+                "branch": "codex/test-acceptance",
+                "head": self.git_head(),
+                "tracked_clean": True,
+                "staged_clean": True,
+            },
+            "smoke_evidence": {
+                "path": str(receipt),
+                "sha256": sha256(receipt),
+                "file_mode": "0600",
+                "started_at": f"{date}T16:14:00+08:00",
+                "completed_at": f"{date}T16:15:00+08:00",
+                "total_cases": 10,
+                "status_counts": self.smoke_report(date)["summary"]["status_counts"],
+                "cases": self.smoke_report(date)["cases"],
+            },
+            "safety": {
+                **self.downstream_report()["safety"],
+                "smoke_rerun": False,
+            },
+        }
+        write_json(destination, report)
+        return destination
+
+    def test_build_binds_git_receipt_permissions_latency_and_sanitized_metadata(self) -> None:
+        built = self.build("2026-07-30")
+        path = Path(built["path"])
+        report = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual("1.1", report["schema_version"])
+        self.assertEqual("codex/test-acceptance", report["canonical_checkout"]["branch"])
+        self.assertEqual(self.git_head(), report["canonical_checkout"]["head"])
+        self.assertTrue(report["canonical_checkout"]["tracked_clean"])
+        self.assertTrue(report["canonical_checkout"]["staged_clean"])
+        self.assertEqual(sha256(self.smoke_path), report["smoke_evidence"]["sha256"])
+        self.assertEqual(10, report["smoke_evidence"]["total_cases"])
+        self.assertEqual(5, report["latency"]["p50"])
+        self.assertEqual(10, report["latency"]["p95"])
+        self.assertEqual("nearest-rank", report["latency"]["method"])
+        self.assertEqual(0o700, stat.S_IMODE(self.state.stat().st_mode))
+        self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
+        self.assertEqual([], list(self.state.glob("*.tmp")))
+        serialized = json.dumps(report, ensure_ascii=False)
+        for forbidden_value in ("SECRET_ROW", "Bearer ", "Traceback"):
+            self.assertNotIn(forbidden_value, serialized)
+
+    def test_build_accepts_legacy_day1_and_derives_day2_sequence(self) -> None:
+        module = self.require_module()
+        day1 = self.write_legacy_day1()
+        self.assertEqual("valid", module.validate_daily_acceptance(day1)["status"])
+
+        built = self.build("2026-07-30")
+        report = json.loads(Path(built["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(2, report["observation"]["day_count"])
+        self.assertEqual(5, report["observation"]["required_trading_days"])
+        self.assertFalse(report["observation"]["window_complete"])
+
+    def test_build_rejects_forbidden_keys_and_sensitive_values(self) -> None:
+        module = self.require_module()
+        mutations = (
+            (self.doctor_path, lambda value: value["providers"]["wind_mcp"].update(token="SECRET")),
+            (self.smoke_path, lambda value: value["cases"][0].update(rows=[{"code": "600519"}])),
+            (self.downstream_path, lambda value: value["market_watch"].update(query="raw query")),
+            (
+                self.calendar_path,
+                lambda value: value["official_calendar"].update(basis="Bearer SECRET"),
+            ),
+        )
+        for path, mutate in mutations:
+            with self.subTest(path=path.name):
+                self.write_inputs("2026-07-30")
+                value = json.loads(path.read_text(encoding="utf-8"))
+                mutate(value)
+                write_json(path, value)
+                with self.assertRaises(module.AcceptanceError) as caught:
+                    self.build("2026-07-30")
+                self.assertEqual("FORBIDDEN_INPUT", caught.exception.code)
+                self.assertFalse((self.state / "2026-07-30.json").exists())
+
+    def test_build_rejects_dirty_repo_without_writing(self) -> None:
+        module = self.require_module()
+        (self.repo / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("GIT_NOT_CLEAN", caught.exception.code)
+        self.assertFalse((self.state / "2026-07-30.json").exists())
+
+    def test_build_never_overwrites_existing_target(self) -> None:
+        module = self.require_module()
+        target = self.state / "2026-07-30.json"
+        write_json(target, {"sentinel": "keep"})
+        before = target.read_bytes()
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("TARGET_EXISTS", caught.exception.code)
+        self.assertEqual(before, target.read_bytes())
+
+    def test_build_rejects_unconfirmed_nontrading_and_nonincreasing_dates(self) -> None:
+        module = self.require_module()
+        calendar = self.calendar_report("2026-07-30")
+        calendar["confirmed"] = False
+        write_json(self.calendar_path, calendar)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("TRADING_DAY_UNCONFIRMED", caught.exception.code)
+
+        self.write_inputs("2026-07-30")
+        self.write_legacy_day1("2026-07-31")
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("DATE_NOT_INCREASING", caught.exception.code)
+
+    def test_build_rejects_non_sse_calendar_metadata(self) -> None:
+        module = self.require_module()
+        mutations = (
+            lambda value: value["official_calendar"].update(exchange="Other Exchange"),
+            lambda value: value["official_calendar"].update(url="https://example.com/calendar"),
+            lambda value: value.update(weekday="Wednesday"),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.write_inputs("2026-07-30")
+                calendar = json.loads(self.calendar_path.read_text(encoding="utf-8"))
+                mutate(calendar)
+                write_json(self.calendar_path, calendar)
+                with self.assertRaises(module.AcceptanceError) as caught:
+                    self.build()
+                self.assertEqual("INVALID_CALENDAR", caught.exception.code)
+
+    def test_build_rejects_before_close_and_wrong_local_date(self) -> None:
+        module = self.require_module()
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build(now=datetime(2026, 7, 30, 16, 9, 59, tzinfo=self.shanghai))
+        self.assertEqual("OBSERVATION_TOO_EARLY", caught.exception.code)
+
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build(now=datetime(2026, 7, 31, 16, 20, tzinfo=self.shanghai))
+        self.assertEqual("OBSERVATION_DATE_MISMATCH", caught.exception.code)
+
+    def test_build_requires_both_protected_ignored_artifacts(self) -> None:
+        module = self.require_module()
+        protected = self.repo / "ym_stock_data/experimental/__pycache__"
+        missing = protected / "wind_sidecar.cpython-314.pyc"
+        missing.unlink()
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("PROTECTED_ARTIFACT_MISSING", caught.exception.code)
+
+        missing.write_bytes(b"protected-wind")
+        (self.repo / ".gitignore").write_text("other-generated-file\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=self.repo, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-m", "change ignore"],
+            cwd=self.repo,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+        self.assertEqual("PROTECTED_ARTIFACT_NOT_IGNORED", caught.exception.code)
+
+    def test_validator_detects_receipt_tampering_permissions_and_day_sequence(self) -> None:
+        module = self.require_module()
+        self.write_legacy_day1()
+        built = self.build()
+        path = Path(built["path"])
+        self.assertEqual("valid", module.validate_daily_acceptance(path)["status"])
+
+        self.smoke_path.write_text("{}\n", encoding="utf-8")
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("RECEIPT_HASH_MISMATCH", caught.exception.code)
+
+        self.write_inputs("2026-07-30")
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["smoke_evidence"]["sha256"] = sha256(self.smoke_path)
+        report["observation"]["day_count"] = 3
+        report["integrity"] = module._report_integrity(report)
+        write_json(path, report)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("INVALID_DAY_SEQUENCE", caught.exception.code)
+
+        report["observation"]["day_count"] = 2
+        report["integrity"] = module._report_integrity(report)
+        write_json(path, report, mode=0o644)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("INVALID_PERMISSIONS", caught.exception.code)
+
+    def test_validator_rejects_forbidden_fields_in_acceptance(self) -> None:
+        module = self.require_module()
+        built = self.build()
+        path = Path(built["path"])
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["raw"] = {"rows": [{"token": "SECRET"}]}
+        write_json(path, report)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("FORBIDDEN_FIELD", caught.exception.code)
+
+    def test_validator_checks_git_head_object_and_directory_mode(self) -> None:
+        module = self.require_module()
+        built = self.build()
+        path = Path(built["path"])
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["canonical_checkout"]["head"] = "0" * 40
+        write_json(path, report)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("INVALID_HEAD_BINDING", caught.exception.code)
+
+        report["canonical_checkout"]["head"] = self.git_head()
+        write_json(path, report)
+        os.chmod(self.state, 0o755)
+        with self.assertRaises(module.AcceptanceError) as caught:
+            module.validate_daily_acceptance(path)
+        self.assertEqual("INVALID_PERMISSIONS", caught.exception.code)
+
+    def test_validator_recomputes_every_v11_core_projection(self) -> None:
+        module = self.require_module()
+        built = self.build()
+        path = Path(built["path"])
+        original = json.loads(path.read_text(encoding="utf-8"))
+        mutations = (
+            ("top_level", lambda value: value.update(unexpected_metadata=True)),
+            ("doctor", lambda value: value["doctor"]["summary"].update(ready=99)),
+            ("provider_acceptance", lambda value: value["provider_acceptance"]["iwencai_openapi"].update(
+                http_401_count=99
+            )),
+            ("latency", lambda value: value["latency"].update(p50=99)),
+            ("downstream", lambda value: value["downstream_checks"]["market_watch"].update(
+                quality_status="normal"
+            )),
+            ("weekday", lambda value: value["observation"].update(weekday="Wednesday")),
+            ("calendar", lambda value: value["observation"]["official_calendar"].update(
+                url="https://example.com/calendar"
+            )),
+            ("tree", lambda value: value["canonical_checkout"].update(ym_stock_data_tree="0" * 40)),
+            ("launcher", lambda value: value["canonical_checkout"]["launcher"].update(sha256="0" * 64)),
+            ("ignored_artifact", lambda value: value["canonical_checkout"]["ignored_artifacts"][0].update(
+                sha256="0" * 64
+            )),
+        )
+        for field, mutate in mutations:
+            with self.subTest(field=field):
+                report = json.loads(json.dumps(original))
+                mutate(report)
+                write_json(path, report)
+                with self.assertRaises(module.AcceptanceError):
+                    module.validate_daily_acceptance(path)
+        write_json(path, original)
+        self.assertEqual("valid", module.validate_daily_acceptance(path)["status"])
+
+    def test_real_day1_is_validated_without_rewrite(self) -> None:
+        module = self.require_module()
+        path = Path("/Users/yimu/.ym-stock-data/acceptance/2026-07-29.json")
+        if not path.exists():
+            self.skipTest("existing Day1 receipt is not present on this host")
+        before = path.read_bytes()
+        before_mode = stat.S_IMODE(path.stat().st_mode)
+        result = module.validate_daily_acceptance(path)
+        self.assertEqual("1.0", result["schema_version"])
+        self.assertEqual("2026-07-29", result["date"])
+        self.assertEqual(before, path.read_bytes())
+        self.assertEqual(before_mode, stat.S_IMODE(path.stat().st_mode))
+
+    def test_cli_build_and_validate_are_sanitized_and_never_call_live_functions(self) -> None:
+        module = self.require_module()
+        output = io.StringIO()
+        stderr = io.StringIO()
+        arguments = [
+            "acceptance",
+            "build",
+            "--date",
+            "2026-07-30",
+            "--doctor",
+            str(self.doctor_path),
+            "--smoke",
+            str(self.smoke_path),
+            "--downstream",
+            str(self.downstream_path),
+            "--calendar",
+            str(self.calendar_path),
+            "--output-dir",
+            str(self.state),
+            "--repo-root",
+            str(self.repo),
+        ]
+        try:
+            def offline_build(**kwargs):
+                return module.build_daily_acceptance(
+                    **kwargs,
+                    now_fn=lambda: datetime(
+                        2026, 7, 30, 16, 20, tzinfo=self.shanghai
+                    ),
+                )
+
+            with patch("ym_stock_data.__main__.run_live_smoke") as smoke, patch(
+                "ym_stock_data.__main__.collect_diagnostics"
+            ) as doctor, patch(
+                "ym_stock_data.__main__.build_daily_acceptance",
+                side_effect=offline_build,
+            ), redirect_stdout(output), redirect_stderr(stderr):
+                exit_code = main(arguments)
+        except SystemExit:
+            self.fail("acceptance CLI must be registered")
+        self.assertEqual(0, exit_code)
+        smoke.assert_not_called()
+        doctor.assert_not_called()
+        built = json.loads(output.getvalue())
+        self.assertEqual("complete", built["status"])
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = main(["acceptance", "validate", built["path"]])
+        self.assertEqual(0, exit_code)
+        self.assertEqual("valid", json.loads(output.getvalue())["status"])
+
+        output = io.StringIO()
+        with patch(
+            "ym_stock_data.__main__.build_daily_acceptance",
+            side_effect=module.AcceptanceError("FORBIDDEN_INPUT"),
+        ), redirect_stdout(output):
+            exit_code = main(arguments)
+        self.assertEqual(2, exit_code)
+        self.assertEqual(
+            {"status": "unavailable", "error_code": "FORBIDDEN_INPUT"},
+            json.loads(output.getvalue()),
+        )
+        self.assertNotIn("SECRET", output.getvalue())
+
+        output = io.StringIO()
+        with patch(
+            "ym_stock_data.__main__.build_daily_acceptance",
+            side_effect=RuntimeError("Bearer SECRET"),
+        ), redirect_stdout(output):
+            exit_code = main(arguments)
+        self.assertEqual(1, exit_code)
+        self.assertEqual(
+            {"status": "unavailable", "error_code": "ACCEPTANCE_FAILED"},
+            json.loads(output.getvalue()),
+        )
+        self.assertNotIn("SECRET", output.getvalue())
+
+    def test_module_has_no_provider_or_network_owners(self) -> None:
+        module = self.require_module()
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for forbidden in (
+            "collect_diagnostics",
+            "run_live_smoke",
+            "canonical_query",
+            "urllib",
+            "requests",
+        ):
+            self.assertNotIn(forbidden, source)
+
+
+if __name__ == "__main__":
+    unittest.main()
