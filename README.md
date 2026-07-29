@@ -97,6 +97,48 @@ source。只有完成 [`docs/TDX-MCP-备用源验证清单.md`](docs/TDX-MCP-备
 
 TDX 适合补“宽度”和“细节”，但不替代 V2 的 `_meta`、时效、均线和规则治理。
 
+### Wind MCP 受治理研究补充源
+
+Wind MCP 已进入正式 provider registry，但仍是 `registered_experimental`：只允许显式
+`wind_enrichment` 研究增强，以及在巨潮和 TDX 公告源失败后的 `filings` 兼容降级。
+它不接实时行情、K 线、分钟数据、新闻、泛选股或 `stock_event` 自动路由。
+
+显式研究增强统一走 canonical `query()`：
+
+```bash
+uv run python - <<'PY'
+from ym_stock_data import query
+
+result = query(
+    "wind_enrichment",
+    capability="fundamentals",
+    params={"question": "600519.SH 2025年ROE和净利润增速", "lang": "中文"},
+)
+print(result["_meta"])
+PY
+```
+
+当前允许的 capability：
+
+| capability | Wind 能力 | 研究用途 |
+|---|---|---|
+| `company_profile` | 公司档案/主营/行业 | 业务映射补充 |
+| `fundamentals` | 财务与增长指标 | 财务口径交叉核验 |
+| `equity_holders` | 股本、股东、实控人、限售 | 股权与供给风险补充 |
+| `company_events` | 增发、并购、ST、分红等 | 公司事件补充 |
+| `risk_metrics` | Beta、波动率、Sharpe、VaR 等 | 风险指标补充 |
+| `index_fundamentals` | PE/PB/PS 与历史分位 | 指数估值补充 |
+| `announcements` | 官方公告与定期报告检索 | 文档证据补充 |
+
+硬边界：
+
+- 成功、空集和失败都使用统一 contract 1.0 `_meta`，真实 provider/attempt 可审计。
+- Key 由 Wind 官方 CLI 自行从安全配置读取，不进入 Python 参数、命令行或结果。
+- 错误只暴露固定枚举，不透传 CLI stderr、payload message 或 agent action。
+- `filings` 只接受显式且类型正确的 `filings` 容器；`stock_event` 尚无等价性证明，不接 Wind。
+- 发现顺序为显式配置、全局 Skill、YiMu_IR 项目兼容路径；doctor 只报告 scope 和脱敏状态。
+- 晋升前继续执行 [`docs/Wind-MCP-补充源验证清单.md`](docs/Wind-MCP-补充源验证清单.md)。
+
 ## 架构（5 层）
 
 | 层 | 内容 | 工具 |

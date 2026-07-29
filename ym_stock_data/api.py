@@ -13,6 +13,11 @@ from .providers.base import ProviderOutcome
 from .providers.iwencai import IWenCaiOpenAPIProvider, PyWenCaiProvider
 from .providers.local import LOCAL_PROVIDER_NAMES, LocalProvider
 from .providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TdxMcpProvider
+from .providers.wind_mcp import (
+    WIND_ENRICHMENT_CAPABILITIES,
+    WIND_PROVIDER_NAMES,
+    WindMcpProvider,
+)
 from .quality import assess_quality
 from .routing import RouteSpec, route_for
 from .sources.stock_events import EVENTS as STOCK_EVENTS
@@ -70,9 +75,14 @@ def _tdx_factory(name: str) -> Callable[[], TdxMcpProvider]:
     return lambda: TdxMcpProvider(name)
 
 
+def _wind_factory(name: str) -> Callable[[], WindMcpProvider]:
+    return lambda: WindMcpProvider(name)
+
+
 PROVIDER_REGISTRY: dict[str, object] = {
     **{name: _local_factory(name) for name in LOCAL_PROVIDER_NAMES},
     **{name: _tdx_factory(name) for name in TDX_DIAGNOSTIC_NAMES},
+    **{name: _wind_factory(name) for name in WIND_PROVIDER_NAMES},
     "iwencai_openapi": IWenCaiOpenAPIProvider,
     "pywencai": PyWenCaiProvider,
 }
@@ -178,6 +188,40 @@ def _validate_params(intent: str, params: dict) -> None:
         if limit <= 0:
             raise ValueError("news limit must be positive")
         params["limit"] = limit
+    elif intent == "wind_enrichment":
+        if params.get("capability") not in WIND_ENRICHMENT_CAPABILITIES:
+            raise ValueError("wind_enrichment requires a supported capability")
+        for key in ("codes", "fields"):
+            value = params.get(key)
+            if value is not None and not isinstance(value, (list, tuple)):
+                raise ValueError(f"wind_enrichment {key} must be a list")
+        nested = params.get("params")
+        if nested is not None and not isinstance(nested, dict):
+            raise ValueError("wind_enrichment params must be a mapping")
+        nested = nested or {}
+        unknown_nested = set(nested) - {"question", "top_k", "lang"}
+        if unknown_nested:
+            raise ValueError(
+                "unsupported wind_enrichment params: "
+                + ", ".join(sorted(unknown_nested))
+            )
+        question = nested.get("question")
+        if question is not None and (
+            not isinstance(question, str) or not question.strip()
+        ):
+            raise ValueError("wind_enrichment question must be a non-empty string")
+        lang = nested.get("lang")
+        if lang is not None and (not isinstance(lang, str) or not lang.strip()):
+            raise ValueError("wind_enrichment lang must be a non-empty string")
+        top_k = nested.get("top_k")
+        if top_k is not None and (
+            not isinstance(top_k, int) or isinstance(top_k, bool) or top_k <= 0
+        ):
+            raise ValueError("wind_enrichment top_k must be a positive integer")
+        if not question and not any(
+            params.get(key) for key in ("code", "codes", "fields")
+        ):
+            raise ValueError("wind_enrichment requires question, code, codes, or fields")
 
 
 def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, int]:
@@ -222,6 +266,10 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
             return False, False, 0
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         return True, count == 0, count
+    if intent == "wind_enrichment":
+        rows = data.get("items")
+        count = len(rows) if isinstance(rows, list) else 0
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
     container = {
         "stock_event": "items",
         "research": "reports",

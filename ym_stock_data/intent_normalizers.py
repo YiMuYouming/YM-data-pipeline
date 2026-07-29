@@ -336,6 +336,7 @@ def normalize_success(
             "research": "reports",
             "filings": "filings",
             "news": "items",
+            "wind_enrichment": "items",
         }.get(intent)
         rows = data.get(container, []) if container else [data]
         quality = assess_quality(rows if isinstance(rows, list) else [])

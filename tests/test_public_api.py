@@ -329,7 +329,13 @@ class PublicApiTests(unittest.TestCase):
             (
                 "error",
                 {},
-                ("wind_enrichment", {}),
+                (
+                    "wind_enrichment",
+                    {
+                        "capability": "fundamentals",
+                        "params": {"question": "600519 ROE"},
+                    },
+                ),
             ),
         ]
         for expected_status, providers, (intent, params) in cases:

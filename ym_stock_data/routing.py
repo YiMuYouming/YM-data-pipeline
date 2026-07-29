@@ -47,7 +47,7 @@ _ROUTES = {
     ),
     "stock_event": RouteSpec(
         intent="stock_event",
-        providers=("eastmoney_datacenter", "wind_mcp"),
+        providers=("eastmoney_datacenter",),
         data_scope="个股白名单低频事件",
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
@@ -130,3 +130,14 @@ def route_for(intent: str, params: dict) -> RouteSpec:
         return _ROUTES[intent]
     except KeyError as exc:
         raise ValueError(f"unknown intent: {intent}") from exc
+
+
+def all_route_specs() -> tuple[RouteSpec, ...]:
+    """Return every static and parameterized route variant for manifests."""
+
+    return tuple(_ROUTES.values()) + (
+        _STOCK_KLINE_DAILY,
+        _STOCK_KLINE_MINUTE,
+        _REVIEW_SENTIMENT_DEFAULT,
+        _REVIEW_SENTIMENT_QUERY,
+    )

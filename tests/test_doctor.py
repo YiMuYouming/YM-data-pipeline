@@ -51,7 +51,7 @@ class DoctorTests(unittest.TestCase):
 
         json.loads(json.dumps(report))
         self.assertEqual("dependency_missing", report["providers"]["pywencai"]["status"])
-        self.assertEqual("configured_unverified", report["providers"]["wind_mcp"]["status"])
+        self.assertNotIn("wind_mcp", report["providers"])
         self.assertTrue(
             all(item["status"] in ALLOWED_PROVIDER_STATES for item in report["providers"].values())
         )

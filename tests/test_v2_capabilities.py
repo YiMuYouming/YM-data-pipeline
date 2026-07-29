@@ -45,7 +45,7 @@ class CapabilityManifestTests(unittest.TestCase):
             manifest["v2_intents"]["stock_event"]["status"],
         )
 
-    def test_manifest_exposes_current_v1_sidecars_and_manual_boundary(self):
+    def test_manifest_exposes_current_v1_compatibility_and_registered_tdx(self):
         manifest = capability_manifest()
 
         for route in (
@@ -58,10 +58,35 @@ class CapabilityManifestTests(unittest.TestCase):
             self.assertEqual(
                 "experimental", manifest["v1_routes"][route]["status"]
             )
+        tdx = manifest["providers"]["tdx_mcp"]
+        self.assertTrue(tdx["registered"])
+        self.assertEqual("registered_optional", tdx["status"])
+        self.assertEqual(tdx, manifest["manual_sources"]["tdx_mcp"])
+
+    def test_manifest_exposes_wind_from_registered_routes(self):
+        manifest = capability_manifest()
+
+        wind = manifest["providers"]["wind_mcp"]
+        self.assertEqual("registered_experimental", wind["status"])
+        self.assertTrue(wind["registered"])
+        self.assertEqual(["filings"], wind["automatic_fallback_intents"])
+        self.assertEqual(["wind_enrichment"], wind["explicit_intents"])
+        self.assertFalse(wind["default_route"])
         self.assertEqual(
-            "manual_cross_check_only",
-            manifest["manual_sources"]["tdx_mcp"]["status"],
+            sorted(
+                [
+                "company_profile",
+                "fundamentals",
+                "equity_holders",
+                "company_events",
+                "risk_metrics",
+                "index_fundamentals",
+                "announcements",
+                ]
+            ),
+            wind["capabilities"],
         )
+        self.assertEqual(wind, manifest["manual_sources"]["wind_mcp"])
 
     def test_manifest_returns_an_isolated_copy(self):
         first = capability_manifest()

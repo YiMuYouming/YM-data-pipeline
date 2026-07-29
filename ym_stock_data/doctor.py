@@ -15,6 +15,7 @@ from .providers.tdx_mcp import (
     TdxCredentialStore,
     TdxMcpProvider,
 )
+from .providers.wind_mcp import WIND_CONFIG_PATH
 
 
 ALLOWED_PROVIDER_STATES = frozenset(
@@ -28,10 +29,6 @@ ALLOWED_PROVIDER_STATES = frozenset(
         "unavailable",
     }
 )
-WIND_CONFIG_PATH = Path.home() / ".wind-aifinmarket" / "config"
-WIND_PROVIDER_NAMES = ("wind_mcp", "wind_documents")
-
-
 def _safe_probe(name: str, provider_loader: Callable[[str], object]) -> dict:
     try:
         raw = provider_loader(name).probe()
@@ -42,7 +39,7 @@ def _safe_probe(name: str, provider_loader: Callable[[str], object]) -> dict:
         status = "unavailable"
     result = {"provider": name, "status": status}
     if isinstance(raw, dict):
-        for key in ("breaker", "action", "runtime_source"):
+        for key in ("breaker", "action", "runtime_source", "runtime_scope"):
             value = raw.get(key)
             if isinstance(value, (str, bool)):
                 result[key] = value
@@ -81,9 +78,6 @@ def collect_diagnostics(
             providers[name] = _safe_probe(name, lambda _name, value=provider: value)
         else:
             providers[name] = _safe_probe(name, provider_loader)
-    wind_status = "configured_unverified" if Path(wind_config_path).exists() else "unavailable"
-    for name in WIND_PROVIDER_NAMES:
-        providers[name] = {"provider": name, "status": wind_status}
     counts = Counter(item["status"] for item in providers.values())
     return {
         "schema_version": "1",
