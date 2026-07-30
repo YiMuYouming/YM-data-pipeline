@@ -402,16 +402,7 @@ class TdxMcpClient:
                 self.protocol_evidence["session_count"] += 1
                 await session.initialize()
                 self.protocol_evidence["initialize"] = "pass"
-                page_count = await self._gate_tool(session, tool_name)
-                self.protocol_evidence.update(
-                    {
-                        "tools_list": "pass",
-                        "schema": "pass",
-                        "read_only": "pass",
-                        "page_count": self.protocol_evidence["page_count"]
-                        + page_count,
-                    }
-                )
+                await self._gate_tool(session, tool_name)
                 self.protocol_evidence["call_count"] += 1
                 result = await session.call_tool(tool_name, dict(arguments))
                 payload = _extract_payload(result)
@@ -421,8 +412,7 @@ class TdxMcpClient:
             _raise_sanitized_transport(error)
         raise AssertionError("unreachable")
 
-    @staticmethod
-    async def _gate_tool(session, tool_name: str) -> int:
+    async def _gate_tool(self, session, tool_name: str) -> None:
         cursor = None
         for _page in range(10):
             params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
@@ -430,11 +420,15 @@ class TdxMcpClient:
             page_tools = _tool_value(result, "tools")
             if not isinstance(page_tools, list):
                 raise TdxSchemaError("TDX MCP tools/list is malformed")
+            self.protocol_evidence["page_count"] += 1
+            self.protocol_evidence["tools_list"] = "pass"
             for item in page_tools:
                 name = _tool_value(item, "name")
                 if name == tool_name:
                     _validate_tool_schema(item)
-                    return _page + 1
+                    self.protocol_evidence["schema"] = "pass"
+                    self.protocol_evidence["read_only"] = "pass"
+                    return
             cursor = _tool_value(result, "next_cursor")
             if cursor is None:
                 cursor = _tool_value(result, "nextCursor")
@@ -559,4 +553,7 @@ class TdxMcpProvider:
             error_code=error_code,
             latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
             auth={"required": True, "status": auth_status},
+            provenance={"smoke_protocol": dict(self.client.protocol_evidence)}
+            if isinstance(getattr(self.client, "protocol_evidence", None), dict)
+            else None,
         )
