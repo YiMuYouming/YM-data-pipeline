@@ -495,6 +495,23 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual("SMOKE_GATE_FAILED", caught.exception.code)
         self.assertFalse((self.state / "2026-07-30.json").exists())
 
+    def test_acceptance_gate_rejects_degraded_direct_capability(self) -> None:
+        module = self.require_module()
+        smoke = self.smoke_report("2026-07-30")
+        direct = next(
+            case
+            for case in smoke["cases"]
+            if case["case_id"] == "direct_openapi_screener"
+        )
+        direct["status"] = "degraded"
+
+        cases = [module._project_case(case, current=True) for case in smoke["cases"]]
+        source_status, chain_status, gate_status = module._smoke_gate(cases)
+
+        self.assertEqual("fail", source_status["iwencai_openapi"])
+        self.assertEqual("pass", chain_status)
+        self.assertEqual("fail", gate_status)
+
     def test_missing_previous_trading_day_closes_epoch_and_restarts_day_one(self) -> None:
         first = self.build("2026-07-30")
         self.assertEqual(1, first["pass_day_count"])
@@ -510,6 +527,28 @@ class AcceptanceTests(unittest.TestCase):
 
         self.assertEqual(2, restarted["observation_day_count"])
         self.assertEqual(1, restarted["pass_day_count"])
+
+    def test_same_previous_trading_date_with_changed_head_restarts_day_one(self) -> None:
+        first = self.build("2026-07-30")
+        self.assertEqual(1, first["pass_day_count"])
+        (self.repo / "tracked.txt").write_text("new baseline\n", encoding="utf-8")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=self.repo, check=True)
+        subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "commit", "-m", "new baseline"],
+            cwd=self.repo,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        self.write_inputs("2026-07-31")
+        second = self.build(
+            "2026-07-31",
+            now=datetime(2026, 7, 31, 16, 20, tzinfo=self.shanghai),
+        )
+
+        self.assertEqual(2, second["observation_day_count"])
+        self.assertEqual(1, second["pass_day_count"])
 
     def test_five_consecutive_gate_passes_complete_window(self) -> None:
         schedule = (

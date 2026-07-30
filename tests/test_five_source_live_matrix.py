@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data import smoke as smoke_module
 from ym_stock_data.smoke import run_live_smoke
 from ym_stock_data.smoke_contract import CASE_SPECS, CURRENT_SMOKE_BASELINE, CURRENT_SMOKE_CASE_IDS
 
@@ -163,6 +164,54 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         serialized = json.dumps(report, ensure_ascii=False).lower()
         for forbidden in ('"data"', '"rows"', '"query"', '"code"', '"codes"', '"stdout"', '"stderr"', '"session"', "bearer ", "600519", "沪深a股"):
             self.assertNotIn(forbidden, serialized)
+
+    def test_degraded_direct_result_never_counts_as_source_capability_pass(self) -> None:
+        report, _calls = self._run()
+        cases = report["cases"]
+        direct = next(
+            case for case in cases if case["case_id"] == "direct_openapi_screener"
+        )
+        direct["status"] = "degraded"
+
+        source_status, chain_status, gate_status = smoke_module._compute_smoke_gate(cases)
+
+        self.assertEqual("fail", source_status["iwencai_openapi"])
+        self.assertEqual("pass", chain_status)
+        self.assertEqual("fail", gate_status)
+
+    def test_document_probes_use_stable_365_day_window_without_extra_calls(self) -> None:
+        report, calls = self._run()
+        by_id = {case["case_id"]: case for case in report["cases"]}
+        for case_id in ("tdx_report_probe", "tdx_notice_probe"):
+            self.assertEqual(365, by_id[case_id]["params"]["days"])
+        self.assertEqual(365, by_id["wind_filings_probe"]["params"]["days"])
+        self.assertEqual(1, by_id["wind_filings_probe"]["params"]["max_pages"])
+
+        relevant = [
+            (name, params)
+            for name, _intent, params in calls
+            if name in {"tdx_report", "tdx_notice", "wind_documents"}
+        ]
+        self.assertEqual(3, len(relevant))
+        for name, params in relevant:
+            self.assertEqual(365, params["days"], name)
+        wind = next(params for name, params in relevant if name == "wind_documents")
+        self.assertEqual(1, wind["max_pages"])
+
+    def test_any_failed_or_zero_tdx_protocol_evidence_fails_tdx_gate(self) -> None:
+        for field, value in (("schema", "fail"), ("page_count", 0), ("session_count", 0), ("call_count", 0)):
+            with self.subTest(field=field):
+                report, _calls = self._run()
+                case = next(
+                    item for item in report["cases"] if item["case_id"] == "tdx_notice_probe"
+                )
+                case["protocol_evidence"][field] = value
+
+                sources, chain, gate = smoke_module._compute_smoke_gate(report["cases"])
+
+                self.assertEqual("fail", sources["tdx"])
+                self.assertEqual("pass", chain)
+                self.assertEqual("fail", gate)
 
 
 if __name__ == "__main__":

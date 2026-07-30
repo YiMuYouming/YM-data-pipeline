@@ -202,6 +202,8 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertIn("exactly 21 ordered cases", plan)
         self.assertIn("observation_day_count", plan)
         self.assertIn("pass_day_count", plan)
+        self.assertIn("365", plan)
+        self.assertIn("合法 empty", plan)
         for source in (
             "WenCai OpenAPI",
             "portable pywencai",
