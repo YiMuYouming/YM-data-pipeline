@@ -1,15 +1,22 @@
+import asyncio
 import importlib.metadata
 import inspect
 import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import asynccontextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx2
+
+try:
+    from builtins import ExceptionGroup
+except ImportError:  # Python 3.10; the SDK dependency supplies the backport.
+    from exceptiongroup import ExceptionGroup
+
 import ym_stock_data.api as api
 from ym_stock_data.__main__ import _parser, main
 from ym_stock_data.provider_state import ProviderState
@@ -181,6 +188,42 @@ class OfficialSdkClientTests(unittest.TestCase):
         for forbidden in ("urllib.request", '"jsonrpc"', "_HttpSession"):
             self.assertNotIn(forbidden, source)
 
+    def test_official_sdk_session_accepts_the_sdk_two_stream_transport(self):
+        import ym_stock_data.providers.tdx_mcp as module
+
+        read_stream = object()
+        write_stream = object()
+        http_client = object()
+        sdk_session = object()
+
+        @asynccontextmanager
+        async def transport(url, *, http_client):
+            self.assertEqual(SERVER_URL, url)
+            self.assertIs(http_client, globals_http_client)
+            yield read_stream, write_stream
+
+        globals_http_client = http_client
+        session_constructor = Mock(return_value=SessionContext(sdk_session))
+
+        async def exercise():
+            async with module._official_sdk_session("Bearer REDACTED") as session:
+                self.assertIs(sdk_session, session)
+
+        with (
+            patch.object(
+                module.httpx2,
+                "AsyncClient",
+                return_value=SessionContext(http_client),
+            ),
+            patch.object(module, "streamable_http_client", transport),
+            patch.object(module, "ClientSession", session_constructor),
+        ):
+            asyncio.run(exercise())
+
+        args, kwargs = session_constructor.call_args
+        self.assertEqual((read_stream, write_stream), args)
+        self.assertEqual("ym-stock-data", kwargs["client_info"].name)
+
     def test_allowlist_and_schema_contracts_are_exactly_six_read_only_tools(self):
         expected = {
             "tdx_screener",
@@ -342,6 +385,23 @@ class OfficialSdkClientTests(unittest.TestCase):
                 )
                 with self.assertRaises(TdxProtocolError):
                     client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+
+    def test_sdk_runtime_error_is_a_provider_protocol_failure(self):
+        session = FakeSession(
+            call_error=RuntimeError("SECRET invalid structured content")
+        )
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        outcome = TdxMcpProvider(
+            "tdx_screener",
+            auth_manager=FakeAuth(),
+            client=client,
+        ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+        self.assertEqual("provider_error", outcome.status)
+        self.assertEqual("MCP_ERROR", outcome.error_code)
+        self.assertEqual({"required": True, "status": "present"}, outcome.auth)
 
 
 class TdxMcpProviderTests(unittest.TestCase):
