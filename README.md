@@ -27,7 +27,7 @@ PY
 | `sector_index` | 行业板块 | `names` / `codes` |
 | `stock_snapshot` | 个股行情与均线快照 | `codes` |
 | `stock_kline` | 个股 K 线 | `code`, `period`, `count` |
-| `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date` |
+| `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date`, `lang`, `version` |
 | `market_limit_state` | 涨跌停池聚合 | 无 |
 | `stock_event` | 个股低频事件 | `event`, `code` |
 | `research` / `filings` / `news` | 研报、公告、新闻 | `code` 等 intent 参数 |
@@ -66,11 +66,11 @@ PY
 }
 ```
 
-合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会在 OpenAPI、pywencai、TDX screener 之间按既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。穷尽不保证一定有结果，也不代表无差别轮询：Wind 和只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
+合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。Wind 只通过专用 `wind_screener` 进入这条链，严格读取已验证 tabular envelope 的 `Wind代码`，不复用泛化 `wind_mcp` enrichment。穷尽不保证一定有结果，也不代表无差别轮询；只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充任意自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
 
 ## Provider ownership 与路由边界
 
-TDX route provider 只在所有排在其前的语义兼容源失败后调用；这既包括零鉴权源，也包括显式 `review_sentiment` 中的 OpenAPI 与 pywencai。`tdx_mcp` 只聚合诊断状态，不参与 RouteSpec。
+TDX route provider 只在所有排在其前的语义兼容源失败或合法空集后调用；显式 `review_sentiment` 的 Wind screener 只在 OpenAPI、pywencai、TDX screener 均未返回非空成功后调用。`tdx_mcp` 只聚合诊断状态，不参与 RouteSpec。
 
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
@@ -95,6 +95,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败后调用；�
 | `tdx_report` | owned OAuth；同上 | 独立能力状态 | `research` 第二源 | 允许；仅在 `eastmoney_research` 失败后 |
 | `tdx_notice` | owned OAuth；同上 | 独立能力状态 | `filings` 第二源 | 允许；仅在 `cninfo` 失败后 |
 | `tdx_news` | owned OAuth；同上 | 独立能力状态 | `news` 第二源 | 允许；仅在 `cls` 失败后 |
+| `wind_screener` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `review_sentiment` 第四源；仅 `stock_data.search_stocks` | 允许；前三个自然语言 screener 失败或合法空集后 |
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 

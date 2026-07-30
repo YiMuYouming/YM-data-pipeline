@@ -478,7 +478,10 @@ class TdxRegistryRoutingDoctorTests(unittest.TestCase):
             "tdx_news",
         ):
             self.assertIn(name, api.PROVIDER_REGISTRY)
-        self.assertEqual("tdx_screener", route_for("review_sentiment", {"query": "非ST"}).providers[-1])
+        self.assertEqual(
+            "tdx_screener",
+            route_for("review_sentiment", {"query": "非ST"}).providers[-2],
+        )
         self.assertEqual("tdx_quotes", route_for("stock_snapshot", {}).providers[-1])
         self.assertEqual("tdx_kline", route_for("stock_kline", {"period": "daily"}).providers[-1])
         self.assertEqual("tdx_report", route_for("research", {}).providers[-1])

@@ -70,7 +70,9 @@ def capability_manifest() -> dict:
                 intent for intent in wind_routes if intent == "wind_enrichment"
             ],
             "default_route": False,
-            "capabilities": sorted(WIND_ENRICHMENT_CAPABILITIES),
+            "capabilities": sorted(
+                [*WIND_ENRICHMENT_CAPABILITIES, "stock_screener"]
+            ),
         },
     }
     return {

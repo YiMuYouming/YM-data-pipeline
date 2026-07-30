@@ -4,10 +4,10 @@ from ym_stock_data.routing import route_for
 
 
 class RoutingTests(unittest.TestCase):
-    def test_explicit_screen_uses_three_compatible_providers(self):
+    def test_explicit_screen_uses_four_compatible_providers(self):
         spec = route_for("review_sentiment", {"query": "今日涨停 非ST"})
         self.assertEqual(
-            ("iwencai_openapi", "pywencai", "tdx_screener"),
+            ("iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"),
             spec.providers,
         )
         self.assertEqual("continue_until_exhausted", spec.empty_policy)

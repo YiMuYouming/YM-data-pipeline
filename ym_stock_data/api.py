@@ -39,7 +39,15 @@ _ALLOWED_PARAMS = {
     "stock_snapshot": frozenset({"codes"}),
     "stock_kline": frozenset({"code", "period", "count"}),
     "review_sentiment": frozenset(
-        {"query", "limit", "date", "expected_row_shape", "expected_count"}
+        {
+            "query",
+            "limit",
+            "date",
+            "expected_row_shape",
+            "expected_count",
+            "lang",
+            "version",
+        }
     ),
     "market_limit_state": frozenset({"date"}),
     "stock_event": frozenset({"event", "code", "page_size"}),
@@ -164,6 +172,16 @@ def _validate_params(intent: str, params: dict) -> None:
             if expected <= 0:
                 raise ValueError("review_sentiment expected_count must be positive")
             params["expected_count"] = expected
+        lang = params.get("lang")
+        if lang is not None and lang not in {"English", "中文"}:
+            raise ValueError("review_sentiment lang must be English or 中文")
+        version = params.get("version")
+        if version is not None and (
+            not isinstance(version, str) or not version.strip()
+        ):
+            raise ValueError("review_sentiment version must be a non-empty string")
+        if isinstance(version, str):
+            params["version"] = version.strip()
     elif intent == "stock_event":
         if params.get("event") not in STOCK_EVENTS:
             raise ValueError("stock_event requires a supported event")

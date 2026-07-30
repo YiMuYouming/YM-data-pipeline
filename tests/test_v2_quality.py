@@ -101,6 +101,17 @@ class V2QualityTests(unittest.TestCase):
         )
         self.tdx_call = tdx_patch.start()
         self.addCleanup(tdx_patch.stop)
+        wind_patch = patch(
+            "ym_stock_data.providers.wind_mcp.WindMcpProvider.call",
+            return_value=ProviderOutcome(
+                provider="wind_screener",
+                status="provider_error",
+                error_code="CONTROLLED_WIND_ERROR",
+                latency_ms=1,
+            ),
+        )
+        self.wind_call = wind_patch.start()
+        self.addCleanup(wind_patch.stop)
 
     def quality(self, result):
         self.assertIn("quality", result["_meta"])
@@ -129,6 +140,9 @@ class V2QualityTests(unittest.TestCase):
         ), patch(
             "ym_stock_data.providers.tdx_mcp.TdxMcpProvider.call",
             return_value=iwencai_outcome(raw, provider="tdx_screener"),
+        ), patch(
+            "ym_stock_data.providers.wind_mcp.WindMcpProvider.call",
+            return_value=iwencai_outcome(raw, provider="wind_screener"),
         ):
             result = resolve(
                 "review_sentiment",
@@ -154,11 +168,11 @@ class V2QualityTests(unittest.TestCase):
         query_meta = result["data"]["queries"][0]["_meta"]
         self.assertEqual(quality, query_meta["quality"])
         self.assertEqual(
-            ["iwencai_openapi", "pywencai", "tdx_screener"],
+            ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"],
             query_meta["source_chain"],
         )
         self.assertEqual(
-            ["empty", "empty", "empty"],
+            ["empty", "empty", "empty", "empty"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
@@ -340,6 +354,7 @@ class V2QualityTests(unittest.TestCase):
         self.assertEqual("error", result["_meta"]["confidence"])
         self.pywencai_call.assert_called_once()
         self.tdx_call.assert_called_once()
+        self.wind_call.assert_called_once()
         quality = self.quality(result)
         self.assertEqual("error", quality["status"])
         self.assertEqual("unknown", quality["row_shape"])
@@ -508,6 +523,7 @@ class V2QualityTests(unittest.TestCase):
                 ("iwencai_openapi", "provider_error", "PROVIDER_ERROR"),
                 ("pywencai", "provider_error", "CONTROLLED_PROVIDER_ERROR"),
                 ("tdx_screener", "auth_error", "AUTH_MISSING"),
+                ("wind_screener", "provider_error", "CONTROLLED_WIND_ERROR"),
             ],
             [
                 (attempt["provider"], attempt["status"], attempt["error_code"])

@@ -38,7 +38,15 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             for value in review_row.split("|")[3].split(", ")
         }
         self.assertEqual(
-            {"query", "limit", "expected_row_shape", "expected_count", "date"},
+            {
+                "query",
+                "limit",
+                "expected_row_shape",
+                "expected_count",
+                "date",
+                "lang",
+                "version",
+            },
             params,
         )
         self.assertNotIn("page", review_row)
@@ -103,7 +111,7 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
                     self.assertIn(f"`{intent}`", rows[provider])
 
         self.assertIn("诊断聚合，无 RouteSpec", rows["tdx_mcp"])
-        self.assertIn("所有排在其前的语义兼容源失败后", ownership)
+        self.assertIn("所有排在其前的语义兼容源失败或合法空集后", ownership)
         self.assertNotIn("仅在零鉴权兼容源失败后", ownership)
 
         pywencai_row = rows["pywencai"]

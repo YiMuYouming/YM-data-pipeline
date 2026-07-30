@@ -11,6 +11,7 @@ from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
     WIND_EVENT_ALLOWLIST,
+    WIND_PROVIDER_NAMES,
     WindMcpProvider,
     discover_wind_runtime,
 )
@@ -175,6 +176,153 @@ class WindProviderTests(unittest.TestCase):
         self.assertNotIn("api_key", serialized)
         self.assertNotIn("authorization", serialized)
         self.assertFalse(runner.call_args.kwargs["shell"])
+
+    @staticmethod
+    def screener_envelope(rows):
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "data": {
+                                "data": [
+                                    {
+                                        "columns": [
+                                            {"name": "Wind代码", "type": "string"}
+                                        ],
+                                        "rows": rows,
+                                    }
+                                ]
+                            },
+                            "error": None,
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+            "isError": False,
+        }
+
+    def test_wind_screener_uses_exact_search_stocks_argv_and_optional_version(self):
+        runner = Mock(
+            return_value=self.completed(self.screener_envelope([["600519.SH"]]))
+        )
+        provider = self.provider(name="wind_screener", runner=runner)
+
+        outcome = provider.call(
+            "review_sentiment",
+            {"query": "A股 白酒 非ST", "limit": 20},
+        )
+
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(
+            {
+                "datas": [
+                    {"股票代码": "600519.SH", "Wind代码": "600519.SH"}
+                ],
+                "row_count": 1,
+            },
+            outcome.data,
+        )
+        command = runner.call_args.args[0]
+        self.assertEqual("stock_data", command[3])
+        self.assertEqual("search_stocks", command[4])
+        self.assertEqual(
+            {"question": "A股白酒非ST", "lang": "中文"},
+            json.loads(command[5]),
+        )
+        self.assertNotIn("version", json.loads(command[5]))
+
+        version_runner = Mock(
+            return_value=self.completed(self.screener_envelope([["000858.SZ"]]))
+        )
+        versioned = self.provider(
+            name="wind_screener", runner=version_runner
+        ).call(
+            "review_sentiment",
+            {
+                "query": "A股 白酒 非ST",
+                "limit": 20,
+                "lang": "English",
+                "version": "v2",
+            },
+        )
+
+        self.assertEqual("success", versioned.status)
+        self.assertEqual(
+            {
+                "question": "A股白酒非ST",
+                "lang": "English",
+                "version": "v2",
+            },
+            json.loads(version_runner.call_args.args[0][5]),
+        )
+
+    def test_wind_screener_empty_error_auth_and_malformed_are_explicit(self):
+        empty = self.provider(
+            name="wind_screener",
+            runner=Mock(return_value=self.completed(self.screener_envelope([]))),
+        ).call("review_sentiment", {"query": "没有匹配股票", "limit": 20})
+        auth = self.provider(
+            name="wind_screener",
+            runner=Mock(
+                return_value=self.completed(
+                    {"error": {"code": "AUTH_ERROR"}}, returncode=1
+                )
+            ),
+        ).call("review_sentiment", {"query": "白酒", "limit": 20})
+        error = self.provider(
+            name="wind_screener",
+            runner=Mock(
+                return_value=self.completed(
+                    {"error": {"code": "BACKEND_ERROR"}}, returncode=1
+                )
+            ),
+        ).call("review_sentiment", {"query": "白酒", "limit": 20})
+
+        self.assertEqual("empty", empty.status)
+        self.assertEqual({"datas": [], "row_count": 0}, empty.data)
+        self.assertEqual(("auth_error", "AUTH_ERROR"), (auth.status, auth.error_code))
+        self.assertEqual(
+            ("provider_error", "WIND_CLI_ERROR"),
+            (error.status, error.error_code),
+        )
+
+        malformed_payloads = (
+            {"rows": [{"Wind代码": "600519.SH"}]},
+            {
+                "data": {
+                    "data": [
+                        {
+                            "columns": [{"name": "股票代码", "type": "string"}],
+                            "rows": [["600519.SH"]],
+                        }
+                    ]
+                }
+            },
+            self.screener_envelope([["AAPL.O"]]),
+        )
+        for payload in malformed_payloads:
+            with self.subTest(payload=payload):
+                envelope = (
+                    payload
+                    if "content" in payload
+                    else {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(payload, ensure_ascii=False),
+                            }
+                        ]
+                    }
+                )
+                rejected = self.provider(
+                    name="wind_screener",
+                    runner=Mock(return_value=self.completed(envelope)),
+                ).call("review_sentiment", {"query": "白酒", "limit": 20})
+                self.assertEqual("provider_error", rejected.status)
+                self.assertEqual("INVALID_RESPONSE", rejected.error_code)
 
     def test_missing_fixed_config_does_not_preempt_cli_auth_resolution(self):
         missing_config = self.root / "not-present"
@@ -546,6 +694,22 @@ class WindProviderTests(unittest.TestCase):
                 outcome = provider.call(intent, params)
                 self.assertEqual("incompatible", outcome.status)
 
+        screener = self.provider(
+            name="wind_screener",
+            runner=Mock(side_effect=AssertionError("must not run")),
+        )
+        for intent, params in (
+            ("realtime_market", {}),
+            ("stock_snapshot", {"codes": ["600519"]}),
+            ("stock_kline", {"code": "600519"}),
+            ("review_sentiment", {}),
+            ("news", {"limit": 1}),
+            ("sector_index", {"names": ["半导体"]}),
+        ):
+            with self.subTest(provider="wind_screener", intent=intent):
+                outcome = screener.call(intent, params)
+                self.assertEqual("incompatible", outcome.status)
+
 
 class WindDiscoveryDoctorManifestTests(unittest.TestCase):
     def setUp(self):
@@ -618,17 +782,21 @@ class WindDiscoveryDoctorManifestTests(unittest.TestCase):
             {
                 spec.intent
                 for spec in actual_specs
-                if "wind_mcp" in spec.providers or "wind_documents" in spec.providers
+                if any(name in spec.providers for name in WIND_PROVIDER_NAMES)
             }
         )
 
         self.assertIn("wind_mcp", api.PROVIDER_REGISTRY)
         self.assertIn("wind_documents", api.PROVIDER_REGISTRY)
+        self.assertIn("wind_screener", api.PROVIDER_REGISTRY)
         self.assertEqual(actual_routes, wind["routes"])
-        self.assertEqual(["filings"], wind["automatic_fallback_intents"])
+        self.assertEqual(
+            ["filings", "review_sentiment"],
+            wind["automatic_fallback_intents"],
+        )
         self.assertEqual(["wind_enrichment"], wind["explicit_intents"])
         self.assertEqual(
-            sorted(WIND_ENRICHMENT_CAPABILITIES),
+            sorted([*WIND_ENRICHMENT_CAPABILITIES, "stock_screener"]),
             wind["capabilities"],
         )
         self.assertTrue(manifest["providers"]["tdx_mcp"]["registered"])
@@ -637,16 +805,24 @@ class WindDiscoveryDoctorManifestTests(unittest.TestCase):
             manifest["providers"]["tdx_mcp"].get("status"),
         )
 
-    def test_routes_never_add_wind_to_forbidden_intents(self):
+    def test_routes_add_only_dedicated_wind_screener_to_explicit_review(self):
         self.assertEqual(("wind_mcp",), route_for("wind_enrichment", {}).providers)
         self.assertNotIn("wind_mcp", route_for("stock_event", {}).providers)
         self.assertIn("wind_documents", route_for("filings", {}).providers)
+        self.assertEqual(
+            "wind_screener",
+            route_for("review_sentiment", {"query": "非ST"}).providers[-1],
+        )
+        self.assertFalse(
+            any(
+                "wind" in provider
+                for provider in route_for("review_sentiment", {}).providers
+            )
+        )
         for intent, params in (
             ("realtime_market", {}),
             ("stock_snapshot", {}),
             ("stock_kline", {"period": "daily"}),
-            ("review_sentiment", {"query": "非ST"}),
-            ("review_sentiment", {}),
             ("news", {}),
             ("sector_index", {}),
         ):

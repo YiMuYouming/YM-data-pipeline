@@ -110,7 +110,12 @@ _REVIEW_SENTIMENT_DEFAULT = RouteSpec(
 )
 _REVIEW_SENTIMENT_QUERY = RouteSpec(
     intent="review_sentiment",
-    providers=("iwencai_openapi", "pywencai", "tdx_screener"),
+    providers=(
+        "iwencai_openapi",
+        "pywencai",
+        "tdx_screener",
+        "wind_screener",
+    ),
     data_scope="问财自然语言选股口径",
     trade_usage=_TRADE_USAGE,
     max_age_sec=1800,

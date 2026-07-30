@@ -18,7 +18,7 @@ from .base import ProviderOutcome
 
 
 WIND_CONFIG_PATH = Path.home() / ".wind-aifinmarket" / "config"
-WIND_PROVIDER_NAMES = ("wind_mcp", "wind_documents")
+WIND_PROVIDER_NAMES = ("wind_mcp", "wind_documents", "wind_screener")
 # No stock-event subtype has yet demonstrated field-level semantic equivalence.
 WIND_EVENT_ALLOWLIST = frozenset()
 WIND_ENRICHMENT_CAPABILITIES = {
@@ -58,7 +58,13 @@ WIND_ENRICHMENT_CAPABILITIES = {
         "parameter": "query",
     },
 }
+WIND_SCREENER_SPEC = {
+    "server_type": "stock_data",
+    "tool_name": "search_stocks",
+    "parameter": "question",
+}
 _AUTH_CODES = frozenset({"AUTH_ERROR", "HTTP_401", "HTTP_403"})
+_A_SHARE_WIND_CODE = re.compile(r"^\d{6}\.(?:SH|SZ|BJ)$")
 
 
 @dataclass(frozen=True)
@@ -205,6 +211,22 @@ def _filing_rows(payload: dict) -> list:
     return rows
 
 
+def _screener_rows(payload: dict, *, limit: int) -> list[dict]:
+    """Read only the documented Wind代码 column from a proven table envelope."""
+
+    container = payload.get("data")
+    if not isinstance(container, dict):
+        raise ValueError("INVALID_RESPONSE")
+    rows = _tabular_rows(container)
+    normalized = []
+    for row in rows:
+        code = row.get("Wind代码")
+        if not isinstance(code, str) or not _A_SHARE_WIND_CODE.fullmatch(code):
+            raise ValueError("INVALID_RESPONSE")
+        normalized.append({"股票代码": code, "Wind代码": code})
+    return normalized[:limit]
+
+
 class WindMcpProvider:
     def __init__(
         self,
@@ -265,12 +287,18 @@ class WindMcpProvider:
         runtime = self._runtime()
         if runtime is None:
             return self._failure("dependency_missing", "CLI_NOT_FOUND", "unverified")
-        spec = WIND_ENRICHMENT_CAPABILITIES[capability]
+        spec = (
+            WIND_SCREENER_SPEC
+            if capability == "stock_screener"
+            else WIND_ENRICHMENT_CAPABILITIES[capability]
+        )
         arguments = {spec["parameter"]: _compact(question)}
         if not arguments[spec["parameter"]]:
             return self._failure("provider_error", "INVALID_PARAMS", "present")
         if spec["parameter"] == "question":
             arguments["lang"] = lang
+            if capability == "stock_screener" and "version" in params:
+                arguments["version"] = params["version"]
         else:
             arguments["top_k"] = top_k or 5
         command = [
@@ -308,11 +336,12 @@ class WindMcpProvider:
             return self._failure(status, code, "error" if status == "auth_error" else "present", started)
         try:
             payload = _extract_payload(envelope)
-            rows = (
-                _filing_rows(payload)
-                if intent == "filings"
-                else _enrichment_rows(payload)
-            )
+            if intent == "filings":
+                rows = _filing_rows(payload)
+            elif capability == "stock_screener":
+                rows = _screener_rows(payload, limit=int(params.get("limit", 50)))
+            else:
+                rows = _enrichment_rows(payload)
             data = self._normalize(intent, params, capability, payload, rows)
         except ValueError as error:
             error_code = (
@@ -344,6 +373,19 @@ class WindMcpProvider:
     def _compatible_call(
         self, intent: str, params: dict
     ) -> tuple[str, str, int | None, str] | None:
+        if self.name == "wind_screener" and intent == "review_sentiment":
+            query = params.get("query")
+            if not isinstance(query, str) or not query.strip():
+                return None
+            lang = params.get("lang", "中文")
+            if lang not in {"English", "中文"}:
+                return None
+            version = params.get("version")
+            if version is not None and (
+                not isinstance(version, str) or not version.strip()
+            ):
+                return None
+            return "stock_screener", query, None, lang
         if self.name == "wind_mcp" and intent == "wind_enrichment":
             capability = params.get("capability")
             if capability not in WIND_ENRICHMENT_CAPABILITIES:
@@ -396,6 +438,8 @@ class WindMcpProvider:
     ) -> dict:
         if intent == "filings":
             return {"filings": rows}
+        if intent == "review_sentiment" and capability == "stock_screener":
+            return {"datas": rows, "row_count": len(rows)}
         return {"capability": capability, "items": rows}
 
     def _failure(

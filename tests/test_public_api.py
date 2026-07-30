@@ -149,25 +149,73 @@ class PublicApiTests(unittest.TestCase):
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
+    def test_explicit_screen_reaches_wind_after_three_compatible_attempts(self):
+        providers = {
+            "iwencai_openapi": FakeProvider(
+                "iwencai_openapi",
+                [outcome("iwencai_openapi", "empty", data={"datas": [], "row_count": 0})],
+            ),
+            "pywencai": FakeProvider(
+                "pywencai",
+                [outcome("pywencai", "provider_error", error_code="UPSTREAM_ERROR")],
+            ),
+            "tdx_screener": FakeProvider(
+                "tdx_screener",
+                [outcome("tdx_screener", "empty", data={"datas": [], "row_count": 0})],
+            ),
+            "wind_screener": FakeProvider(
+                "wind_screener",
+                [
+                    outcome(
+                        "wind_screener",
+                        "success",
+                        data={"datas": [{"股票代码": "600519.SH"}], "row_count": 1},
+                    )
+                ],
+            ),
+        }
+        with self.provider_patch(providers):
+            result = query(
+                "review_sentiment",
+                query="白酒股",
+                limit=20,
+                lang="English",
+                version="v2",
+            )
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("wind_screener", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["empty", "provider_error", "empty", "success"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+        self.assertEqual("English", providers["wind_screener"].calls[0][1]["lang"])
+        self.assertEqual("v2", providers["wind_screener"].calls[0][1]["version"])
+
     def test_explicit_screen_all_compatible_providers_empty_is_auditable(self):
         providers = {
             name: FakeProvider(
                 name,
                 [outcome(name, "empty", data={"datas": [], "row_count": 0})],
             )
-            for name in ("iwencai_openapi", "pywencai", "tdx_screener")
+            for name in (
+                "iwencai_openapi",
+                "pywencai",
+                "tdx_screener",
+                "wind_screener",
+            )
         }
         with self.provider_patch(providers):
             result = query("review_sentiment", query="没有匹配股票", limit=20)
 
         self.assertEqual("empty", result["_meta"]["status"])
-        self.assertEqual("tdx_screener", result["_meta"]["provider_used"])
+        self.assertEqual("wind_screener", result["_meta"]["provider_used"])
         self.assertEqual(
-            ["iwencai_openapi", "pywencai", "tdx_screener"],
+            ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"],
             result["_meta"]["source_chain"],
         )
         self.assertEqual(
-            ["empty", "empty", "empty"],
+            ["empty", "empty", "empty", "empty"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
         self.assertEqual("empty", result["_meta"]["quality"]["status"])
@@ -358,6 +406,10 @@ class PublicApiTests(unittest.TestCase):
                 query("stock_snapshot", codes=["600519"], mystery=True)
             with self.assertRaises(ValueError):
                 query("review_sentiment", query=["涨停", "连板"])
+            with self.assertRaises(ValueError):
+                query("review_sentiment", query="涨停", lang="Spanish")
+            with self.assertRaises(ValueError):
+                query("review_sentiment", query="涨停", version=" ")
         self.assertEqual([], provider.calls)
 
     def test_breaker_is_an_auditable_attempt_and_provider_is_skipped(self):

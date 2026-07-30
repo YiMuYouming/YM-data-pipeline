@@ -69,7 +69,10 @@ class CapabilityManifestTests(unittest.TestCase):
         wind = manifest["providers"]["wind_mcp"]
         self.assertEqual("registered_experimental", wind["status"])
         self.assertTrue(wind["registered"])
-        self.assertEqual(["filings"], wind["automatic_fallback_intents"])
+        self.assertEqual(
+            ["filings", "review_sentiment"],
+            wind["automatic_fallback_intents"],
+        )
         self.assertEqual(["wind_enrichment"], wind["explicit_intents"])
         self.assertFalse(wind["default_route"])
         self.assertEqual(
@@ -82,7 +85,8 @@ class CapabilityManifestTests(unittest.TestCase):
                 "risk_metrics",
                 "index_fundamentals",
                 "announcements",
-                ]
+                "stock_screener",
+            ]
             ),
             wind["capabilities"],
         )
