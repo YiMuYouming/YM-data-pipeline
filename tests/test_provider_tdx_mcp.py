@@ -689,6 +689,29 @@ class OwnedAuthCliTests(unittest.TestCase):
             json.loads(output.getvalue()),
         )
 
+    def test_login_cli_can_explicitly_show_one_time_url_on_stderr(self):
+        output = io.StringIO()
+        error_output = io.StringIO()
+        auth = Mock()
+        authorization_url = "https://auth.example.test/authorize?state=ONE_TIME"
+
+        def login():
+            auth.browser_open(authorization_url)
+            return "configured_unverified"
+
+        auth.login.side_effect = login
+        with (
+            patch("ym_stock_data.__main__.create_tdx_auth", return_value=auth),
+            patch("ym_stock_data.__main__.persist_credential_store_selection"),
+            redirect_stdout(output),
+            redirect_stderr(error_output),
+        ):
+            exit_code = main(["auth", "login-tdx", "--show-url"])
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(authorization_url, error_output.getvalue().strip())
+        self.assertEqual("configured_unverified", json.loads(output.getvalue())["status"])
+
     def test_login_switches_persisted_selector_only_after_success(self):
         custom_path = Path("/private/custom/tdx-owned.json")
         output = io.StringIO()

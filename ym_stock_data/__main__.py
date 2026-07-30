@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from .acceptance import (
@@ -60,6 +61,8 @@ def _parser() -> argparse.ArgumentParser:
             default=None,
         )
         tdx_auth.add_argument("--file-path", type=Path)
+        if auth_name == "login-tdx":
+            tdx_auth.add_argument("--show-url", action="store_true")
 
     smoke_parser = commands.add_parser("smoke", help="explicit live read-only probes")
     smoke_parser.add_argument("--live", action="store_true")
@@ -157,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             auth = create_tdx_auth(mode=args.store, file_path=args.file_path)
             store_mode = _credential_store_mode(auth, args.store)
+            if args.auth_command == "login-tdx" and args.show_url:
+                auth.browser_open = lambda url: print(url, file=sys.stderr, flush=True)
             status = (
                 auth.login()
                 if args.auth_command == "login-tdx"
