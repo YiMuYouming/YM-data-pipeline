@@ -55,7 +55,7 @@ class SmokeTests(unittest.TestCase):
         output = io.StringIO()
         receipt = {
             "receipt": str(self.root / "receipt.json"),
-            "summary": {"total": 10, "status_counts": {"success": 10}},
+            "summary": {"total": 11, "status_counts": {"success": 11}},
             "cases": [{"SECRET_ROW": True}],
         }
         with patch(
@@ -100,7 +100,7 @@ class SmokeTests(unittest.TestCase):
         path = Path(receipt["receipt"])
         report = json.loads(path.read_text(encoding="utf-8"))
         serialized = json.dumps(report, ensure_ascii=False)
-        self.assertEqual(10, len(report["cases"]))
+        self.assertEqual(11, len(report["cases"]))
         self.assertEqual("auth_missing", next(
             case["status"] for case in report["cases"] if case["case_id"] == "tdx_probe"
         ))
@@ -109,7 +109,11 @@ class SmokeTests(unittest.TestCase):
         ))
         self.assertIn("zero_stock_snapshot", {case["case_id"] for case in report["cases"]})
         self.assertIn("wind_probe", {case["case_id"] for case in report["cases"]})
-        self.assertEqual(9, len(calls))
+        self.assertIn(
+            "explicit_structured_screener",
+            {case["case_id"] for case in report["cases"]},
+        )
+        self.assertEqual(10, len(calls))
         self.assertEqual("wind_enrichment", calls[-1][0])
         for forbidden in (
             "SECRET_ROW",
