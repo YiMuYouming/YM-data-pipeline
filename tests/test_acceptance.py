@@ -17,6 +17,26 @@ from unittest.mock import patch
 from ym_stock_data.__main__ import main
 
 
+CURRENT_SMOKE_CASE_IDS = (
+    "zero_realtime_market",
+    "zero_sector_index",
+    "zero_stock_snapshot",
+    "zero_stock_kline",
+    "zero_review_sentiment",
+    "zero_market_limit_state",
+    "zero_stock_event",
+    "explicit_wencai",
+    "explicit_structured_screener",
+    "tdx_probe",
+    "wind_probe",
+)
+LEGACY_SMOKE_CASE_IDS = tuple(
+    case_id
+    for case_id in CURRENT_SMOKE_CASE_IDS
+    if case_id != "explicit_structured_screener"
+)
+
+
 try:
     acceptance = importlib.import_module("ym_stock_data.acceptance")
 except ModuleNotFoundError:
@@ -107,12 +127,13 @@ class AcceptanceTests(unittest.TestCase):
             text=True,
         ).stdout.strip()
 
-    def smoke_report(self, date: str) -> dict:
-        latencies = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    def smoke_report(self, date: str, *, current: bool = True) -> dict:
+        case_ids = CURRENT_SMOKE_CASE_IDS if current else LEGACY_SMOKE_CASE_IDS
+        latencies = list(range(1, len(case_ids) + 1))
         cases = []
-        for index, latency in enumerate(latencies, start=1):
+        for index, (case_id, latency) in enumerate(zip(case_ids, latencies), start=1):
             case = {
-                "case_id": f"case_{index}",
+                "case_id": case_id,
                 "category": "zero_auth",
                 "intent": "stock_snapshot",
                 "params": {"sample_id": f"sample_{index}"},
@@ -131,9 +152,9 @@ class AcceptanceTests(unittest.TestCase):
                 "latency_ms": latency,
             }
             cases.append(case)
-        cases[7].update(
+        by_id = {case["case_id"]: case for case in cases}
+        by_id["explicit_wencai"].update(
             {
-                "case_id": "explicit_wencai",
                 "category": "api_key",
                 "intent": "review_sentiment",
                 "status": "error",
@@ -156,9 +177,27 @@ class AcceptanceTests(unittest.TestCase):
                 "error_code": "PYWENCAI_RUNTIME_MISSING",
             }
         )
-        cases[8].update(
+        if current:
+            by_id["explicit_structured_screener"].update(
+                {
+                    "category": "five_source_fallback",
+                    "intent": "review_sentiment",
+                    "status": "empty",
+                    "provider_used": "pytdx_screener",
+                    "attempts": [
+                        {
+                            "provider": "pytdx_screener",
+                            "status": "empty",
+                            "error_code": None,
+                            "latency_ms": 9,
+                        }
+                    ],
+                    "row_count": 0,
+                    "error_code": None,
+                }
+            )
+        by_id["tdx_probe"].update(
             {
-                "case_id": "tdx_probe",
                 "category": "owned_oauth",
                 "status": "auth_missing",
                 "provider_used": None,
@@ -167,9 +206,8 @@ class AcceptanceTests(unittest.TestCase):
                 "error_code": None,
             }
         )
-        cases[9].update(
+        by_id["wind_probe"].update(
             {
-                "case_id": "wind_probe",
                 "category": "official_cli",
                 "intent": "wind_enrichment",
                 "status": "success",
@@ -179,7 +217,7 @@ class AcceptanceTests(unittest.TestCase):
                         "provider": "wind_mcp",
                         "status": "success",
                         "error_code": None,
-                        "latency_ms": 10,
+                        "latency_ms": len(cases),
                     }
                 ],
             }
@@ -187,14 +225,17 @@ class AcceptanceTests(unittest.TestCase):
         counts: dict[str, int] = {}
         for case in cases:
             counts[case["status"]] = counts.get(case["status"], 0) + 1
-        return {
-            "schema_version": "1",
+        report = {
+            "schema_version": "2" if current else "1",
             "live": True,
             "started_at": f"{date}T16:14:00+08:00",
             "completed_at": f"{date}T16:15:00+08:00",
-            "summary": {"total": 10, "status_counts": counts},
+            "summary": {"total": len(cases), "status_counts": counts},
             "cases": cases,
         }
+        if current:
+            report["baseline"] = "five-source-structured-v1"
+        return report
 
     def doctor_report(self) -> dict:
         providers = {
@@ -208,6 +249,11 @@ class AcceptanceTests(unittest.TestCase):
                 "provider": "pywencai",
                 "status": "dependency_missing",
                 "action": "ym-data setup pywencai",
+            },
+            "pytdx_screener": {
+                "provider": "pytdx_screener",
+                "status": "configured_unverified",
+                "auth": {"required": False, "status": "not_required"},
             },
             "tdx_mcp": {
                 "provider": "tdx_mcp",
@@ -300,7 +346,7 @@ class AcceptanceTests(unittest.TestCase):
             "schema_version": "1",
             "date": date,
             "timezone": "Asia/Shanghai",
-            "weekday": "Thursday" if date.endswith("30") else "Wednesday",
+            "weekday": datetime.fromisoformat(date).strftime("%A"),
             "is_trading_day": True,
             "confirmed": True,
             "official_calendar": {
@@ -338,7 +384,8 @@ class AcceptanceTests(unittest.TestCase):
 
     def write_legacy_day1(self, date: str = "2026-07-29") -> Path:
         receipt = self.root / f"smoke/{date}T161500+0800.json"
-        write_json(receipt, self.smoke_report(date))
+        legacy_smoke = self.smoke_report(date, current=False)
+        write_json(receipt, legacy_smoke)
         destination = self.state / f"{date}.json"
         report = {
             "schema": "ym-stock-data.acceptance.daily",
@@ -366,8 +413,8 @@ class AcceptanceTests(unittest.TestCase):
                 "started_at": f"{date}T16:14:00+08:00",
                 "completed_at": f"{date}T16:15:00+08:00",
                 "total_cases": 10,
-                "status_counts": self.smoke_report(date)["summary"]["status_counts"],
-                "cases": self.smoke_report(date)["cases"],
+                "status_counts": legacy_smoke["summary"]["status_counts"],
+                "cases": legacy_smoke["cases"],
             },
             "safety": {
                 **self.downstream_report()["safety"],
@@ -382,15 +429,20 @@ class AcceptanceTests(unittest.TestCase):
         path = Path(built["path"])
         report = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual("1.1", report["schema_version"])
+        self.assertEqual("1.2", report["schema_version"])
         self.assertEqual("codex/test-acceptance", report["canonical_checkout"]["branch"])
         self.assertEqual(self.git_head(), report["canonical_checkout"]["head"])
         self.assertTrue(report["canonical_checkout"]["tracked_clean"])
         self.assertTrue(report["canonical_checkout"]["staged_clean"])
         self.assertEqual(sha256(self.smoke_path), report["smoke_evidence"]["sha256"])
-        self.assertEqual(10, report["smoke_evidence"]["total_cases"])
-        self.assertEqual(5, report["latency"]["p50"])
-        self.assertEqual(10, report["latency"]["p95"])
+        self.assertEqual("five-source-structured-v1", report["smoke_evidence"]["baseline"])
+        self.assertEqual(11, report["smoke_evidence"]["total_cases"])
+        self.assertEqual(6, report["latency"]["p50"])
+        self.assertEqual(11, report["latency"]["p95"])
+        self.assertEqual(
+            "empty",
+            report["provider_acceptance"]["pytdx_screener"]["live_status"],
+        )
         self.assertEqual("nearest-rank", report["latency"]["method"])
         self.assertEqual(0o700, stat.S_IMODE(self.state.stat().st_mode))
         self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
@@ -399,16 +451,64 @@ class AcceptanceTests(unittest.TestCase):
         for forbidden_value in ("SECRET_ROW", "Bearer ", "Traceback"):
             self.assertNotIn(forbidden_value, serialized)
 
-    def test_build_accepts_legacy_day1_and_derives_day2_sequence(self) -> None:
+    def test_legacy_day_is_readable_but_does_not_count_new_baseline(self) -> None:
         module = self.require_module()
         day1 = self.write_legacy_day1()
         self.assertEqual("valid", module.validate_daily_acceptance(day1)["status"])
 
         built = self.build("2026-07-30")
         report = json.loads(Path(built["path"]).read_text(encoding="utf-8"))
-        self.assertEqual(2, report["observation"]["day_count"])
+        self.assertEqual(1, report["observation"]["day_count"])
         self.assertEqual(5, report["observation"]["required_trading_days"])
         self.assertFalse(report["observation"]["window_complete"])
+
+    def test_current_baseline_history_counts_consecutive_new_receipts(self) -> None:
+        first = self.build("2026-07-30")
+        self.assertEqual(1, first["day_count"])
+
+        self.write_inputs("2026-07-31")
+        second = self.build(
+            "2026-07-31",
+            now=datetime(2026, 7, 31, 16, 20, tzinfo=self.shanghai),
+        )
+        self.assertEqual(2, second["day_count"])
+
+    def test_current_smoke_contract_locks_baseline_schema_and_case_ids(self) -> None:
+        module = self.require_module()
+        mutations = (
+            ("schema", lambda value: value.update(schema_version="1"), "INVALID_SMOKE_RECEIPT"),
+            ("baseline", lambda value: value.update(baseline="other"), "INVALID_SMOKE_BASELINE"),
+            ("missing", lambda value: value["cases"].pop(), "INVALID_CASE_IDS"),
+            (
+                "renamed",
+                lambda value: value["cases"][0].update(case_id="renamed_case"),
+                "INVALID_CASE_IDS",
+            ),
+            (
+                "reordered",
+                lambda value: value["cases"].__setitem__(
+                    slice(0, 2), list(reversed(value["cases"][:2]))
+                ),
+                "INVALID_CASE_IDS",
+            ),
+            (
+                "duplicate",
+                lambda value: value["cases"][1].update(
+                    case_id=value["cases"][0]["case_id"]
+                ),
+                "INVALID_CASE_IDS",
+            ),
+        )
+        for name, mutate, error_code in mutations:
+            with self.subTest(name=name):
+                self.write_inputs("2026-07-30")
+                smoke = json.loads(self.smoke_path.read_text(encoding="utf-8"))
+                mutate(smoke)
+                smoke["summary"]["total"] = len(smoke["cases"])
+                write_json(self.smoke_path, smoke)
+                with self.assertRaises(module.AcceptanceError) as caught:
+                    self.build()
+                self.assertEqual(error_code, caught.exception.code)
 
     def test_build_rejects_forbidden_keys_and_sensitive_values(self) -> None:
         module = self.require_module()
@@ -537,7 +637,7 @@ class AcceptanceTests(unittest.TestCase):
             module.validate_daily_acceptance(path)
         self.assertEqual("INVALID_DAY_SEQUENCE", caught.exception.code)
 
-        report["observation"]["day_count"] = 2
+        report["observation"]["day_count"] = 1
         report["integrity"] = module._report_integrity(report)
         write_json(path, report, mode=0o644)
         with self.assertRaises(module.AcceptanceError) as caught:
@@ -630,6 +730,15 @@ class AcceptanceTests(unittest.TestCase):
         template = module.acceptance_template("2026-07-30")
         calendar = template["calendar"]
         downstream = template["downstream"]
+        self.assertEqual("2", template["template_meta"]["smoke_schema_version"])
+        self.assertEqual(
+            "five-source-structured-v1",
+            template["template_meta"]["smoke_baseline"],
+        )
+        self.assertEqual(
+            list(CURRENT_SMOKE_CASE_IDS),
+            template["template_meta"]["smoke_case_ids"],
+        )
 
         self.assertEqual(set(self.calendar_report("2026-07-30")), set(calendar))
         expected_downstream = self.downstream_report()

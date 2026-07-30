@@ -359,6 +359,33 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual("empty", outcome.status)
         self.assertEqual(0, outcome.data["scanned_count"])
 
+    def test_malformed_directory_codes_fail_closed_before_non_stock_filtering(self):
+        malformed_rows = (
+            {"name": "缺代码"},
+            {"code": 600519, "name": "非字符串代码"},
+            {"code": "60051", "name": "五位代码"},
+            {"code": "ABCDEF", "name": "非数字代码"},
+        )
+        for row in malformed_rows:
+            with self.subTest(row=row):
+                outcome = self.provider(FakeApi({0: [], 1: [row]}, {})).call(
+                    "review_sentiment",
+                    {"query": "沪市A股 非ST", "limit": 20},
+                )
+                self.assertEqual("provider_error", outcome.status)
+                self.assertEqual("PYTDX_DIRECTORY_INCOMPLETE", outcome.error_code)
+
+    def test_valid_six_digit_non_a_share_code_may_be_skipped(self):
+        outcome = self.provider(
+            FakeApi({0: [], 1: [{"code": "510050", "name": "50ETF"}]}, {})
+        ).call(
+            "review_sentiment",
+            {"query": "沪市A股 非ST", "limit": 20},
+        )
+
+        self.assertEqual("empty", outcome.status)
+        self.assertEqual(0, outcome.data["scanned_count"])
+
     def test_all_zero_price_quotes_are_not_ready_not_empty(self):
         fake = FakeApi(
             {0: [], 1: [{"code": "600519", "name": "贵州茅台"}]},

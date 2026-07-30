@@ -12,7 +12,23 @@ from unittest.mock import Mock, patch
 
 from ym_stock_data.__main__ import main
 from ym_stock_data.contracts import TZ_SHANGHAI
+from ym_stock_data.providers.base import ProviderOutcome
 from ym_stock_data.smoke import run_live_smoke
+
+
+CURRENT_CASE_IDS = (
+    "zero_realtime_market",
+    "zero_sector_index",
+    "zero_stock_snapshot",
+    "zero_stock_kline",
+    "zero_review_sentiment",
+    "zero_market_limit_state",
+    "zero_stock_event",
+    "explicit_wencai",
+    "explicit_structured_screener",
+    "tdx_probe",
+    "wind_probe",
+)
 
 
 def result(intent, *, status="success", provider="fake", rows=None):
@@ -74,6 +90,15 @@ class SmokeTests(unittest.TestCase):
 
     def test_live_matrix_is_sanitized_independent_and_privately_written(self):
         calls = []
+        pytdx_screener = Mock()
+        pytdx_screener.call.return_value = ProviderOutcome(
+            provider="pytdx_screener",
+            status="empty",
+            data={"datas": [], "row_count": 0},
+            quality={"returned_count": 0},
+            auth={"required": False, "status": "not_required"},
+            latency_ms=9,
+        )
 
         def fake_query(intent, **params):
             calls.append((intent, params))
@@ -91,7 +116,9 @@ class SmokeTests(unittest.TestCase):
             output_dir=self.root,
             query_fn=fake_query,
             diagnostics_fn=lambda: diagnostics,
-            provider_loader=Mock(side_effect=AssertionError("TDX must not run")),
+            provider_loader=lambda name: pytdx_screener
+            if name == "pytdx_screener"
+            else (_ for _ in ()).throw(AssertionError("TDX must not run")),
             now_fn=lambda: datetime(2026, 7, 29, 12, 34, 56, tzinfo=TZ_SHANGHAI),
             case_timeout_sec=1,
             total_timeout_sec=20,
@@ -100,7 +127,10 @@ class SmokeTests(unittest.TestCase):
         path = Path(receipt["receipt"])
         report = json.loads(path.read_text(encoding="utf-8"))
         serialized = json.dumps(report, ensure_ascii=False)
+        self.assertEqual("2", report["schema_version"])
+        self.assertEqual("five-source-structured-v1", report["baseline"])
         self.assertEqual(11, len(report["cases"]))
+        self.assertEqual(CURRENT_CASE_IDS, tuple(case["case_id"] for case in report["cases"]))
         self.assertEqual("auth_missing", next(
             case["status"] for case in report["cases"] if case["case_id"] == "tdx_probe"
         ))
@@ -113,8 +143,12 @@ class SmokeTests(unittest.TestCase):
             "explicit_structured_screener",
             {case["case_id"] for case in report["cases"]},
         )
-        self.assertEqual(10, len(calls))
+        self.assertEqual(9, len(calls))
         self.assertEqual("wind_enrichment", calls[-1][0])
+        pytdx_screener.call.assert_called_once_with(
+            "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+        )
         for forbidden in (
             "SECRET_ROW",
             "SECRET_EXCEPTION",
@@ -123,6 +157,7 @@ class SmokeTests(unittest.TestCase):
             "stderr",
             "query-row",
             "A股 非ST 涨停",
+            "沪深A股 非ST 非停牌 最新价>=1",
         ):
             self.assertNotIn(forbidden, serialized)
         self.assertEqual(0o700, stat.S_IMODE(self.root.stat().st_mode))
@@ -144,6 +179,17 @@ class SmokeTests(unittest.TestCase):
                     "wind_mcp": {"status": "dependency_missing"},
                 }
             },
+            provider_loader=lambda name: Mock(
+                call=Mock(
+                    return_value=ProviderOutcome(
+                        provider=name,
+                        status="empty",
+                        data={"datas": [], "row_count": 0},
+                        quality={"returned_count": 0},
+                        auth={"required": False, "status": "not_required"},
+                    )
+                )
+            ),
             now_fn=lambda: datetime(2026, 7, 29, 12, 34, 56, tzinfo=TZ_SHANGHAI),
             case_timeout_sec=0.01,
             total_timeout_sec=2,
