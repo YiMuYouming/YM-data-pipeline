@@ -194,6 +194,8 @@ def _raise_sanitized_transport(error: BaseException) -> None:
         raise TdxForbidden("TDX MCP permission denied") from None
     if isinstance(error, (TimeoutError, socket.timeout, asyncio.TimeoutError)):
         raise TimeoutError("TDX MCP request timed out") from None
+    if isinstance(error, RuntimeError):
+        raise TdxProtocolError("TDX MCP protocol response invalid") from None
     raise TdxTransportError("TDX MCP transport failed") from None
 
 
@@ -209,7 +211,7 @@ async def _official_sdk_session(authorization: str):
             SERVER_URL,
             http_client=http_client,
         ) as streams:
-            read_stream, write_stream, _get_session_id = streams
+            read_stream, write_stream = streams
             async with ClientSession(
                 read_stream,
                 write_stream,
