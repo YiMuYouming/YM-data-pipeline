@@ -546,6 +546,33 @@ class OfficialSdkClientTests(unittest.TestCase):
 
 
 class TdxMcpProviderTests(unittest.TestCase):
+    def test_success_exposes_sanitized_protocol_evidence(self):
+        session = FakeSession(payload={"items": [{"code": "600519"}]})
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        provider = TdxMcpProvider(
+            "tdx_quotes", auth_manager=FakeAuth(), client=client
+        )
+
+        outcome = provider.call("stock_snapshot", {"codes": ["600519"]})
+
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(
+            {
+                "initialize": "pass",
+                "tools_list": "pass",
+                "schema": "pass",
+                "read_only": "pass",
+                "tool_call": "pass",
+                "page_count": 1,
+                "session_count": 1,
+                "refresh_count": 0,
+                "call_count": 1,
+            },
+            outcome.provenance["smoke_protocol"],
+        )
+
     def test_provider_capabilities_map_only_to_compatible_intents(self):
         cases = {
             "tdx_screener": ("review_sentiment", {"query": "非ST", "limit": 1}, {"datas": [{}]}),
