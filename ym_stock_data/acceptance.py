@@ -592,7 +592,7 @@ def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
     def passed(case_id: str, provider: str, *, protocol: bool = False) -> bool:
         case = by_id.get(case_id, {})
         valid = (
-            case.get("status") in {"success", "degraded"}
+            case.get("status") == "success"
             and case.get("provider_used") == provider
             and case.get("row_count", 0) > 0
             and any(

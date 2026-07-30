@@ -124,13 +124,13 @@ CASE_SPECS = (
     ),
     SmokeCaseSpec(
         "tdx_report_probe", "owned_oauth", "research",
-        (("fixture_id", "large_cap_a"), ("days", 30)),
+        (("fixture_id", "large_cap_a"), ("days", 365)),
         direct_provider="tdx_report", allow_unattempted_provider_state=True,
         evidence_kind="tdx_protocol_result", capability="report",
     ),
     SmokeCaseSpec(
         "tdx_notice_probe", "owned_oauth", "filings",
-        (("fixture_id", "large_cap_a"), ("days", 30)),
+        (("fixture_id", "large_cap_a"), ("days", 365)),
         direct_provider="tdx_notice", allow_unattempted_provider_state=True,
         evidence_kind="tdx_protocol_result", capability="notice",
     ),
@@ -147,7 +147,7 @@ CASE_SPECS = (
     ),
     SmokeCaseSpec(
         "wind_filings_probe", "official_cli", "filings",
-        (("fixture_id", "large_cap_a"), ("days", 30), ("max_pages", 1)),
+        (("fixture_id", "large_cap_a"), ("days", 365), ("max_pages", 1)),
         direct_provider="wind_documents", allow_unattempted_provider_state=True,
         evidence_kind="direct_provider_result", capability="filings",
     ),

@@ -105,7 +105,7 @@ Doctor 只运行一次并直接保存脱敏 JSON：
 chmod 600 "$acceptance_tmp/doctor.json"
 ```
 
-Smoke 只运行一次且完整执行 21 个 case，单项失败不遮蔽后项。所有 direct case 都经 canonical registry 的 `provider_loader` 调用；TDX 六项各自完成 official SDK 的 initialize、tools/list、schema、read-only、tool-call gate。受控降级 case 复用真实 canonical router，前四源只使用固定 injected outcome，禁止联网，末源才调用 live PyTDX；attempt 记录 `origin=injected|live`。receipt 仍只保存脱敏状态、行数、耗时和协议计数，不保存查询正文、业务行、schema/content、endpoint 或 session 标识。doctor/configured、TCP 可达和 empty 都不算能力已通。不要在 runbook 外补探针。
+Smoke 只运行一次且完整执行 21 个 case，单项失败不遮蔽后项。所有 direct case 都经 canonical registry 的 `provider_loader` 调用；TDX 六项各自完成 official SDK 的 initialize、tools/list、schema、read-only、tool-call gate。TDX report/notice 与 Wind filings 使用固定 365 天窗口，Wind 仍限制 `max_pages=1`，不增加调用次数，只降低公告静默期假阴性。受控降级 case 复用真实 canonical router，前四源只使用固定 injected outcome，禁止联网，末源才调用 live PyTDX；attempt 记录 `origin=injected|live`。receipt 仍只保存脱敏状态、行数、耗时和协议计数，不保存查询正文、业务行、schema/content、endpoint 或 session 标识。Direct case 只有非空 `success` 才算通；`degraded`、doctor/configured、TCP 可达和语义合法 empty 都不算能力已通。不要在 runbook 外补探针。
 
 ```bash
 ./ym-data smoke --live > "$acceptance_tmp/smoke-cli.json" 2>/dev/null

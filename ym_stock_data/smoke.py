@@ -231,6 +231,79 @@ class _InjectedProvider:
         return self.outcome
 
 
+def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
+    """Recompute the five source and controlled-chain gates from case metadata."""
+
+    by_id = {case["case_id"]: case for case in cases}
+
+    def passed(case_id: str, provider: str, *, protocol: bool = False) -> bool:
+        case = by_id[case_id]
+        valid = (
+            case["status"] == "success"
+            and case["provider_used"] == provider
+            and case["row_count"] > 0
+            and any(
+                attempt["provider"] == provider
+                and attempt["status"] == "success"
+                and attempt["origin"] == "live"
+                for attempt in case["attempts"]
+            )
+        )
+        if not protocol:
+            return valid
+        evidence = case["protocol_evidence"]
+        return valid and isinstance(evidence, dict) and all(
+            evidence[key] == "pass"
+            for key in ("initialize", "tools_list", "schema", "read_only", "tool_call")
+        ) and all(
+            evidence[key] >= 1
+            for key in ("page_count", "session_count", "call_count")
+        )
+
+    source_status = {
+        "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
+        "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
+        "tdx": "pass" if all(
+            passed(case_id, provider, protocol=True)
+            for case_id, provider in (
+                ("tdx_probe", "tdx_quotes"),
+                ("tdx_screener_probe", "tdx_screener"),
+                ("tdx_kline_probe", "tdx_kline"),
+                ("tdx_report_probe", "tdx_report"),
+                ("tdx_notice_probe", "tdx_notice"),
+                ("tdx_news_probe", "tdx_news"),
+            )
+        ) else "fail",
+        "wind": "pass" if all(
+            passed(case_id, provider)
+            for case_id, provider in (
+                ("wind_probe", "wind_mcp"),
+                ("wind_screener_probe", "wind_screener"),
+                ("wind_filings_probe", "wind_documents"),
+            )
+        ) else "fail",
+        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
+    }
+    fallback = by_id["canonical_five_source_fallback"]
+    attempts = fallback["attempts"]
+    chain_status = "pass" if (
+        fallback["status"] == "degraded"
+        and fallback["provider_used"] == "pytdx_screener"
+        and fallback["row_count"] > 0
+        and [item["provider"] for item in attempts]
+        == ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"]
+        and [item["status"] for item in attempts]
+        == ["auth_error", "provider_error", "auth_error", "empty", "success"]
+        and [item["origin"] for item in attempts]
+        == ["injected", "injected", "injected", "injected", "live"]
+    ) else "fail"
+    gate_status = "pass" if (
+        chain_status == "pass"
+        and all(status == "pass" for status in source_status.values())
+    ) else "fail"
+    return source_status, chain_status, gate_status
+
+
 def _atomic_write(report: dict, output_dir: Path, now: datetime) -> Path:
     output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(output_dir, 0o700)
@@ -380,11 +453,11 @@ def run_live_smoke(
             diagnostic_name="tdx_mcp",
         ),
         "tdx_report_probe": lambda: direct_probe(
-            "tdx_report", "research", {"code": "600519", "days": 30},
+            "tdx_report", "research", {"code": "600519", "days": 365},
             diagnostic_name="tdx_mcp",
         ),
         "tdx_notice_probe": lambda: direct_probe(
-            "tdx_notice", "filings", {"code": "600519", "days": 30},
+            "tdx_notice", "filings", {"code": "600519", "days": 365},
             diagnostic_name="tdx_mcp",
         ),
         "tdx_news_probe": lambda: direct_probe(
@@ -397,7 +470,7 @@ def run_live_smoke(
         ),
         "wind_filings_probe": lambda: direct_probe(
             "wind_documents", "filings",
-            {"code": "600519", "days": 30, "max_pages": 1},
+            {"code": "600519", "days": 365, "max_pages": 1},
             diagnostic_name="wind_mcp",
         ),
         "canonical_five_source_fallback": controlled_fallback,
@@ -480,71 +553,7 @@ def run_live_smoke(
     for case in cases:
         counts[case["status"]] = counts.get(case["status"], 0) + 1
     completed_at = now_fn()
-    by_id = {case["case_id"]: case for case in cases}
-
-    def passed(case_id: str, provider: str, *, protocol: bool = False) -> bool:
-        case = by_id[case_id]
-        valid = (
-            case["status"] in {"success", "degraded"}
-            and case["provider_used"] == provider
-            and case["row_count"] > 0
-            and any(
-                attempt["provider"] == provider
-                and attempt["status"] == "success"
-                and attempt["origin"] == "live"
-                for attempt in case["attempts"]
-            )
-        )
-        if not protocol:
-            return valid
-        evidence = case["protocol_evidence"]
-        return valid and isinstance(evidence, dict) and all(
-            evidence[key] == "pass"
-            for key in ("initialize", "tools_list", "schema", "read_only", "tool_call")
-        ) and all(evidence[key] >= 1 for key in ("page_count", "session_count", "call_count"))
-
-    source_status = {
-        "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
-        "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
-        "tdx": "pass" if all(
-            passed(case_id, provider, protocol=True)
-            for case_id, provider in (
-                ("tdx_probe", "tdx_quotes"),
-                ("tdx_screener_probe", "tdx_screener"),
-                ("tdx_kline_probe", "tdx_kline"),
-                ("tdx_report_probe", "tdx_report"),
-                ("tdx_notice_probe", "tdx_notice"),
-                ("tdx_news_probe", "tdx_news"),
-            )
-        ) else "fail",
-        "wind": "pass" if all(
-            passed(case_id, provider)
-            for case_id, provider in (
-                ("wind_probe", "wind_mcp"),
-                ("wind_screener_probe", "wind_screener"),
-                ("wind_filings_probe", "wind_documents"),
-            )
-        ) else "fail",
-        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
-    }
-    fallback = by_id["canonical_five_source_fallback"]
-    expected_providers = [
-        "iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"
-    ]
-    expected_statuses = ["auth_error", "provider_error", "auth_error", "empty", "success"]
-    expected_origins = ["injected", "injected", "injected", "injected", "live"]
-    chain_status = "pass" if (
-        fallback["status"] == "degraded"
-        and fallback["provider_used"] == "pytdx_screener"
-        and fallback["row_count"] > 0
-        and [item["provider"] for item in fallback["attempts"]] == expected_providers
-        and [item["status"] for item in fallback["attempts"]] == expected_statuses
-        and [item["origin"] for item in fallback["attempts"]] == expected_origins
-    ) else "fail"
-    gate_status = "pass" if (
-        all(status == "pass" for status in source_status.values())
-        and chain_status == "pass"
-    ) else "fail"
+    source_status, chain_status, gate_status = _compute_smoke_gate(cases)
     report = {
         "schema_version": CURRENT_SMOKE_SCHEMA_VERSION,
         "baseline": CURRENT_SMOKE_BASELINE,
