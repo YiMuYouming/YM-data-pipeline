@@ -20,6 +20,7 @@ from .base import ProviderOutcome
 
 
 COMPILER_VERSION = "pytdx-structured-1"
+DIRECTORY_PAGE_SIZE = 1000
 QUOTE_BATCH_SIZE = 80
 
 
@@ -218,15 +219,27 @@ class PytdxScreenerProvider:
             if count <= 0:
                 raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
             raw_rows = []
-            for start in range(0, count, 1000):
+            start = 0
+            explored_post_snapshot_page = False
+            while True:
+                if start >= count:
+                    if explored_post_snapshot_page:
+                        raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
+                    explored_post_snapshot_page = True
                 try:
                     page = api.get_security_list(market, start)
                 except Exception as error:
                     raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE") from error
-                if not isinstance(page, list):
+                if (
+                    not isinstance(page, list)
+                    or len(page) > DIRECTORY_PAGE_SIZE
+                ):
                     raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
                 raw_rows.extend(page)
-            if len(raw_rows) != count:
+                if len(page) < DIRECTORY_PAGE_SIZE:
+                    break
+                start += DIRECTORY_PAGE_SIZE
+            if len(raw_rows) < count:
                 raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
             for row in raw_rows:
                 if not isinstance(row, dict):

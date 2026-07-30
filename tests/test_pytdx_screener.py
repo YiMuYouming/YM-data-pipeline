@@ -13,7 +13,10 @@ from unittest.mock import patch
 import ym_stock_data.api as api
 from ym_stock_data.providers.base import ProviderOutcome
 from ym_stock_data.pytdx_screener_query import compile_pytdx_screener_query
-from ym_stock_data.providers.pytdx_screener import PytdxScreenerProvider
+from ym_stock_data.providers.pytdx_screener import (
+    PytdxScreenerProvider,
+    _PayloadError,
+)
 from ym_stock_data.routing import route_for
 from ym_stock_data.v2 import capability_manifest
 
@@ -198,6 +201,23 @@ class FakeApi:
         return [self.quotes[key] for key in batch if key in self.quotes]
 
 
+class SnapshotDirectoryApi(FakeApi):
+    def __init__(self, *, initial_count, pages):
+        super().__init__({0: [], 1: []}, {})
+        self.initial_count = initial_count
+        self.pages = pages
+
+    def get_security_count(self, market):
+        return self.initial_count
+
+    def get_security_list(self, market, start):
+        self.list_calls.append((market, start))
+        page = self.pages.get(start, [])
+        if isinstance(page, Exception):
+            raise page
+        return page
+
+
 def quote(code, price, last_close):
     return {"code": code, "price": price, "last_close": last_close}
 
@@ -344,6 +364,99 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual("provider_error", outcome.status)
         self.assertEqual("PYTDX_DIRECTORY_INCOMPLETE", outcome.error_code)
+
+    def test_exact_thousand_directory_requires_empty_terminal_page(self):
+        rows = [
+            {"code": f"600{i:03d}", "name": f"股票{i:03d}"}
+            for i in range(1000)
+        ]
+        fake = FakeApi({0: [], 1: rows}, {})
+
+        catalogue = PytdxScreenerProvider._complete_catalogue(fake, (1,))
+
+        self.assertEqual(1000, len(catalogue))
+        self.assertEqual([(1, 0), (1, 1000)], fake.list_calls)
+
+    def test_directory_growth_within_terminal_page_keeps_new_rows(self):
+        rows = [
+            {"code": "600000", "name": "浦发银行"},
+            {"code": "600001", "name": "邯郸钢铁"},
+        ]
+        fake = SnapshotDirectoryApi(
+            initial_count=1,
+            pages={0: rows, 1000: []},
+        )
+
+        catalogue = PytdxScreenerProvider._complete_catalogue(fake, (1,))
+
+        self.assertEqual(
+            [(1, "600000", "浦发银行"), (1, "600001", "邯郸钢铁")],
+            catalogue,
+        )
+        self.assertEqual([(1, 0)], fake.list_calls)
+
+    def test_terminal_short_page_with_fewer_rows_than_count_fails_closed(self):
+        fake = SnapshotDirectoryApi(
+            initial_count=2,
+            pages={0: [{"code": "600000", "name": "浦发银行"}]},
+        )
+
+        with self.assertRaises(_PayloadError) as raised:
+            PytdxScreenerProvider._complete_catalogue(fake, (1,))
+
+        self.assertEqual("PYTDX_DIRECTORY_INCOMPLETE", raised.exception.code)
+        self.assertEqual([(1, 0)], fake.list_calls)
+
+    def test_one_extra_full_page_without_terminal_page_fails_bounded(self):
+        first_page = [
+            {"code": f"600{i:03d}", "name": f"股票{i:03d}"}
+            for i in range(1000)
+        ]
+        extra_page = [
+            {"code": f"601{i:03d}", "name": f"新增股票{i:03d}"}
+            for i in range(1000)
+        ]
+        fake = SnapshotDirectoryApi(
+            initial_count=1000,
+            pages={0: first_page, 1000: extra_page},
+        )
+
+        with self.assertRaises(_PayloadError) as raised:
+            PytdxScreenerProvider._complete_catalogue(fake, (1,))
+
+        self.assertEqual("PYTDX_DIRECTORY_INCOMPLETE", raised.exception.code)
+        self.assertEqual([(1, 0), (1, 1000)], fake.list_calls)
+
+    def test_directory_payload_failures_keep_stable_incomplete_error(self):
+        oversized_page = [
+            {"code": f"600{i:03d}", "name": f"股票{i:03d}"}
+            for i in range(1000)
+        ] + [{"code": "601000", "name": "越界股票"}]
+        cases = (
+            SnapshotDirectoryApi(initial_count=1, pages={0: "not-a-list"}),
+            SnapshotDirectoryApi(initial_count=1, pages={0: RuntimeError("boom")}),
+            SnapshotDirectoryApi(initial_count=1001, pages={0: oversized_page}),
+            SnapshotDirectoryApi(
+                initial_count=1,
+                pages={0: [{"code": "600000", "name": ""}]},
+            ),
+            SnapshotDirectoryApi(
+                initial_count=2,
+                pages={
+                    0: [
+                        {"code": "600000", "name": "浦发银行"},
+                        {"code": "600000", "name": "重复股票"},
+                    ]
+                },
+            ),
+        )
+        for index, fake in enumerate(cases):
+            with self.subTest(case=index):
+                with self.assertRaises(_PayloadError) as raised:
+                    PytdxScreenerProvider._complete_catalogue(fake, (1,))
+                self.assertEqual(
+                    "PYTDX_DIRECTORY_INCOMPLETE", raised.exception.code
+                )
 
     def test_complete_non_stock_directory_can_produce_zero_candidate_empty(self):
         fake = FakeApi(
