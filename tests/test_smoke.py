@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 from ym_stock_data.__main__ import main
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
-from ym_stock_data.smoke import run_live_smoke
+from ym_stock_data.smoke import run_live_smoke, summarize_query_result
 from ym_stock_data.smoke_contract import CURRENT_SMOKE_CASE_IDS
 
 
@@ -68,6 +68,15 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(2, exit_code)
         run.assert_not_called()
         self.assertEqual("not_run", json.loads(output.getvalue())["status"])
+
+    def test_general_summary_keeps_legacy_attempt_shape_until_smoke_opts_in(self):
+        value = result("review_sentiment")
+
+        general = summarize_query_result(value)
+        smoke = summarize_query_result(value, include_origin=True)
+
+        self.assertNotIn("origin", general["attempts"][0])
+        self.assertEqual("live", smoke["attempts"][0]["origin"])
 
     def test_smoke_live_cli_prints_receipt_summary_without_cases(self):
         output = io.StringIO()

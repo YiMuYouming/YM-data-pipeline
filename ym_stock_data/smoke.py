@@ -59,7 +59,10 @@ def _deadline(seconds: float):
 
 
 def _safe_attempts(
-    value: object, *, injected_providers: frozenset[str] = frozenset()
+    value: object,
+    *,
+    injected_providers: frozenset[str] = frozenset(),
+    include_origin: bool = False,
 ) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -74,20 +77,25 @@ def _safe_attempts(
         error_code = _safe_enum(item.get("error_code"))
         latency = item.get("latency_ms")
         latency_ms = latency if isinstance(latency, int) and latency >= 0 else 0
-        attempts.append(
-            {
+        projected = {
                 "provider": provider,
                 "status": status,
                 "error_code": error_code,
                 "latency_ms": latency_ms,
-                "origin": "injected" if provider in injected_providers else "live",
-            }
-        )
+        }
+        if include_origin:
+            projected["origin"] = (
+                "injected" if provider in injected_providers else "live"
+            )
+        attempts.append(projected)
     return attempts
 
 
 def summarize_query_result(
-    result: object, *, injected_providers: frozenset[str] = frozenset()
+    result: object,
+    *,
+    injected_providers: frozenset[str] = frozenset(),
+    include_origin: bool = False,
 ) -> dict:
     """Project a canonical result to non-business smoke metadata."""
 
@@ -106,7 +114,9 @@ def summarize_query_result(
         status = "error"
     provider = _safe_enum(meta.get("provider_used"))
     attempts = _safe_attempts(
-        meta.get("attempts"), injected_providers=injected_providers
+        meta.get("attempts"),
+        injected_providers=injected_providers,
+        include_origin=include_origin,
     )
     quality = meta.get("quality")
     count = quality.get("returned_count") if isinstance(quality, dict) else 0
@@ -264,7 +274,9 @@ def run_live_smoke(
         diagnostics = {"providers": {}}
 
     def canonical(intent: str, **params):
-        return lambda: summarize_query_result(query_fn(intent, **params))
+        return lambda: summarize_query_result(
+            query_fn(intent, **params), include_origin=True
+        )
 
     def direct_probe(
         provider_name: str,
@@ -319,7 +331,9 @@ def run_live_smoke(
             state_loader=_NoBreakers,
         )
         return summarize_query_result(
-            result, injected_providers=frozenset(injected)
+            result,
+            injected_providers=frozenset(injected),
+            include_origin=True,
         )
 
     callbacks = {
