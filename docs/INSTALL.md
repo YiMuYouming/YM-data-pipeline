@@ -51,14 +51,20 @@ TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代
 discovery、DCR、authorization-code、PKCE S256、localhost callback 和 state
 校验。浏览器只在显式登录命令中打开，且只请求 `mcp.read`；返回其它 scope
 （尤其 `mcp.write`）会 fail closed。默认 secure store 是 macOS Keychain，secret
-不会进入 argv。只有明确选择显式 `--store file` 时才启用文件 fallback：目录 `0700`、文件和锁 `0600`、原子写入，并用跨线程/跨进程锁串行 refresh。
+不会进入 argv。只有明确选择显式 `--store file` 时才启用文件 fallback：目录 `0700`、文件和锁 `0600`、原子写入，并用跨线程/跨进程锁串行 refresh。可用 `--file-path` 选择自有 custom path；父目录、文件或锁只要是 symlink、非当前用户 ownership 或权限过宽就 fail closed，管道不会替调用方 chmod 任意既有目录。
 
 文件 fallback 示例（路径必须由调用者明确给出或接受项目默认值）：
 
 ```bash
 ./ym-data auth login-tdx --store file
-./ym-data auth status-tdx --store file
+./ym-data auth login-tdx --store file --file-path /private/path/tdx.json
+./ym-data auth status-tdx
 ```
+
+只有 login 完整成功后，管道才以私有原子文件保存非敏感 store selector。后续
+canonical query、doctor、smoke 与无 override 的 status 共用该选择；selector
+记录可能包含 custom path，但 CLI、doctor 和 smoke receipt 只输出 store 类型，
+不会输出路径。失败、取消、超时或 selector 写入失败均不切换当前选择。
 
 管道不会读取或导入其它应用的凭据，也不会扫描外部 credential 目录。缺少
 owned credential 时，doctor 报告 `auth_missing`；过期且不可 refresh 时报告
@@ -70,8 +76,9 @@ MCP 使用固定生产依赖 `mcp==2.0.0` 的官方 Python SDK 与 Streamable HT
 稳定版要求 Python 3.10+，与本项目 `requires-python >=3.10` 一致。直接使用的
 SDK HTTP client 固定为 `httpx2==2.9.1`，Keychain adapter 固定为
 `keyring==25.7.0`。
-每次只读调用都必须先通过 `initialize`、`tools/list` 和六项 allowlist schema
-gate；任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
+每次只读调用都必须先通过 `initialize`、`tools/list` 和本次请求 capability 的
+allowlist schema gate；其它 capability 的缺失或 schema drift 不会连带禁用本次
+能力，完整六项健康只能由后续 smoke/acceptance 分项验收。任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
 明确授权并完成真实 `tools/list` 与一个白名单只读小调用，才能称为在线。本轮
 离线实现没有执行真实 DCR、没有打开浏览器，也不称为在线接通。
 

@@ -14,6 +14,7 @@ import http.server
 import json
 import os
 import secrets
+import stat
 import tempfile
 import threading
 import time
@@ -32,6 +33,7 @@ DEFAULT_RESOURCE_METADATA_URL = (
 )
 DEFAULT_FILE_PATH = Path.home() / ".ym-stock-data" / "auth" / "tdx.json"
 DEFAULT_LOCK_PATH = Path.home() / ".ym-stock-data" / "auth" / "tdx-refresh.lock"
+DEFAULT_SELECTOR_PATH = Path.home() / ".ym-stock-data" / "auth" / "tdx-store.json"
 KEYCHAIN_SERVICE = "ym-stock-data/tdx-oauth"
 KEYCHAIN_USERNAME = "owned-read-only"
 
@@ -82,12 +84,131 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _private_stat(value: os.stat_result, *, kind: str, mode: int) -> None:
+    expected_kind = stat.S_ISDIR if kind == "directory" else stat.S_ISREG
+    if (
+        not expected_kind(value.st_mode)
+        or value.st_uid != os.getuid()
+        or stat.S_IMODE(value.st_mode) != mode
+    ):
+        raise TdxAuthExpired(f"TDX credential {kind} is not private")
+
+
+def _ensure_private_directory(path: Path) -> None:
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        parent = path.parent
+        if parent == path:
+            raise TdxAuthExpired("TDX credential directory is unavailable") from None
+        if not parent.exists():
+            _ensure_private_directory(parent)
+        else:
+            try:
+                parent_value = parent.lstat()
+            except OSError:
+                raise TdxAuthExpired("TDX credential directory is unavailable") from None
+            if not stat.S_ISDIR(parent_value.st_mode):
+                raise TdxAuthExpired("TDX credential directory is unavailable")
+        try:
+            path.mkdir(mode=0o700)
+        except OSError:
+            raise TdxAuthExpired("TDX credential directory is unavailable") from None
+        value = path.lstat()
+    except OSError:
+        raise TdxAuthExpired("TDX credential directory is unavailable") from None
+    _private_stat(value, kind="directory", mode=0o700)
+
+
+def _validate_private_regular(path: Path) -> None:
+    try:
+        value = path.lstat()
+    except OSError:
+        raise TdxAuthExpired("TDX credential file is invalid") from None
+    _private_stat(value, kind="file", mode=0o600)
+
+
 def _ensure_private_file(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path.parent, 0o700)
-    descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-    os.close(descriptor)
-    os.chmod(path, 0o600)
+    _ensure_private_directory(path.parent)
+    try:
+        _validate_private_regular(path)
+        return
+    except TdxAuthExpired:
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError:
+        raise TdxAuthExpired("TDX credential file is invalid") from None
+    try:
+        os.fchmod(descriptor, 0o600)
+        _private_stat(os.fstat(descriptor), kind="file", mode=0o600)
+    finally:
+        os.close(descriptor)
+
+
+def _read_private_json(path: Path) -> dict:
+    _ensure_private_directory(path.parent)
+    _validate_private_regular(path)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            _private_stat(os.fstat(handle.fileno()), kind="file", mode=0o600)
+            payload = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise TdxAuthExpired("owned TDX credentials are invalid") from None
+    return _validate_payload(payload)
+
+
+def _atomic_private_json(path: Path, payload: dict) -> None:
+    _ensure_private_directory(path.parent)
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        raise TdxAuthExpired("TDX credential file is invalid") from None
+    else:
+        _validate_private_regular(path)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=".tdx-auth-",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            os.fchmod(handle.fileno(), 0o600)
+            json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        _validate_private_regular(path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except TdxAuthError:
+        raise
+    except OSError:
+        raise TdxAuthExpired("TDX credential write failed") from None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 
 def _validate_payload(payload: object) -> dict:
@@ -104,8 +225,20 @@ def _probe_payload(payload: dict) -> str:
     access_token = payload.get("access_token")
     refresh_token = payload.get("refresh_token")
     client_id = payload.get("client_id")
+    issuer = payload.get("issuer")
+    token_endpoint = payload.get("token_endpoint")
     expires_at_ms = payload.get("expires_at_ms")
-    if not isinstance(client_id, str) or not client_id:
+    if payload.get("token_type") != "Bearer":
+        return "auth_expired"
+    if not all(
+        isinstance(value, str) and value
+        for value in (client_id, refresh_token, issuer, token_endpoint)
+    ):
+        return "auth_expired"
+    try:
+        _validate_https_url(issuer, "issuer")
+        _validate_https_url(token_endpoint, "token endpoint")
+    except TdxOAuthProtocolError:
         return "auth_expired"
     if not isinstance(expires_at_ms, int):
         return "auth_expired"
@@ -125,37 +258,18 @@ class FileCredentialStore:
         self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
 
     def load(self) -> dict:
-        if not self.path.is_file():
-            raise TdxAuthMissing("owned TDX credentials are missing")
         try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            self.path.lstat()
+        except FileNotFoundError:
+            raise TdxAuthMissing("owned TDX credentials are missing")
+        except OSError:
             raise TdxAuthExpired("owned TDX credentials are invalid") from None
-        return _validate_payload(payload)
+        return _read_private_json(self.path)
 
     def save(self, payload: dict) -> None:
         value = _validate_payload(payload)
         _ensure_private_file(self.lock_path)
-        temporary_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=".tdx-auth-",
-                delete=False,
-            ) as handle:
-                temporary_path = Path(handle.name)
-                os.chmod(temporary_path, 0o600)
-                json.dump(value, handle, ensure_ascii=False, sort_keys=True)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self.path)
-            os.chmod(self.path, 0o600)
-        finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink()
+        _atomic_private_json(self.path, value)
 
     def probe(self) -> str:
         try:
@@ -218,20 +332,85 @@ class KeychainCredentialStore:
             return "auth_expired"
 
 
+class CredentialStoreSelector:
+    """Persist the non-secret active credential-store selection."""
+
+    def __init__(self, path: str | Path = DEFAULT_SELECTOR_PATH):
+        self.path = Path(path).expanduser()
+
+    def load(self) -> dict:
+        try:
+            self.path.lstat()
+        except FileNotFoundError:
+            return {"schema_version": "1", "mode": "keychain"}
+        except OSError:
+            raise TdxAuthExpired("TDX credential selector is invalid") from None
+        payload = _read_private_json(self.path)
+        mode = payload.get("mode")
+        if payload.get("schema_version") != "1" or mode not in {"keychain", "file"}:
+            raise TdxAuthExpired("TDX credential selector is invalid")
+        if mode == "keychain":
+            if set(payload) != {"schema_version", "mode"}:
+                raise TdxAuthExpired("TDX credential selector is invalid")
+            return payload
+        file_path = payload.get("file_path")
+        if (
+            set(payload) != {"schema_version", "mode", "file_path"}
+            or not isinstance(file_path, str)
+            or not file_path
+            or not Path(file_path).is_absolute()
+        ):
+            raise TdxAuthExpired("TDX credential selector is invalid")
+        return payload
+
+    def save(self, mode: str, *, file_path: str | Path | None = None) -> None:
+        if mode == "keychain" and file_path is None:
+            payload = {"schema_version": "1", "mode": "keychain"}
+        elif mode == "file" and file_path is not None:
+            resolved = Path(file_path).expanduser().absolute()
+            payload = {
+                "schema_version": "1",
+                "mode": "file",
+                "file_path": str(resolved),
+            }
+        else:
+            raise ValueError("file credential store requires an explicit path")
+        _atomic_private_json(self.path, payload)
+
+
 def default_credential_store(
     *,
-    mode: str = "keychain",
+    mode: str | None = None,
     backend=None,
     file_path: str | Path = DEFAULT_FILE_PATH,
     lock_path: str | Path = DEFAULT_LOCK_PATH,
+    selector_path: str | Path | None = None,
 ) -> CredentialStore:
-    """Return Keychain by default; file persistence requires explicit mode."""
+    """Resolve the selected store; file persistence requires explicit setup."""
+
+    if mode is None:
+        selector = CredentialStoreSelector(selector_path or DEFAULT_SELECTOR_PATH).load()
+        mode = selector["mode"]
+        if mode == "file":
+            file_path = selector["file_path"]
 
     if mode == "keychain":
         return KeychainCredentialStore(backend=backend, lock_path=lock_path)
     if mode == "file":
         return FileCredentialStore(file_path)
     raise ValueError("TDX credential store mode must be 'keychain' or 'file'")
+
+
+def persist_credential_store_selection(
+    mode: str,
+    *,
+    file_path: str | Path | None = None,
+    selector_path: str | Path | None = None,
+) -> None:
+    CredentialStoreSelector(selector_path or DEFAULT_SELECTOR_PATH).save(
+        mode,
+        file_path=file_path,
+    )
 
 
 _THREAD_LOCKS: dict[str, threading.Lock] = {}
@@ -542,8 +721,9 @@ class TdxOwnedAuth:
                 for value in (refresh_token, client_id, token_endpoint, issuer)
             ):
                 raise TdxAuthExpired("TDX OAuth refresh is unavailable")
-            _validate_https_url(token_endpoint, "token endpoint")
             try:
+                _validate_https_url(issuer, "issuer")
+                _validate_https_url(token_endpoint, "token endpoint")
                 token = self.request_json(
                     "POST",
                     token_endpoint,
@@ -555,17 +735,17 @@ class TdxOwnedAuth:
                         "resource": self.resource_url,
                     },
                 )
-            except TdxAuthError:
+                updated = self._token_payload(
+                    token,
+                    client_id=client_id,
+                    issuer=issuer,
+                    token_endpoint=token_endpoint,
+                    previous_refresh_token=refresh_token,
+                )
+            except (KeyboardInterrupt, SystemExit):
                 raise
             except Exception:
                 raise TdxAuthExpired("TDX OAuth refresh failed") from None
-            updated = self._token_payload(
-                token,
-                client_id=client_id,
-                issuer=issuer,
-                token_endpoint=token_endpoint,
-                previous_refresh_token=refresh_token,
-            )
             self.store.save(updated)
             return self._authorization_value(updated)
 
@@ -580,7 +760,9 @@ class TdxOwnedAuth:
 
     @staticmethod
     def _authorization_value(payload: dict) -> str:
-        return f"{payload.get('token_type') or 'Bearer'} {payload['access_token']}"
+        if payload.get("token_type") != "Bearer":
+            raise TdxAuthExpired("TDX OAuth token type is invalid")
+        return f"Bearer {payload['access_token']}"
 
     @staticmethod
     def _token_payload(
@@ -598,6 +780,8 @@ class TdxOwnedAuth:
         except (AttributeError, TypeError, ValueError):
             expires_in = 0
         _validate_scope(token.get("scope"), allow_missing=False)
+        if token.get("token_type") != "Bearer":
+            raise TdxOAuthProtocolError("TDX OAuth token type is invalid")
         if not isinstance(access_token, str) or not access_token or expires_in <= 0:
             raise TdxOAuthProtocolError("TDX OAuth token response is invalid")
         if not isinstance(refresh_token, str) or not refresh_token:
@@ -607,7 +791,7 @@ class TdxOwnedAuth:
             "client_id": client_id,
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": token.get("token_type") or "Bearer",
+            "token_type": "Bearer",
             "scope": READ_SCOPE,
             "expires_at_ms": _now_ms() + expires_in * 1000,
             "issuer": issuer,

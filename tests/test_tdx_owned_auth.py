@@ -243,6 +243,7 @@ class StoreTests(unittest.TestCase):
         default = default_credential_store(
             backend=backend,
             lock_path=self.root / "default.lock",
+            selector_path=self.root / "missing-selector.json",
         )
         fallback_path = self.root / "fallback" / "tdx.json"
         fallback = default_credential_store(mode="file", file_path=fallback_path)

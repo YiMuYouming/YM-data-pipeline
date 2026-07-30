@@ -276,9 +276,9 @@ class OfficialSdkClientTests(unittest.TestCase):
         missing.pop("tdx_screener")
         cases.append(missing)
         wrong_type = valid_tool_schemas()
-        wrong_type["tdx_quotes"] = {
-            **wrong_type["tdx_quotes"],
-            "properties": {"codes": {"type": "string"}},
+        wrong_type["tdx_screener"] = {
+            **wrong_type["tdx_screener"],
+            "properties": {"query": {"type": "array"}},
         }
         cases.append(wrong_type)
         extra_required = valid_tool_schemas()
@@ -513,9 +513,11 @@ class OwnedAuthCliTests(unittest.TestCase):
         output = io.StringIO()
         auth = Mock()
         auth.login.return_value = "configured_unverified"
-        with patch(
-            "ym_stock_data.__main__.create_tdx_auth", return_value=auth
-        ) as factory, redirect_stdout(output):
+        with (
+            patch("ym_stock_data.__main__.create_tdx_auth", return_value=auth) as factory,
+            patch("ym_stock_data.__main__.persist_credential_store_selection"),
+            redirect_stdout(output),
+        ):
             exit_code = main(["auth", "login-tdx", "--store", "file"])
 
         self.assertEqual(0, exit_code)

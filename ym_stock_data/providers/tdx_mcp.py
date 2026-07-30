@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -335,7 +336,9 @@ class TdxMcpClient:
         _validate_arguments(tool_name, arguments)
         authorization = auth_manager.authorization()
         try:
-            return asyncio.run(self._call_once(tool_name, arguments, authorization))
+            return _run_async(
+                lambda: self._call_once(tool_name, arguments, authorization)
+            )
         except TdxForbidden:
             raise TdxForbidden("TDX MCP permission denied") from None
         except TdxUnauthorized:
@@ -344,7 +347,9 @@ class TdxMcpClient:
                 rejected_authorization=authorization,
             )
             try:
-                return asyncio.run(self._call_once(tool_name, arguments, refreshed))
+                return _run_async(
+                    lambda: self._call_once(tool_name, arguments, refreshed)
+                )
             except TdxUnauthorized:
                 raise TdxUnauthorized("TDX MCP authorization failed") from None
             except TdxForbidden:
@@ -359,7 +364,7 @@ class TdxMcpClient:
         try:
             async with self.session_factory(authorization) as session:
                 await session.initialize()
-                await self._gate_tools(session)
+                await self._gate_tool(session, tool_name)
                 result = await session.call_tool(tool_name, dict(arguments))
                 return _extract_payload(result)
         except Exception as error:
@@ -367,8 +372,7 @@ class TdxMcpClient:
         raise AssertionError("unreachable")
 
     @staticmethod
-    async def _gate_tools(session) -> None:
-        found = {}
+    async def _gate_tool(session, tool_name: str) -> None:
         cursor = None
         for _page in range(10):
             params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
@@ -378,16 +382,39 @@ class TdxMcpClient:
                 raise TdxSchemaError("TDX MCP tools/list is malformed")
             for item in page_tools:
                 name = _tool_value(item, "name")
-                if name in TOOL_ALLOWLIST:
+                if name == tool_name:
                     _validate_tool_schema(item)
-                    found[name] = item
+                    return
             cursor = _tool_value(result, "next_cursor")
             if cursor is None:
                 cursor = _tool_value(result, "nextCursor")
             if not cursor:
                 break
-        if set(found) != set(TOOL_ALLOWLIST):
-            raise TdxSchemaError("TDX MCP read-only tool set is incomplete")
+        raise TdxSchemaError("TDX MCP requested tool is unavailable")
+
+
+def _run_async(coroutine_factory: Callable):
+    """Run one async MCP attempt from synchronous code, including loop threads."""
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine_factory())
+    result = []
+    failure = []
+
+    def worker() -> None:
+        try:
+            result.append(asyncio.run(coroutine_factory()))
+        except BaseException as error:
+            failure.append(error)
+
+    thread = threading.Thread(target=worker, name="ym-tdx-mcp-sync-bridge")
+    thread.start()
+    thread.join()
+    if failure:
+        raise failure[0]
+    return result[0]
 
 
 class TdxMcpProvider:

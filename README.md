@@ -106,11 +106,12 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 
-`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。TDX 默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback。管道不会读取或导入其它应用的凭据，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
+`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。TDX 首次默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback，`--file-path` 可指定自有文件位置。成功登录后才会原子保存非敏感 store selector，后续 canonical query、doctor、smoke 和无 override 的 `auth status-tdx` 共同使用该选择；失败、取消或超时不会切换。selector 与凭据文件都拒绝 symlink、宽权限和非当前用户 ownership，任何输出都不包含自定义路径或凭据。管道不会读取或导入其它应用的凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 
 TDX MCP transport 固定使用官方 `mcp==2.0.0` SDK 的 Streamable HTTP。
-每个 session 必须先通过 `initialize` 和 `tools/list` 六项 schema gate，才允许
-`tools/call`。401 会强制 refresh、重建 session 并最多重试一次；403 直接报告
+每个 session 必须先通过 `initialize` 和本次请求 capability 的 `tools/list`
+schema gate，才允许 `tools/call`；其它白名单 capability 的缺失或 schema drift
+不会连带禁用本次能力，完整六项健康只能由后续 smoke/acceptance 分项验收。401 会强制 refresh、重建 session 并最多重试一次；403 直接报告
 permission failure，不伪装成 expired。TDX 与 Wind 只允许固定只读工具白名单。
 它们不是交易入口，不发交易 POST，不调用券商，也不能单独触发交易建议。
 

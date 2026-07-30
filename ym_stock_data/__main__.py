@@ -20,10 +20,13 @@ from .doctor import (
 )
 from .fetch import CANONICAL_ROUTES, LEGACY_DIRECT_ROUTES, list_supported
 from .providers.tdx_auth import (
+    DEFAULT_FILE_PATH,
+    FileCredentialStore,
     READ_SCOPE,
     TdxAuthError,
     TdxOwnedAuth,
     default_credential_store,
+    persist_credential_store_selection,
 )
 from .routing import _ROUTES
 from .smoke import run_live_smoke
@@ -54,7 +57,7 @@ def _parser() -> argparse.ArgumentParser:
         tdx_auth.add_argument(
             "--store",
             choices=("keychain", "file"),
-            default="keychain",
+            default=None,
         )
         tdx_auth.add_argument("--file-path", type=Path)
 
@@ -105,7 +108,7 @@ def _print_json(value: object) -> None:
 
 def create_tdx_auth(
     *,
-    mode: str = "keychain",
+    mode: str | None = None,
     file_path: Path | None = None,
 ) -> TdxOwnedAuth:
     if file_path is not None and mode != "file":
@@ -114,6 +117,14 @@ def create_tdx_auth(
     if file_path is not None:
         kwargs["file_path"] = file_path
     return TdxOwnedAuth(store=default_credential_store(**kwargs))
+
+
+def _credential_store_mode(auth: TdxOwnedAuth, explicit: str | None) -> str:
+    if explicit in {"keychain", "file"}:
+        return explicit
+    if isinstance(getattr(auth, "store", None), FileCredentialStore):
+        return "file"
+    return "keychain"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -142,22 +153,40 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "auth":
         try:
             auth = create_tdx_auth(mode=args.store, file_path=args.file_path)
+            store_mode = _credential_store_mode(auth, args.store)
             status = (
                 auth.login()
                 if args.auth_command == "login-tdx"
                 else auth.probe()
             )
+            if (
+                args.auth_command == "login-tdx"
+                and status == "configured_unverified"
+            ):
+                selected_path = (
+                    args.file_path
+                    if store_mode == "file" and args.file_path is not None
+                    else (
+                        auth.store.path
+                        if isinstance(getattr(auth, "store", None), FileCredentialStore)
+                        else DEFAULT_FILE_PATH
+                    )
+                )
+                persist_credential_store_selection(
+                    store_mode,
+                    file_path=selected_path if store_mode == "file" else None,
+                )
         except (TdxAuthError, ValueError):
             _print_json(
                 {
                     "status": "unavailable",
                     "error_code": "TDX_AUTH_FAILED",
                     "scope": READ_SCOPE,
-                    "store": args.store,
+                    "store": args.store or "selected",
                 }
             )
             return 2
-        _print_json({"status": status, "scope": READ_SCOPE, "store": args.store})
+        _print_json({"status": status, "scope": READ_SCOPE, "store": store_mode})
         return 0 if status == "configured_unverified" else 2
     if args.command == "smoke":
         if not args.live:
