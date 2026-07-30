@@ -86,13 +86,23 @@ class CompilerTests(unittest.TestCase):
 
     def test_comparison_and_range_boundaries_are_explicit(self):
         compiled = compile_pytdx_screener_query(
-            "沪深A股 非停牌 最新价>=10 最新价<20 涨幅-2%到3%"
+            "沪深A股 非停牌 最新价10到20 涨幅-2%到3%"
         )
         self.assertIsNotNone(compiled)
         self.assertTrue(compiled.matches(price=10, pct_change=-2))
         self.assertTrue(compiled.matches(price=19.99, pct_change=3))
-        self.assertFalse(compiled.matches(price=20, pct_change=0))
+        self.assertTrue(compiled.matches(price=20, pct_change=0))
+        self.assertFalse(compiled.matches(price=20.01, pct_change=0))
         self.assertFalse(compiled.matches(price=15, pct_change=3.01))
+
+    def test_rejects_duplicate_filters_for_the_same_numeric_field(self):
+        for query in (
+            "沪深A股 非停牌 最新价>=10 最新价<20",
+            "沪深A股 非停牌 涨幅>=1% 涨幅<5%",
+            "沪深A股 非停牌 最新价10到20 最新价>=10",
+        ):
+            with self.subTest(query=query):
+                self.assertIsNone(compile_pytdx_screener_query(query))
 
 
 class FakeApi:
@@ -186,6 +196,11 @@ class ProviderTests(unittest.TestCase):
         )
         self.assertEqual(2, outcome.quality["returned_count"])
         self.assertEqual({"required": False, "status": "not_required"}, outcome.auth)
+        self.assertEqual(3, outcome.data["matched_count"])
+        self.assertEqual(5, outcome.data["scanned_count"])
+        self.assertEqual(1, outcome.data["excluded_invalid_quote_count"])
+        self.assertTrue(outcome.data["truncated"])
+        self.assertEqual("pytdx-structured-1", outcome.data["compiler_version"])
         self.assertEqual([(0, 0), (1, 0)], fake.list_calls)
         self.assertEqual(1, fake.disconnect_calls)
 
@@ -207,6 +222,10 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual("success", outcome.status)
         self.assertEqual([80, 80, 1], [len(batch) for batch in fake.quote_batches])
+        self.assertEqual(161, outcome.data["matched_count"])
+        self.assertEqual(161, outcome.data["scanned_count"])
+        self.assertEqual(0, outcome.data["excluded_invalid_quote_count"])
+        self.assertTrue(outcome.data["truncated"])
         self.assertEqual(
             ["600000", "600001", "600002"],
             [row["股票代码"] for row in outcome.data["datas"]],
@@ -241,7 +260,13 @@ class ProviderTests(unittest.TestCase):
         )
 
         self.assertEqual("empty", outcome.status)
-        self.assertEqual({"datas": [], "row_count": 0}, outcome.data)
+        self.assertEqual([], outcome.data["datas"])
+        self.assertEqual(0, outcome.data["row_count"])
+        self.assertEqual(0, outcome.data["matched_count"])
+        self.assertEqual(1, outcome.data["scanned_count"])
+        self.assertEqual(0, outcome.data["excluded_invalid_quote_count"])
+        self.assertFalse(outcome.data["truncated"])
+        self.assertEqual("pytdx-structured-1", outcome.data["compiler_version"])
 
     def test_incomplete_directory_or_quotes_never_become_empty(self):
         class ShortDirectoryApi(FakeApi):
@@ -254,14 +279,14 @@ class ProviderTests(unittest.TestCase):
                     {0: [], 1: [{"code": "600519", "name": "贵州茅台"}]},
                     {},
                 ),
-                "DIRECTORY_INCOMPLETE",
+                "PYTDX_DIRECTORY_INCOMPLETE",
             ),
             (
                 FakeApi(
                     {0: [], 1: [{"code": "600519", "name": "贵州茅台"}]},
                     {},
                 ),
-                "QUOTE_INCOMPLETE",
+                "PYTDX_QUOTE_INCOMPLETE",
             ),
         )
         for fake, error_code in cases:
@@ -293,7 +318,7 @@ class ProviderTests(unittest.TestCase):
                     {"query": "沪市A股 非ST", "limit": 20},
                 )
                 self.assertEqual("provider_error", outcome.status)
-                self.assertEqual("INVALID_QUOTE", outcome.error_code)
+                self.assertEqual("PYTDX_INVALID_QUOTE", outcome.error_code)
 
     def test_no_auth_connection_failure_is_auditable(self):
         fake = FakeApi({0: [], 1: []}, {}, connects=False)
