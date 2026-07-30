@@ -618,6 +618,22 @@ class WindProviderTests(unittest.TestCase):
         self.assertTrue(all(outcome.status == "incompatible" for outcome in blocked))
         self.assertEqual("empty", documents.status)
 
+    def test_filing_fallback_removes_all_whitespace_from_cli_query(self):
+        runner = Mock(
+            return_value=self.completed(
+                {"content": [{"type": "text", "text": json.dumps({"filings": []})}]}
+            )
+        )
+
+        outcome = self.provider(name="wind_documents", runner=runner).call(
+            "filings", {"code": "600519", "days": 365, "max_pages": 1}
+        )
+
+        self.assertEqual("empty", outcome.status)
+        command_params = json.loads(runner.call_args.args[0][5])
+        self.assertEqual("600519最近365天公告", command_params["query"])
+        self.assertFalse(any(character.isspace() for character in command_params["query"]))
+
     def test_filing_fallback_rejects_missing_wrong_or_generic_containers(self):
         payloads = ({}, {"filings": {}}, {"rows": []}, {"text": "没有公告"})
         for payload in payloads:
@@ -716,11 +732,38 @@ class WindProviderTests(unittest.TestCase):
                 "call",
                 "financial_docs",
                 "get_company_announcements",
-                '{"query":"600519.SH 2025年报","top_k":3}',
+                '{"query":"600519.SH2025年报","top_k":3}',
             ],
             command,
         )
         self.assertNotIn("lang", json.loads(command[5]))
+
+    def test_announcements_remove_ascii_and_unicode_whitespace_from_cli_query(self):
+        runner = Mock(
+            return_value=self.completed(
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps({"rows": [{"title": "年报"}]}),
+                        }
+                    ]
+                }
+            )
+        )
+
+        outcome = self.provider(runner=runner).call(
+            "wind_enrichment",
+            {
+                "capability": "announcements",
+                "params": {"question": "600519.SH\t2025\u3000年报\n更正", "top_k": 3},
+            },
+        )
+
+        self.assertEqual("success", outcome.status)
+        command_params = json.loads(runner.call_args.args[0][5])
+        self.assertEqual("600519.SH2025年报更正", command_params["query"])
+        self.assertFalse(any(character.isspace() for character in command_params["query"]))
 
     def test_canonical_wind_enrichment_enforces_single_target(self):
         invalid_params = (

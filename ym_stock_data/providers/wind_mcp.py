@@ -304,7 +304,10 @@ class WindMcpProvider:
             if capability == "stock_screener"
             else WIND_ENRICHMENT_CAPABILITIES[capability]
         )
-        arguments = {spec["parameter"]: _compact(question)}
+        parameter_value = _compact(question)
+        if spec["parameter"] == "query":
+            parameter_value = re.sub(r"\s+", "", parameter_value)
+        arguments = {spec["parameter"]: parameter_value}
         if not arguments[spec["parameter"]]:
             return self._failure("provider_error", "INVALID_PARAMS", "present")
         if spec["parameter"] == "question":
