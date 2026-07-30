@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import ym_stock_data.api as api
 from ym_stock_data.doctor import collect_diagnostics
 from ym_stock_data.provider_state import ProviderState
+from ym_stock_data.providers.base import ProviderOutcome
 from ym_stock_data.providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
     WIND_EVENT_ALLOWLIST,
@@ -169,7 +170,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual("stock_data", command[3])
         self.assertEqual("get_stock_fundamentals", command[4])
         self.assertEqual(
-            {"question": "贵州茅台2025年ROE", "lang": "中文"},
+            {"question": "贵州茅台 2025年 ROE", "lang": "中文"},
             json.loads(command[5]),
         )
         serialized = " ".join(command).lower()
@@ -221,7 +222,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual(
             {
                 "datas": [
-                    {"股票代码": "600519.SH", "Wind代码": "600519.SH"}
+                    {"股票代码": "600519", "Wind代码": "600519.SH"}
                 ],
                 "row_count": 1,
             },
@@ -231,7 +232,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual("stock_data", command[3])
         self.assertEqual("search_stocks", command[4])
         self.assertEqual(
-            {"question": "A股白酒非ST", "lang": "中文"},
+            {"question": "A股 白酒 非ST", "lang": "中文"},
             json.loads(command[5]),
         )
         self.assertNotIn("version", json.loads(command[5]))
@@ -244,7 +245,7 @@ class WindProviderTests(unittest.TestCase):
         ).call(
             "review_sentiment",
             {
-                "query": "A股 白酒 非ST",
+                "query": "A share   liquor\tstocks",
                 "limit": 20,
                 "lang": "English",
                 "version": "v2",
@@ -254,12 +255,51 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual("success", versioned.status)
         self.assertEqual(
             {
-                "question": "A股白酒非ST",
+                "question": "A share liquor stocks",
                 "lang": "English",
                 "version": "v2",
             },
             json.loads(version_runner.call_args.args[0][5]),
         )
+
+    def test_wind_screener_stock_code_shape_is_snapshot_compatible(self):
+        wind = self.provider(
+            name="wind_screener",
+            runner=Mock(
+                return_value=self.completed(
+                    self.screener_envelope([["600519.SH"]])
+                )
+            ),
+        ).call("review_sentiment", {"query": "白酒", "limit": 20})
+        stock_code = wind.data["datas"][0]["股票代码"]
+        self.assertRegex(stock_code, r"^\d{6}$")
+
+        class SnapshotProvider:
+            name = "pytdx"
+
+            def __init__(self):
+                self.calls = []
+
+            def call(self, intent, params):
+                self.calls.append((intent, params))
+                return ProviderOutcome(
+                    provider=self.name,
+                    status="success",
+                    data={stock_code: {"price": 1400}},
+                    latency_ms=1,
+                    auth={"required": False, "status": "not_required"},
+                )
+
+        snapshot_provider = SnapshotProvider()
+        with tempfile.TemporaryDirectory() as directory:
+            state = ProviderState(Path(directory) / "state.sqlite3")
+            with patch.object(api, "_STATE", state), patch.object(
+                api, "_provider_for", return_value=snapshot_provider
+            ):
+                snapshot = api.query("stock_snapshot", codes=[stock_code])
+
+        self.assertEqual("success", snapshot["_meta"]["status"])
+        self.assertEqual([stock_code], snapshot_provider.calls[0][1]["codes"])
 
     def test_wind_screener_empty_error_auth_and_malformed_are_explicit(self):
         empty = self.provider(
@@ -639,7 +679,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual("success", result["_meta"]["status"])
         command_params = json.loads(runner.call_args.args[0][5])
         self.assertEqual("英文", command_params["lang"])
-        self.assertEqual("600519.SH2025ROE", command_params["question"])
+        self.assertEqual("600519.SH 2025 ROE", command_params["question"])
         self.assertNotIn("top_k", command_params)
 
     def test_announcements_use_query_top_k_and_never_send_lang(self):
@@ -676,7 +716,7 @@ class WindProviderTests(unittest.TestCase):
                 "call",
                 "financial_docs",
                 "get_company_announcements",
-                '{"query":"600519.SH2025年报","top_k":3}',
+                '{"query":"600519.SH 2025年报","top_k":3}',
             ],
             command,
         )

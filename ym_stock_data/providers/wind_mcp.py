@@ -113,7 +113,7 @@ def discover_wind_runtime(
 
 
 def _compact(value: object) -> str:
-    return re.sub(r"\s+", "", str(value or ""))
+    return re.sub(r"\s+", " ", str(value or "").strip())
 
 
 def _failed(payload: dict) -> bool:
@@ -235,7 +235,7 @@ def _screener_rows(payload: dict, *, limit: int) -> list[dict]:
             match.group("code"), match.group("exchange")
         ):
             raise ValueError("INVALID_RESPONSE")
-        normalized.append({"股票代码": code, "Wind代码": code})
+        normalized.append({"股票代码": match.group("code"), "Wind代码": code})
     return normalized[:limit]
 
 

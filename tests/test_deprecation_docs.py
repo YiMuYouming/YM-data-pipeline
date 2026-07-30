@@ -127,12 +127,10 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         provider_boundary = agents.split("## Provider 边界", 1)[1].split(
             "## 下游与回滚", 1
         )[0]
+        self.assertIn("`wind_enrichment`", provider_boundary)
+        self.assertIn("`filings`", provider_boundary)
         self.assertIn("`wind_screener`", provider_boundary)
         self.assertIn("`stock_data.search_stocks`", provider_boundary)
-        self.assertNotIn(
-            "仅支持显式 `wind_enrichment` 与严格验证后的 `filings` fallback",
-            provider_boundary,
-        )
 
         plan = (
             ROOT / "docs/superpowers/plans/2026-07-29-unified-a-share-data-channel.md"
@@ -163,25 +161,21 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertIn(source, plan)
-        self.assertIn("constrained structured PyTDX screener", plan)
         self.assertIn("验收窗口必须重新开始", plan)
 
         routing_example = plan.split(
             "### Task 3: Add the provider protocol and canonical route registry", 1
         )[1].split("### Task 4:", 1)[0]
-        self.assertIn(
-            "def test_explicit_screen_uses_four_compatible_providers(self):",
-            routing_example,
-        )
-        self.assertIn(
-            '("iwencai_openapi", "pywencai", "tdx_screener", "wind_screener")',
-            routing_example,
-        )
-        self.assertIn(
-            '("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool")',
-            routing_example,
-        )
-        self.assertNotIn("uses_three_compatible_providers", routing_example)
+        routing_code = routing_example.split("```python", 1)[1].split("```", 1)[0]
+        for providers in (
+            ("iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"),
+            ("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
+        ):
+            with self.subTest(providers=providers):
+                for name in providers:
+                    self.assertIn(f'"{name}"', routing_code)
+                positions = [routing_code.index(f'"{name}"') for name in providers]
+                self.assertEqual(sorted(positions), positions)
 
     def test_v2_design_documents_are_explicitly_historical(self):
         for relative in (

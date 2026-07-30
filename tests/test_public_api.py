@@ -27,7 +27,9 @@ class FakeProvider:
         return outcome
 
 
-def outcome(provider, status, *, data=None, error_code=None, quality=None):
+def outcome(
+    provider, status, *, data=None, error_code=None, quality=None, auth=None
+):
     return ProviderOutcome(
         provider=provider,
         status=status,
@@ -35,6 +37,7 @@ def outcome(provider, status, *, data=None, error_code=None, quality=None):
         error_code=error_code,
         latency_ms=1,
         quality=quality,
+        auth=auth,
     )
 
 
@@ -169,7 +172,8 @@ class PublicApiTests(unittest.TestCase):
                     outcome(
                         "wind_screener",
                         "success",
-                        data={"datas": [{"股票代码": "600519.SH"}], "row_count": 1},
+                        data={"datas": [{"股票代码": "600519"}], "row_count": 1},
+                        auth={"required": True, "status": "ok"},
                     )
                 ],
             ),
@@ -191,12 +195,23 @@ class PublicApiTests(unittest.TestCase):
         )
         self.assertEqual("English", providers["wind_screener"].calls[0][1]["lang"])
         self.assertEqual("v2", providers["wind_screener"].calls[0][1]["version"])
+        self.assertEqual(
+            {"required": True, "status": "ok"},
+            result["_meta"]["auth"],
+        )
 
     def test_explicit_screen_all_compatible_providers_empty_is_auditable(self):
         providers = {
             name: FakeProvider(
                 name,
-                [outcome(name, "empty", data={"datas": [], "row_count": 0})],
+                [
+                    outcome(
+                        name,
+                        "empty",
+                        data={"datas": [], "row_count": 0},
+                        auth={"required": True, "status": f"ok-{name}"},
+                    )
+                ],
             )
             for name in (
                 "iwencai_openapi",
@@ -220,6 +235,10 @@ class PublicApiTests(unittest.TestCase):
         )
         self.assertEqual("empty", result["_meta"]["quality"]["status"])
         self.assertEqual(0, result["_meta"]["quality"]["returned_count"])
+        self.assertEqual(
+            {"required": True, "status": "ok-wind_screener"},
+            result["_meta"]["auth"],
+        )
 
     def test_explicit_screen_last_empty_does_not_overwrite_prior_failures(self):
         statuses = (
@@ -239,6 +258,11 @@ class PublicApiTests(unittest.TestCase):
                         if status == "empty"
                         else None,
                         error_code=error_code,
+                        auth={"required": True, "status": "error"}
+                        if status == "auth_error"
+                        else {"required": True, "status": "ok"}
+                        if status == "empty"
+                        else {"required": True, "status": "present"},
                     )
                 ],
             )
@@ -254,6 +278,10 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual(
             ["auth_error", "provider_error", "empty", "empty"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+        self.assertEqual(
+            {"required": True, "status": "error"},
+            result["_meta"]["auth"],
         )
 
     def test_explicit_screen_initial_empty_then_remaining_failures_is_error(self):

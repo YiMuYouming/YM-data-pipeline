@@ -33,6 +33,15 @@ _CONTINUE_STATUSES = {
     "breaker_open",
     "incompatible",
 }
+_AUTH_STATUS_SEVERITY = {
+    "not_required": 0,
+    "ok": 1,
+    "present": 2,
+    "unverified": 3,
+    "missing": 4,
+    "expired": 5,
+    "error": 6,
+}
 _ALLOWED_PARAMS = {
     "realtime_market": frozenset(),
     "sector_index": frozenset({"codes", "names"}),
@@ -118,6 +127,18 @@ def _provider_for(name: str):
 def _safe_error_code(value: object, default: str) -> str:
     candidate = str(value or "")
     return candidate if _SAFE_CODE.fullmatch(candidate) else default
+
+
+def _more_severe_auth(current: dict | None, candidate: dict | None) -> dict | None:
+    """Keep the most severe sanitized auth state seen on an exhausted route."""
+
+    if not isinstance(candidate, dict):
+        return current
+    if not isinstance(current, dict):
+        return dict(candidate)
+    current_score = _AUTH_STATUS_SEVERITY.get(str(current.get("status")), 3)
+    candidate_score = _AUTH_STATUS_SEVERITY.get(str(candidate.get("status")), 3)
+    return dict(candidate) if candidate_score > current_score else current
 
 
 def _validate_params(intent: str, params: dict) -> None:
@@ -353,6 +374,7 @@ def query(intent: str, **params) -> dict:
     final_quality = None
     fetched_at = None
     auth = None
+    observed_auth = None
 
     for provider_index, provider_name in enumerate(spec.providers):
         breaker = _provider_state().active_breaker(provider_name)
@@ -376,6 +398,7 @@ def query(intent: str, **params) -> dict:
             if outcome.status in _CONTINUE_STATUSES | {"success", "empty"}
             else "provider_error"
         )
+        observed_auth = _more_severe_auth(observed_auth, outcome.auth)
         actual = outcome.provider or provider_name
         if actual != provider_name and outcome_status in {"success", "empty"}:
             provenance = outcome.provenance or {}
@@ -468,5 +491,5 @@ def query(intent: str, **params) -> dict:
         quality=quality,
         max_age_sec=spec.max_age_sec,
         fetched_at=fetched_at,
-        auth=auth,
+        auth=auth if provider_used is not None else observed_auth or auth,
     )
