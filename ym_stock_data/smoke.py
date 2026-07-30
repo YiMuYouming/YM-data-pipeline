@@ -17,8 +17,8 @@ from .contracts import ATTEMPT_STATUSES, RESULT_STATUSES, TZ_SHANGHAI
 from .doctor import collect_diagnostics
 from .providers.base import ProviderOutcome
 from .smoke_contract import (
+    CASE_SPECS,
     CURRENT_SMOKE_BASELINE,
-    CURRENT_SMOKE_CASE_IDS,
     CURRENT_SMOKE_SCHEMA_VERSION,
 )
 
@@ -232,29 +232,30 @@ def run_live_smoke(
             )
         )
 
-    specs = [
-        ("zero_realtime_market", "zero_auth", "realtime_market", {}, canonical("realtime_market")),
-        ("zero_sector_index", "zero_auth", "sector_index", {"sample_id": "ths_sector"}, canonical("sector_index", names=["半导体"])),
-        ("zero_stock_snapshot", "zero_auth", "stock_snapshot", {"codes": ["600519"]}, canonical("stock_snapshot", codes=["600519"])),
-        ("zero_stock_kline", "zero_auth", "stock_kline", {"code": "600519", "period": "daily", "count": 3}, canonical("stock_kline", code="600519", period="daily", count=3)),
-        ("zero_review_sentiment", "zero_auth", "review_sentiment", {"sample_id": "default_breadth"}, canonical("review_sentiment")),
-        ("zero_market_limit_state", "zero_auth", "market_limit_state", {}, canonical("market_limit_state")),
-        ("zero_stock_event", "zero_auth", "stock_event", {"code": "600519", "event": "lockup"}, canonical("stock_event", code="600519", event="lockup", page_size=3)),
-        ("explicit_wencai", "api_key", "review_sentiment", {"sample_id": "explicit_wencai", "limit": 3}, canonical("review_sentiment", query="A股 非ST 涨停", limit=3)),
-        (
-            "explicit_structured_screener",
-            "five_source_fallback",
-            "review_sentiment",
-            {"sample_id": "structured_hs_a", "limit": 3},
-            pytdx_screener_probe,
+    callbacks = {
+        "zero_realtime_market": canonical("realtime_market"),
+        "zero_sector_index": canonical("sector_index", names=["半导体"]),
+        "zero_stock_snapshot": canonical("stock_snapshot", codes=["600519"]),
+        "zero_stock_kline": canonical(
+            "stock_kline", code="600519", period="daily", count=3
         ),
-        ("tdx_probe", "owned_oauth", "stock_snapshot", {"codes": ["600519"]}, tdx_probe),
-        ("wind_probe", "official_cli", "wind_enrichment", {"capability": "company_profile", "code": "600519"}, wind_probe),
-    ]
-    if tuple(case_id for case_id, *_rest in specs) != CURRENT_SMOKE_CASE_IDS:
+        "zero_review_sentiment": canonical("review_sentiment"),
+        "zero_market_limit_state": canonical("market_limit_state"),
+        "zero_stock_event": canonical(
+            "stock_event", code="600519", event="lockup", page_size=3
+        ),
+        "explicit_wencai": canonical(
+            "review_sentiment", query="A股 非ST 涨停", limit=3
+        ),
+        "explicit_structured_screener": pytdx_screener_probe,
+        "tdx_probe": tdx_probe,
+        "wind_probe": wind_probe,
+    }
+    if set(callbacks) != {spec.case_id for spec in CASE_SPECS}:
         raise RuntimeError("smoke case contract drift")
     cases = []
-    for case_id, category, intent, safe_params, callback in specs:
+    for spec in CASE_SPECS:
+        callback = callbacks[spec.case_id]
         elapsed = time.monotonic() - started
         remaining = total_timeout_sec - elapsed
         case_started = time.monotonic()
@@ -274,7 +275,16 @@ def run_live_smoke(
                 payload = {
                     "status": "timeout",
                     "provider_used": None,
-                    "attempts": [],
+                    "attempts": [
+                        {
+                            "provider": spec.direct_provider,
+                            "status": "timeout",
+                            "error_code": "SMOKE_TIMEOUT",
+                            "latency_ms": 0,
+                        }
+                    ]
+                    if spec.direct_provider
+                    else [],
                     "row_count": 0,
                     "error_code": "SMOKE_TIMEOUT",
                 }
@@ -284,16 +294,25 @@ def run_live_smoke(
                 payload = {
                     "status": "error",
                     "provider_used": None,
-                    "attempts": [],
+                    "attempts": [
+                        {
+                            "provider": spec.direct_provider,
+                            "status": "provider_error",
+                            "error_code": "UNHANDLED_EXCEPTION",
+                            "latency_ms": 0,
+                        }
+                    ]
+                    if spec.direct_provider
+                    else [],
                     "row_count": 0,
                     "error_code": "UNHANDLED_EXCEPTION",
                 }
         cases.append(
             {
-                "case_id": case_id,
-                "category": category,
-                "intent": intent,
-                "params": safe_params,
+                "case_id": spec.case_id,
+                "category": spec.category,
+                "intent": spec.intent,
+                "params": spec.safe_params(),
                 **payload,
                 "latency_ms": max(0, int((time.monotonic() - case_started) * 1000)),
             }

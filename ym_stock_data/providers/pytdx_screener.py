@@ -13,6 +13,7 @@ from ..config import PYTDX_CONNECT_TIMEOUT, PYTDX_SERVERS
 from ..pytdx_screener_query import (
     CompiledPytdxScreenerQuery,
     compile_pytdx_screener_query,
+    is_pytdx_screener_compatible,
 )
 from ..sources.pytdx import _load_tdx_hq_api
 from .base import ProviderOutcome
@@ -74,6 +75,10 @@ class PytdxScreenerProvider:
         started = time.perf_counter()
         if intent != "review_sentiment" or not isinstance(params, dict):
             return self._failure(started, "incompatible", "INCOMPATIBLE_INTENT")
+        if not is_pytdx_screener_compatible(params):
+            return self._failure(
+                started, "incompatible", "PYTDX_SCREENER_INCOMPATIBLE"
+            )
         compiled = compile_pytdx_screener_query(params.get("query"))
         if compiled is None:
             return self._failure(

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from .smoke_contract import (
+    CASE_SPECS,
     CURRENT_SMOKE_BASELINE,
     CURRENT_SMOKE_CASE_IDS,
     CURRENT_SMOKE_SCHEMA_VERSION,
@@ -436,6 +437,21 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     if current:
         if tuple(case_ids) != CURRENT_SMOKE_CASE_IDS:
             _raise("INVALID_CASE_IDS")
+        for spec, case in zip(CASE_SPECS, cases):
+            if (
+                case["category"] != spec.category
+                or case["intent"] != spec.intent
+                or case["params"] != spec.safe_params()
+            ):
+                _raise("INVALID_CASE_SPEC")
+            if spec.direct_provider is not None:
+                _validate_direct_provider(
+                    case,
+                    spec.direct_provider,
+                    allow_unattempted_provider_state=(
+                        spec.allow_unattempted_provider_state
+                    ),
+                )
     elif len(set(case_ids)) != LEGACY_SMOKE_CASE_COUNT:
         _raise("INVALID_CASE_COUNT")
     summary = _mapping(value["summary"])
@@ -465,6 +481,31 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     if current:
         projected["baseline"] = CURRENT_SMOKE_BASELINE
     return projected
+
+
+def _validate_direct_provider(
+    case: dict,
+    expected_provider: str,
+    *,
+    allow_unattempted_provider_state: bool,
+) -> None:
+    provider_used = case["provider_used"]
+    attempts = case["attempts"]
+    if provider_used not in {None, expected_provider}:
+        _raise("INVALID_DIRECT_PROVIDER")
+    if any(attempt["provider"] != expected_provider for attempt in attempts):
+        _raise("INVALID_DIRECT_PROVIDER")
+    if provider_used == expected_provider and not attempts:
+        _raise("INVALID_DIRECT_PROVIDER")
+    if case["status"] in {"success", "empty", "degraded"}:
+        if provider_used != expected_provider or not attempts:
+            _raise("INVALID_DIRECT_PROVIDER")
+    if not attempts:
+        if case["error_code"] == "TOTAL_TIMEOUT":
+            return
+        if allow_unattempted_provider_state and case["status"] in _PROVIDER_STATES:
+            return
+        _raise("INVALID_DIRECT_PROVIDER")
 
 
 def _intent_status_counts(cases: list[dict]) -> dict:

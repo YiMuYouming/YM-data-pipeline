@@ -511,7 +511,7 @@ class AcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(2, second["day_count"])
 
-    def test_current_smoke_contract_locks_baseline_schema_and_case_ids(self) -> None:
+    def test_current_smoke_contract_locks_baseline_and_complete_case_specs(self) -> None:
         module = self.require_module()
         mutations = (
             ("schema", lambda value: value.update(schema_version="1"), "INVALID_SMOKE_RECEIPT"),
@@ -557,6 +557,33 @@ class AcceptanceTests(unittest.TestCase):
                     value["cases"][8].update(provider_used="wind_screener"),
                     value["cases"][8]["attempts"][0].update(
                         provider="wind_screener"
+                    ),
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "unattempted_provider_spoof",
+                lambda value: value["cases"][8].update(
+                    status="auth_missing",
+                    provider_used=None,
+                    attempts=[],
+                    error_code=None,
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "tdx_provider",
+                lambda value: value["cases"][9].update(
+                    provider_used="tdx_screener"
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "wind_provider",
+                lambda value: (
+                    value["cases"][10].update(provider_used="wind_documents"),
+                    value["cases"][10]["attempts"][0].update(
+                        provider="wind_documents"
                     ),
                 ),
                 "INVALID_DIRECT_PROVIDER",
