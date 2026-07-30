@@ -340,17 +340,17 @@ Tests must assert:
 
 ```python
 class RoutingTests(unittest.TestCase):
-    def test_explicit_screen_uses_three_compatible_providers(self):
+    def test_explicit_screen_uses_four_compatible_providers(self):
         spec = route_for("review_sentiment", {"query": "今日涨停 非ST"})
         self.assertEqual(
-            ("iwencai_openapi", "pywencai", "tdx_screener"),
+            ("iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"),
             spec.providers,
         )
 
     def test_default_sentiment_never_calls_natural_language_sources(self):
         spec = route_for("review_sentiment", {})
         self.assertEqual(
-            ("pytdx_breadth", "eastmoney_limit_pool"),
+            ("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
             spec.providers,
         )
 

@@ -166,6 +166,23 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertIn("constrained structured PyTDX screener", plan)
         self.assertIn("验收窗口必须重新开始", plan)
 
+        routing_example = plan.split(
+            "### Task 3: Add the provider protocol and canonical route registry", 1
+        )[1].split("### Task 4:", 1)[0]
+        self.assertIn(
+            "def test_explicit_screen_uses_four_compatible_providers(self):",
+            routing_example,
+        )
+        self.assertIn(
+            '("iwencai_openapi", "pywencai", "tdx_screener", "wind_screener")',
+            routing_example,
+        )
+        self.assertIn(
+            '("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool")',
+            routing_example,
+        )
+        self.assertNotIn("uses_three_compatible_providers", routing_example)
+
     def test_v2_design_documents_are_explicitly_historical(self):
         for relative in (
             "docs/YM-data-pipeline-2.0-数据源治理方案.md",
