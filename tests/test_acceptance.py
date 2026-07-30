@@ -588,6 +588,55 @@ class AcceptanceTests(unittest.TestCase):
                 ),
                 "INVALID_DIRECT_PROVIDER",
             ),
+            (
+                "tdx_ready_without_attempt",
+                lambda value: value["cases"][9].update(
+                    status="ready",
+                    provider_used=None,
+                    attempts=[],
+                    error_code=None,
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "wind_configured_without_attempt",
+                lambda value: value["cases"][10].update(
+                    status="configured_unverified",
+                    provider_used=None,
+                    attempts=[],
+                    error_code=None,
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "success_without_success_attempt",
+                lambda value: (
+                    value["cases"][8].update(
+                        status="success",
+                        provider_used="pytdx_screener",
+                    ),
+                    value["cases"][8]["attempts"][0].update(
+                        status="provider_error",
+                        error_code="PYTDX_PROVIDER_ERROR",
+                    ),
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "empty_without_empty_attempt",
+                lambda value: value["cases"][8]["attempts"][0].update(
+                    status="success"
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
+            (
+                "failure_with_provider_used",
+                lambda value: value["cases"][8].update(
+                    status="provider_error",
+                    provider_used="pytdx_screener",
+                ),
+                "INVALID_DIRECT_PROVIDER",
+            ),
         )
         for name, mutate, error_code in mutations:
             with self.subTest(name=name):
@@ -599,6 +648,32 @@ class AcceptanceTests(unittest.TestCase):
                 with self.assertRaises(module.AcceptanceError) as caught:
                     self.build()
                 self.assertEqual(error_code, caught.exception.code)
+
+    def test_direct_probe_auth_short_circuits_remain_compatible(self) -> None:
+        module = self.require_module()
+        for status in ("auth_missing", "auth_expired"):
+            with self.subTest(status=status):
+                self.write_inputs("2026-07-30")
+                smoke = json.loads(self.smoke_path.read_text(encoding="utf-8"))
+                tdx = smoke["cases"][9]
+                tdx.update(
+                    status=status,
+                    provider_used=None,
+                    attempts=[],
+                    error_code=None,
+                )
+                counts: dict[str, int] = {}
+                for case in smoke["cases"]:
+                    counts[case["status"]] = counts.get(case["status"], 0) + 1
+                smoke["summary"]["status_counts"] = counts
+                write_json(self.smoke_path, smoke)
+
+                projected = module._project_smoke(
+                    self.smoke_path,
+                    "2026-07-30",
+                    current=True,
+                )
+                self.assertEqual(status, projected["cases"][9]["status"])
 
     def test_build_rejects_forbidden_keys_and_sensitive_values(self) -> None:
         module = self.require_module()
