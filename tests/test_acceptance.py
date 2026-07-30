@@ -419,6 +419,40 @@ class AcceptanceTests(unittest.TestCase):
         write_json(destination, report)
         return destination
 
+    def write_unpublished_v12(
+        self,
+        directory: Path,
+        *,
+        date: str = "2026-07-29",
+    ) -> tuple[Path, Path]:
+        module = self.require_module()
+        smoke = directory / "smoke" / f"{date}T161500+0800.json"
+        smoke_report = {
+            "schema_version": "2",
+            "baseline": "five-source-structured-v1",
+            "live": True,
+            "started_at": f"{date}T16:14:00+08:00",
+            "completed_at": f"{date}T16:15:00+08:00",
+            "summary": {"total": 11},
+            "cases": [{} for _ in range(11)],
+        }
+        write_json(smoke, smoke_report)
+        destination = directory / "acceptance" / f"{date}.json"
+        report = {
+            "schema": "ym-stock-data.acceptance.daily",
+            "schema_version": "1.2",
+            "generated_at": f"{date}T16:20:00+08:00",
+            "observation": {"date": date, "timezone": "Asia/Shanghai"},
+            "smoke_evidence": {
+                "baseline": "five-source-structured-v1",
+                "path": str(smoke),
+                "sha256": sha256(smoke),
+            },
+        }
+        report["integrity"] = module._report_integrity(report)
+        write_json(destination, report)
+        return destination, smoke
+
     def test_build_binds_git_receipt_permissions_latency_and_sanitized_metadata(self) -> None:
         built = self.build("2026-07-30")
         path = Path(built["path"])
@@ -445,6 +479,24 @@ class AcceptanceTests(unittest.TestCase):
         serialized = json.dumps(report, ensure_ascii=False)
         for forbidden_value in ("SECRET_ROW", "Bearer ", "Traceback"):
             self.assertNotIn(forbidden_value, serialized)
+
+    def test_provider_acceptance_counts_only_live_and_separates_controlled_evidence(self) -> None:
+        built = self.build("2026-07-30")
+        report = json.loads(Path(built["path"]).read_text(encoding="utf-8"))
+        provider_acceptance = report["provider_acceptance"]
+
+        self.assertEqual(1, provider_acceptance["iwencai_openapi"]["http_401_count"])
+        self.assertEqual(2, provider_acceptance["pywencai"]["attempts"])
+        controlled = provider_acceptance["controlled_fallback"]
+        self.assertEqual("pass", controlled["chain_status"])
+        self.assertEqual(
+            ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"],
+            [item["provider"] for item in controlled["injected_attempts"]],
+        )
+        self.assertEqual(
+            ["pytdx_screener"],
+            [item["provider"] for item in controlled["live_attempts"]],
+        )
 
     def test_legacy_day_is_readable_but_does_not_count_new_baseline(self) -> None:
         module = self.require_module()
@@ -573,21 +625,62 @@ class AcceptanceTests(unittest.TestCase):
         self.assertTrue(report["observation"]["window_complete"])
         self.assertEqual("complete", report["observation"]["epoch_status"])
 
-    def test_unpublished_v12_baseline_is_ignored_not_counted(self) -> None:
-        unpublished = self.state / "2026-07-29.json"
-        write_json(
-            unpublished,
-            {
-                "schema": "ym-stock-data.acceptance.daily",
-                "schema_version": "1.2",
-                "smoke_evidence": {"baseline": "five-source-structured-v1"},
-            },
-        )
+    def test_strict_unpublished_v12_baseline_is_ignored_not_counted(self) -> None:
+        self.write_unpublished_v12(self.state.parent)
 
         built = self.build("2026-07-30")
 
         self.assertEqual(1, built["observation_day_count"])
         self.assertEqual(1, built["pass_day_count"])
+
+    def test_unpublished_v12_history_fails_closed_on_malformed_tombstones(self) -> None:
+        module = self.require_module()
+
+        def mutate_acceptance(mode: str, path: Path, smoke: Path) -> Path:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            if mode == "acceptance_mode":
+                os.chmod(path, 0o644)
+            elif mode == "directory_mode":
+                os.chmod(path.parent, 0o755)
+            elif mode == "date_filename":
+                renamed = path.with_name("2026-07-28.json")
+                path.rename(renamed)
+                return renamed
+            elif mode == "forbidden":
+                report["raw"] = {"value": "Bearer SECRET"}
+                report["integrity"] = module._report_integrity(report)
+                write_json(path, report)
+            elif mode == "missing_integrity":
+                report.pop("integrity")
+                write_json(path, report)
+            elif mode == "integrity_mismatch":
+                report["observation"]["date"] = "2026-07-28"
+                write_json(path, report)
+            elif mode == "smoke_mode":
+                os.chmod(smoke, 0o644)
+            elif mode == "smoke_hash":
+                smoke.write_text("{}\n", encoding="utf-8")
+                os.chmod(smoke, 0o600)
+            return path
+
+        expected_codes = {
+            "acceptance_mode": "INVALID_PERMISSIONS",
+            "directory_mode": "INVALID_PERMISSIONS",
+            "date_filename": "INVALID_DATE",
+            "forbidden": "FORBIDDEN_FIELD",
+            "missing_integrity": "INVALID_ACCEPTANCE",
+            "integrity_mismatch": "INTEGRITY_MISMATCH",
+            "smoke_mode": "INVALID_RECEIPT_PERMISSIONS",
+            "smoke_hash": "RECEIPT_HASH_MISMATCH",
+        }
+        for mode, expected_code in expected_codes.items():
+            with self.subTest(mode=mode):
+                root = self.root / f"unpublished-{mode}"
+                path, smoke = self.write_unpublished_v12(root)
+                path = mutate_acceptance(mode, path, smoke)
+                with self.assertRaises(module.AcceptanceError) as caught:
+                    module._history(path.parent)
+                self.assertEqual(expected_code, caught.exception.code)
 
     def test_current_smoke_contract_locks_baseline_and_complete_case_specs(self) -> None:
         module = self.require_module()
