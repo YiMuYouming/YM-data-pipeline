@@ -442,11 +442,72 @@ class AcceptanceTests(unittest.TestCase):
             "schema": "ym-stock-data.acceptance.daily",
             "schema_version": "1.2",
             "generated_at": f"{date}T16:20:00+08:00",
-            "observation": {"date": date, "timezone": "Asia/Shanghai"},
+            "observation": {
+                "date": date,
+                "timezone": "Asia/Shanghai",
+                "weekday": datetime.fromisoformat(date).strftime("%A"),
+                "is_trading_day": True,
+                "confirmed": True,
+                "official_calendar": {
+                    "exchange": "Shanghai Stock Exchange",
+                    "url": "https://www.sse.com.cn/example",
+                    "basis": "known unpublished receipt",
+                },
+                "day_count": 1,
+                "required_trading_days": 5,
+                "window_complete": False,
+            },
+            "canonical_checkout": {
+                "branch": "codex/unpublished-v12",
+                "head": "a" * 40,
+                "tracked_clean": True,
+                "staged_clean": True,
+            },
+            "doctor": {
+                "command": "./ym-data doctor --json",
+                "schema_version": "1",
+                "run_count_for_acceptance": 1,
+                "providers": {},
+                "summary": {},
+            },
             "smoke_evidence": {
                 "baseline": "five-source-structured-v1",
                 "path": str(smoke),
                 "sha256": sha256(smoke),
+                "total_cases": 11,
+            },
+            "provider_acceptance": {
+                "iwencai_openapi": {},
+                "pywencai": {},
+                "tdx": {},
+                "wind": {},
+                "pytdx_screener": {},
+            },
+            "latency": {
+                "method": "nearest-rank",
+                "algorithm": "sort ascending; rank=ceil(percentile*n), one-based",
+                "sample_size": 11,
+                "unit": "ms",
+                "sorted_case_latencies": [1 for _ in range(11)],
+                "p50": 1,
+                "p95": 1,
+            },
+            "downstream_checks": {
+                "market_watch": {},
+                "live_dashboard": {},
+                "breaker_verification": {},
+            },
+            "safety": {
+                "broker_or_trading_call": False,
+                "business_or_production_data_write": False,
+                "business_rows_stored": False,
+                "credential_values_stored": False,
+                "deployment": False,
+                "exception_or_stderr_text_stored": False,
+                "git_push": False,
+                "http_8088_post": False,
+                "metadata_only": True,
+                "zero_secret_scan": "pass",
             },
         }
         report["integrity"] = module._report_integrity(report)
@@ -653,6 +714,10 @@ class AcceptanceTests(unittest.TestCase):
             elif mode == "missing_integrity":
                 report.pop("integrity")
                 write_json(path, report)
+            elif mode == "minimum_completeness":
+                report["doctor"] = {}
+                report["integrity"] = module._report_integrity(report)
+                write_json(path, report)
             elif mode == "integrity_mismatch":
                 report["observation"]["date"] = "2026-07-28"
                 write_json(path, report)
@@ -669,6 +734,7 @@ class AcceptanceTests(unittest.TestCase):
             "date_filename": "INVALID_DATE",
             "forbidden": "FORBIDDEN_FIELD",
             "missing_integrity": "INVALID_ACCEPTANCE",
+            "minimum_completeness": "INVALID_ACCEPTANCE",
             "integrity_mismatch": "INTEGRITY_MISMATCH",
             "smoke_mode": "INVALID_RECEIPT_PERMISSIONS",
             "smoke_hash": "RECEIPT_HASH_MISMATCH",

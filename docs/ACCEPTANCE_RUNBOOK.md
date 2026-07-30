@@ -333,6 +333,9 @@ test -z "$(git status --porcelain=v1 --untracked-files=no)"
   --smoke "$smoke_receipt" \
   --downstream "$acceptance_tmp/downstream.json" \
   --calendar "$acceptance_tmp/calendar.json"
+if rg -n -i -e 'Bearer[[:space:]]+[A-Za-z0-9._~-]{16,}' -e 'sk-[A-Za-z0-9]{20,}' -e 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' -e '(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9+/=_-]{16,}' "$acceptance_target"; then
+  exit 1
+fi
 ./ym-data acceptance validate "$acceptance_target"
 test "$(stat -f '%Lp' "$acceptance_dir")" = 700
 test "$(stat -f '%Lp' "$acceptance_target")" = 600

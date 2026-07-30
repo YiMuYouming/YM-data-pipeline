@@ -54,7 +54,7 @@ scope escalation 或白名单外工具都 fail closed。本轮离线实现没有
 
 ## 五日验收记录
 
-盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。当前正式窗口使用 acceptance 1.3、smoke schema 2 和 `five-source-capabilities-v1` baseline，严格要求 21 个固定 case：保留原 10 个核心 case 和 PyTDX direct case，并分别直测 OpenAPI、pywencai、TDX 六项、Wind 三项与 canonical 五源受控降级。只有五类 `source_status` 全 pass、`chain_status=pass` 且 `gate_status=pass` 才写 acceptance；empty、doctor configured、TCP 可达都不算能力已通。旧 acceptance 1.0/1.1 可只读验证，未发布的 acceptance 1.2 / `five-source-structured-v1` 不计正式窗口。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。一次 live smoke 不授权 TDX 登录，也不会自动启动后续五日测试。
+盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。当前正式窗口使用 acceptance 1.3、smoke schema 2 和 `five-source-capabilities-v1` baseline，严格要求 21 个固定 case：保留原 10 个核心 case 和 PyTDX direct case，并分别直测 OpenAPI、pywencai、TDX 六项、Wind 三项与 canonical 五源受控降级。只有五类 `source_status` 全 pass、`chain_status=pass` 且 `gate_status=pass` 才写 acceptance；empty、doctor configured、TCP 可达都不算能力已通。`smoke --live` 总会在成功写入脱敏 receipt 后回显三层 gate；gate fail 返回非零，但不会删除失败证据。正式 provider 指标只统计 `origin=live`，受控链的 injected/live attempts 单独保存。旧 acceptance 1.0/1.1 可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 只有在 acceptance 与 smoke 文件权限、日期、哈希和完整性全部通过时才会作为不计数历史忽略，畸形旧文件会阻断而不是静默跳过。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。一次 live smoke 不授权 TDX 登录，也不会自动启动后续五日测试。
 
 Direct 能力只有非空 `success` 才算 pass；即使 attempt 中存在 live success，case 为 `degraded` 仍不能通过 source gate。TDX report/notice 与 Wind filings 使用固定 365 天只读窗口（Wind 仍为 `max_pages=1`），在不增加调用次数的前提下降低公告静默期假阴性；语义合法 empty 仍只表示可达空集，不表示该能力已通。
 

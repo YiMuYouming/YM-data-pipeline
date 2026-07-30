@@ -1077,7 +1077,18 @@ def _provider_acceptance(
     include_pytdx_screener: bool = True,
 ) -> dict:
     cases = smoke["cases"]
-    smoke_attempts = [attempt for case in cases for attempt in case["attempts"]]
+    all_smoke_attempts = [
+        attempt for case in cases for attempt in case["attempts"]
+    ]
+    smoke_attempts = (
+        [
+            attempt
+            for attempt in all_smoke_attempts
+            if attempt.get("origin") == "live"
+        ]
+        if include_pytdx_screener
+        else all_smoke_attempts
+    )
     breaker_attempts = downstream["breaker_verification"]["attempts"]
     http_401_count = sum(
         1
@@ -1147,6 +1158,23 @@ def _provider_acceptance(
             "latency_ms": pytdx_case.get("latency_ms", 0),
             "error_code": pytdx_case.get("error_code"),
         }
+        controlled = _case(cases, "canonical_five_source_fallback")
+        controlled_attempts = controlled.get("attempts", [])
+        result["controlled_fallback"] = {
+            "case_status": controlled.get("status", "unavailable"),
+            "provider_used": controlled.get("provider_used"),
+            "chain_status": smoke.get("chain_status", "fail"),
+            "injected_attempts": [
+                attempt
+                for attempt in controlled_attempts
+                if attempt.get("origin") == "injected"
+            ],
+            "live_attempts": [
+                attempt
+                for attempt in controlled_attempts
+                if attempt.get("origin") == "live"
+            ],
+        }
     return result
 
 
@@ -1169,6 +1197,184 @@ def _acceptance_mode(path: Path) -> None:
         _raise("INPUT_UNAVAILABLE")
     if mode != 0o600 or directory_mode != 0o700:
         _raise("INVALID_PERMISSIONS")
+
+
+def _validate_unpublished_v12(report: dict, path: Path) -> None:
+    """Validate a known immutable 1.2 receipt before excluding it from history."""
+
+    _reject_forbidden(report, code="FORBIDDEN_FIELD")
+    _exact_keys(
+        report,
+        required={
+            "schema",
+            "schema_version",
+            "generated_at",
+            "observation",
+            "canonical_checkout",
+            "doctor",
+            "smoke_evidence",
+            "provider_acceptance",
+            "latency",
+            "downstream_checks",
+            "safety",
+            "integrity",
+        },
+        code="INVALID_ACCEPTANCE",
+    )
+    if (
+        report["schema"] != SCHEMA
+        or report["schema_version"] != UNPUBLISHED_SCHEMA_VERSION
+    ):
+        _raise("INVALID_SCHEMA")
+    integrity = _mapping(report["integrity"], "INVALID_ACCEPTANCE")
+    _exact_keys(
+        integrity,
+        required={"algorithm", "digest"},
+        code="INVALID_ACCEPTANCE",
+    )
+    if integrity != _report_integrity(report):
+        _raise("INTEGRITY_MISMATCH")
+
+    generated_at = _iso(report["generated_at"], "INVALID_ACCEPTANCE")
+    observation = _mapping(report["observation"], "INVALID_ACCEPTANCE")
+    required_observation = {
+        "date",
+        "timezone",
+        "weekday",
+        "is_trading_day",
+        "confirmed",
+        "official_calendar",
+        "day_count",
+        "required_trading_days",
+        "window_complete",
+    }
+    if not required_observation.issubset(observation):
+        _raise("INVALID_ACCEPTANCE")
+    observed_date = _date(observation["date"], "INVALID_ACCEPTANCE")
+    if (
+        observation["timezone"] != "Asia/Shanghai"
+        or observation["is_trading_day"] is not True
+        or _integer(observation["day_count"], "INVALID_ACCEPTANCE") < 1
+        or observation["required_trading_days"] != REQUIRED_TRADING_DAYS
+    ):
+        _raise("INVALID_ACCEPTANCE")
+    day_count = observation["day_count"]
+    if observation["window_complete"] is not (day_count >= REQUIRED_TRADING_DAYS):
+        _raise("INVALID_ACCEPTANCE")
+    generated = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    if generated.astimezone(TZ_SHANGHAI).date().isoformat() != observed_date:
+        _raise("INVALID_ACCEPTANCE")
+
+    checkout = _mapping(report["canonical_checkout"], "INVALID_ACCEPTANCE")
+    if (
+        not isinstance(checkout.get("branch"), str)
+        or not checkout["branch"]
+        or not _GIT_HEAD.fullmatch(str(checkout.get("head", "")))
+        or checkout.get("tracked_clean") is not True
+        or checkout.get("staged_clean") is not True
+    ):
+        _raise("INVALID_ACCEPTANCE")
+    doctor = _mapping(report["doctor"], "INVALID_ACCEPTANCE")
+    _exact_keys(
+        doctor,
+        required={
+            "command",
+            "schema_version",
+            "run_count_for_acceptance",
+            "providers",
+            "summary",
+        },
+        code="INVALID_ACCEPTANCE",
+    )
+    provider_acceptance = _mapping(
+        report["provider_acceptance"], "INVALID_ACCEPTANCE"
+    )
+    _exact_keys(
+        provider_acceptance,
+        required={
+            "iwencai_openapi",
+            "pywencai",
+            "tdx",
+            "wind",
+            "pytdx_screener",
+        },
+        code="INVALID_ACCEPTANCE",
+    )
+    latency = _mapping(report["latency"], "INVALID_ACCEPTANCE")
+    _exact_keys(
+        latency,
+        required={
+            "method",
+            "algorithm",
+            "sample_size",
+            "unit",
+            "sorted_case_latencies",
+            "p50",
+            "p95",
+        },
+        code="INVALID_ACCEPTANCE",
+    )
+    downstream = _mapping(report["downstream_checks"], "INVALID_ACCEPTANCE")
+    _exact_keys(
+        downstream,
+        required={"market_watch", "live_dashboard", "breaker_verification"},
+        code="INVALID_ACCEPTANCE",
+    )
+    safety = _project_safety(report["safety"])
+    if report["safety"] != safety:
+        _raise("INVALID_ACCEPTANCE")
+
+    smoke = _mapping(report["smoke_evidence"], "INVALID_ACCEPTANCE")
+    required_smoke = {"baseline", "path", "sha256", "total_cases"}
+    if not required_smoke.issubset(smoke):
+        _raise("INVALID_ACCEPTANCE")
+    if (
+        smoke["baseline"] != UNPUBLISHED_SMOKE_BASELINE
+        or smoke["total_cases"] != 11
+        or not isinstance(smoke["sha256"], str)
+        or not _SHA256.fullmatch(smoke["sha256"])
+    ):
+        _raise("INVALID_ACCEPTANCE")
+    smoke_path = Path(str(smoke["path"])).expanduser().resolve()
+    try:
+        smoke_mode = stat.S_IMODE(smoke_path.stat().st_mode)
+    except OSError:
+        _raise("INPUT_UNAVAILABLE")
+    if smoke_mode != 0o600:
+        _raise("INVALID_RECEIPT_PERMISSIONS")
+    if _sha256(smoke_path) != smoke["sha256"]:
+        _raise("RECEIPT_HASH_MISMATCH")
+    smoke_report = _load_json(smoke_path)
+    _reject_forbidden(smoke_report, code="FORBIDDEN_FIELD")
+    if (
+        smoke_report.get("schema_version") != "2"
+        or smoke_report.get("baseline") != UNPUBLISHED_SMOKE_BASELINE
+        or smoke_report.get("live") is not True
+    ):
+        _raise("INVALID_SMOKE_RECEIPT")
+    smoke_started = _iso(
+        smoke_report.get("started_at"), "INVALID_SMOKE_RECEIPT"
+    )
+    smoke_completed = _iso(
+        smoke_report.get("completed_at"), "INVALID_SMOKE_RECEIPT"
+    )
+    if smoke_started[:10] != observed_date or smoke_completed[:10] != observed_date:
+        _raise("SMOKE_DATE_MISMATCH")
+    smoke_summary = _mapping(
+        smoke_report.get("summary"), "INVALID_SMOKE_RECEIPT"
+    )
+    smoke_cases = smoke_report.get("cases")
+    if (
+        smoke_summary.get("total") != 11
+        or not isinstance(smoke_cases, list)
+        or len(smoke_cases) != 11
+    ):
+        _raise("INVALID_CASE_COUNT")
+
+    path = Path(path)
+    _acceptance_mode(path)
+    if path.name != f"{observed_date}.json":
+        _raise("INVALID_DATE")
 
 
 def _validate_head_binding(checkout: dict) -> None:
@@ -1533,14 +1739,8 @@ def _history(directory: Path) -> list[dict]:
     for path in sorted(directory.glob("*.json")):
         report = _load_json(path)
         if report.get("schema_version") == UNPUBLISHED_SCHEMA_VERSION:
-            smoke = report.get("smoke_evidence")
-            if (
-                report.get("schema") == SCHEMA
-                and isinstance(smoke, dict)
-                and smoke.get("baseline") == UNPUBLISHED_SMOKE_BASELINE
-            ):
-                continue
-            _raise("INVALID_SCHEMA")
+            _validate_unpublished_v12(report, path)
+            continue
         summary = _validate_report(report, path)
         records.append({**summary, "path": path})
     dates = [item["date"] for item in records]

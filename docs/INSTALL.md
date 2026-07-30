@@ -91,7 +91,7 @@ allowlist schema gate；其它 capability 的缺失或 schema drift 不会连带
 明确授权并完成真实 `tools/list` 与一个白名单只读小调用，才能称为在线。本轮
 离线实现没有执行真实 DCR、没有打开浏览器，也不称为在线接通。
 
-正式 live smoke 会在单次矩阵中继续执行所有 case，不因前项失败遮蔽后项；只有 OpenAPI、pywencai、TDX 六项、Wind 三项和 PyTDX direct 都返回非空 success，且 canonical 受控五源顺序与 injected/live origin 完全匹配，`gate_status` 才为 `pass`。Direct `degraded` 或合法 empty 都不算通。TDX report/notice 和 Wind filings 固定查询 365 天，Wind 保持单页，从而不增加调用次数并降低静默期假阴性。一次 smoke 不授权首次 OAuth 登录，也不会自动安排五个交易日。
+正式 live smoke 会在单次矩阵中继续执行所有 case，不因前项失败遮蔽后项；doctor diagnostics 与每个 case 都受同一总时限约束，即使 diagnostics 挂起也会落下完整 21-case 失败 receipt。只有 OpenAPI、pywencai、TDX 六项、Wind 三项和 PyTDX direct 都返回非空 success，且 canonical 受控五源顺序与 injected/live origin 完全匹配，`gate_status` 才为 `pass`。受控链只允许前四源 injected、末源 PyTDX live，route 漂移在加载额外 live provider 前失败。Direct `degraded` 或合法 empty 都不算通。CLI 会脱敏回显 `source_status`、`chain_status`、`gate_status`；gate fail 返回非零但保留 receipt。TDX report/notice 和 Wind filings 固定查询 365 天，Wind 保持单页，从而不增加调用次数并降低静默期假阴性。一次 smoke 不授权首次 OAuth 登录，也不会自动安排五个交易日。
 
 ## Wind profile
 

@@ -210,9 +210,12 @@ def main(argv: list[str] | None = None) -> int:
                 "status": "complete",
                 "receipt": receipt["receipt"],
                 "summary": receipt["summary"],
+                "source_status": receipt["source_status"],
+                "chain_status": receipt["chain_status"],
+                "gate_status": receipt["gate_status"],
             }
         )
-        return 0
+        return 0 if receipt["gate_status"] == "pass" else 2
     if args.command == "acceptance":
         try:
             if args.acceptance_command == "template":

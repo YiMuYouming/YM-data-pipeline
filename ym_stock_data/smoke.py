@@ -27,6 +27,13 @@ SMOKE_DIR = Path.home() / ".ym-stock-data" / "smoke"
 DEFAULT_CASE_TIMEOUT_SEC = 45.0
 DEFAULT_TOTAL_TIMEOUT_SEC = 360.0
 _SAFE_ENUM = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_CONTROLLED_FALLBACK_ROUTE = (
+    "iwencai_openapi",
+    "pywencai",
+    "tdx_screener",
+    "wind_screener",
+    "pytdx_screener",
+)
 
 
 class _SmokeDeadline(BaseException):
@@ -341,8 +348,12 @@ def run_live_smoke(
         raise ValueError("smoke timeouts must be positive")
     started_at = now_fn()
     started = time.monotonic()
+    diagnostics_budget = min(case_timeout_sec, total_timeout_sec)
     try:
-        diagnostics = diagnostics_fn()
+        with _deadline(diagnostics_budget):
+            diagnostics = diagnostics_fn()
+    except _SmokeDeadline:
+        diagnostics = {"providers": {}}
     except Exception:
         diagnostics = {"providers": {}}
 
@@ -374,6 +385,19 @@ def run_live_smoke(
         )
 
     def controlled_fallback():
+        from . import api as api_module
+
+        params = {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3}
+        spec = api_module.route_for("review_sentiment", dict(params))
+        if tuple(spec.providers) != _CONTROLLED_FALLBACK_ROUTE:
+            return {
+                "status": "error",
+                "provider_used": None,
+                "attempts": [],
+                "row_count": 0,
+                "error_code": "CONTROLLED_ROUTE_DRIFT",
+                "protocol_evidence": None,
+            }
         injected = {
             "iwencai_openapi": ProviderOutcome(
                 "iwencai_openapi", "auth_error", error_code="HTTP_401",
@@ -391,21 +415,53 @@ def run_live_smoke(
                 quality={"returned_count": 0},
             ),
         }
+        controlled_origins = set(injected)
+        next_provider = 0
+        route_drifted = False
 
         def controlled_loader(name: str):
+            nonlocal next_provider, route_drifted
+            expected = (
+                _CONTROLLED_FALLBACK_ROUTE[next_provider]
+                if next_provider < len(_CONTROLLED_FALLBACK_ROUTE)
+                else None
+            )
+            if route_drifted or name != expected:
+                route_drifted = True
+                controlled_origins.add(name)
+                return _InjectedProvider(
+                    ProviderOutcome(
+                        name,
+                        "provider_error",
+                        error_code="CONTROLLED_ROUTE_DRIFT",
+                    )
+                )
+            next_provider += 1
             if name in injected:
                 return _InjectedProvider(injected[name])
-            return provider_loader(name)
+            if name == "pytdx_screener" and next_provider == len(
+                _CONTROLLED_FALLBACK_ROUTE
+            ):
+                return provider_loader(name)
+            route_drifted = True
+            controlled_origins.add(name)
+            return _InjectedProvider(
+                ProviderOutcome(
+                    name,
+                    "provider_error",
+                    error_code="CONTROLLED_ROUTE_DRIFT",
+                )
+            )
 
         result = _query_with(
             "review_sentiment",
-            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+            params,
             provider_loader=controlled_loader,
             state_loader=_NoBreakers,
         )
         return summarize_query_result(
             result,
-            injected_providers=frozenset(injected),
+            injected_providers=frozenset(controlled_origins),
             include_origin=True,
         )
 
@@ -567,4 +623,11 @@ def run_live_smoke(
         "cases": cases,
     }
     receipt = _atomic_write(report, Path(output_dir), completed_at)
-    return {"receipt": str(receipt), "summary": report["summary"], "cases": cases}
+    return {
+        "receipt": str(receipt),
+        "summary": report["summary"],
+        "source_status": source_status,
+        "chain_status": chain_status,
+        "gate_status": gate_status,
+        "cases": cases,
+    }
