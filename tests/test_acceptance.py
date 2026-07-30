@@ -30,6 +30,43 @@ CURRENT_SMOKE_CASE_IDS = (
     "tdx_probe",
     "wind_probe",
 )
+CURRENT_SMOKE_SPECS = {
+    "zero_realtime_market": ("zero_auth", "realtime_market", {}),
+    "zero_sector_index": ("zero_auth", "sector_index", {"sample_id": "ths_sector"}),
+    "zero_stock_snapshot": ("zero_auth", "stock_snapshot", {"codes": ["600519"]}),
+    "zero_stock_kline": (
+        "zero_auth",
+        "stock_kline",
+        {"code": "600519", "period": "daily", "count": 3},
+    ),
+    "zero_review_sentiment": (
+        "zero_auth",
+        "review_sentiment",
+        {"sample_id": "default_breadth"},
+    ),
+    "zero_market_limit_state": ("zero_auth", "market_limit_state", {}),
+    "zero_stock_event": (
+        "zero_auth",
+        "stock_event",
+        {"code": "600519", "event": "lockup"},
+    ),
+    "explicit_wencai": (
+        "api_key",
+        "review_sentiment",
+        {"sample_id": "explicit_wencai", "limit": 3},
+    ),
+    "explicit_structured_screener": (
+        "five_source_fallback",
+        "review_sentiment",
+        {"sample_id": "structured_hs_a", "limit": 3},
+    ),
+    "tdx_probe": ("owned_oauth", "stock_snapshot", {"codes": ["600519"]}),
+    "wind_probe": (
+        "official_cli",
+        "wind_enrichment",
+        {"capability": "company_profile", "code": "600519"},
+    ),
+}
 LEGACY_SMOKE_CASE_IDS = tuple(
     case_id
     for case_id in CURRENT_SMOKE_CASE_IDS
@@ -132,11 +169,12 @@ class AcceptanceTests(unittest.TestCase):
         latencies = list(range(1, len(case_ids) + 1))
         cases = []
         for index, (case_id, latency) in enumerate(zip(case_ids, latencies), start=1):
+            category, intent, params = CURRENT_SMOKE_SPECS[case_id]
             case = {
                 "case_id": case_id,
-                "category": "zero_auth",
-                "intent": "stock_snapshot",
-                "params": {"sample_id": f"sample_{index}"},
+                "category": category,
+                "intent": intent,
+                "params": params,
                 "status": "success",
                 "provider_used": "pytdx",
                 "attempts": [
@@ -497,6 +535,31 @@ class AcceptanceTests(unittest.TestCase):
                     case_id=value["cases"][0]["case_id"]
                 ),
                 "INVALID_CASE_IDS",
+            ),
+            (
+                "category",
+                lambda value: value["cases"][8].update(category="zero_auth"),
+                "INVALID_CASE_SPEC",
+            ),
+            (
+                "intent",
+                lambda value: value["cases"][8].update(intent="stock_snapshot"),
+                "INVALID_CASE_SPEC",
+            ),
+            (
+                "params",
+                lambda value: value["cases"][8]["params"].update(limit=4),
+                "INVALID_CASE_SPEC",
+            ),
+            (
+                "provider",
+                lambda value: (
+                    value["cases"][8].update(provider_used="wind_screener"),
+                    value["cases"][8]["attempts"][0].update(
+                        provider="wind_screener"
+                    ),
+                ),
+                "INVALID_DIRECT_PROVIDER",
             ),
         )
         for name, mutate, error_code in mutations:

@@ -29,6 +29,19 @@ CURRENT_CASE_IDS = (
     "tdx_probe",
     "wind_probe",
 )
+CURRENT_CASE_METADATA = {
+    "explicit_structured_screener": (
+        "five_source_fallback",
+        "review_sentiment",
+        {"sample_id": "structured_hs_a", "limit": 3},
+    ),
+    "tdx_probe": ("owned_oauth", "stock_snapshot", {"codes": ["600519"]}),
+    "wind_probe": (
+        "official_cli",
+        "wind_enrichment",
+        {"capability": "company_profile", "code": "600519"},
+    ),
+}
 
 
 def result(intent, *, status="success", provider="fake", rows=None):
@@ -131,6 +144,11 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual("five-source-structured-v1", report["baseline"])
         self.assertEqual(11, len(report["cases"]))
         self.assertEqual(CURRENT_CASE_IDS, tuple(case["case_id"] for case in report["cases"]))
+        for case_id, (category, intent, params) in CURRENT_CASE_METADATA.items():
+            case = next(item for item in report["cases"] if item["case_id"] == case_id)
+            self.assertEqual(category, case["category"])
+            self.assertEqual(intent, case["intent"])
+            self.assertEqual(params, case["params"])
         self.assertEqual("auth_missing", next(
             case["status"] for case in report["cases"] if case["case_id"] == "tdx_probe"
         ))

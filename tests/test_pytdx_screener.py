@@ -534,6 +534,31 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual("PYTDX_INVALID_LIMIT", outcome.error_code)
         factory.assert_not_called()
 
+    def test_direct_provider_rejects_out_of_scope_metadata_before_connect(self):
+        cases = (
+            {"lang": "English"},
+            {"date": "2026-07-30"},
+            {"version": "v2"},
+            {"expected_row_shape": "sector_rows"},
+        )
+        for metadata in cases:
+            with self.subTest(metadata=metadata):
+                factory = unittest.mock.Mock(
+                    side_effect=AssertionError("must reject before connect")
+                )
+                outcome = PytdxScreenerProvider(api_factory=factory).call(
+                    "review_sentiment",
+                    {
+                        "query": "沪深A股 非ST 非停牌 最新价>=10",
+                        "limit": 20,
+                        **metadata,
+                    },
+                )
+
+                self.assertEqual("incompatible", outcome.status)
+                self.assertEqual("PYTDX_SCREENER_INCOMPATIBLE", outcome.error_code)
+                factory.assert_not_called()
+
     def test_provider_never_uses_legacy_fetch_or_http_fallbacks(self):
         source = inspect.getsource(PytdxScreenerProvider)
         for forbidden in (
