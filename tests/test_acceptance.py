@@ -15,57 +15,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ym_stock_data.__main__ import main
+from ym_stock_data.smoke_contract import CASE_SPECS
 
 
-CURRENT_SMOKE_CASE_IDS = (
-    "zero_realtime_market",
-    "zero_sector_index",
-    "zero_stock_snapshot",
-    "zero_stock_kline",
-    "zero_review_sentiment",
-    "zero_market_limit_state",
-    "zero_stock_event",
-    "explicit_wencai",
-    "explicit_structured_screener",
-    "tdx_probe",
-    "wind_probe",
-)
+CURRENT_SMOKE_CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)
 CURRENT_SMOKE_SPECS = {
-    "zero_realtime_market": ("zero_auth", "realtime_market", {}),
-    "zero_sector_index": ("zero_auth", "sector_index", {"sample_id": "ths_sector"}),
-    "zero_stock_snapshot": ("zero_auth", "stock_snapshot", {"codes": ["600519"]}),
-    "zero_stock_kline": (
-        "zero_auth",
-        "stock_kline",
-        {"code": "600519", "period": "daily", "count": 3},
-    ),
-    "zero_review_sentiment": (
-        "zero_auth",
-        "review_sentiment",
-        {"sample_id": "default_breadth"},
-    ),
-    "zero_market_limit_state": ("zero_auth", "market_limit_state", {}),
-    "zero_stock_event": (
-        "zero_auth",
-        "stock_event",
-        {"code": "600519", "event": "lockup"},
-    ),
-    "explicit_wencai": (
-        "api_key",
-        "review_sentiment",
-        {"sample_id": "explicit_wencai", "limit": 3},
-    ),
-    "explicit_structured_screener": (
-        "five_source_fallback",
-        "review_sentiment",
-        {"sample_id": "structured_hs_a", "limit": 3},
-    ),
-    "tdx_probe": ("owned_oauth", "stock_snapshot", {"codes": ["600519"]}),
-    "wind_probe": (
-        "official_cli",
-        "wind_enrichment",
-        {"capability": "company_profile", "code": "600519"},
-    ),
+    spec.case_id: (spec.category, spec.intent, spec.safe_params()) for spec in CASE_SPECS
 }
 LEGACY_SMOKE_CASE_IDS = tuple(
     case_id
@@ -170,25 +125,45 @@ class AcceptanceTests(unittest.TestCase):
         cases = []
         for index, (case_id, latency) in enumerate(zip(case_ids, latencies), start=1):
             category, intent, params = CURRENT_SMOKE_SPECS[case_id]
+            spec = next((item for item in CASE_SPECS if item.case_id == case_id), None)
+            direct_provider = spec.direct_provider if current and spec else None
+            provider = direct_provider or "pytdx"
             case = {
                 "case_id": case_id,
                 "category": category,
                 "intent": intent,
                 "params": params,
                 "status": "success",
-                "provider_used": "pytdx",
+                "provider_used": provider,
                 "attempts": [
                     {
-                        "provider": "pytdx",
+                        "provider": provider,
                         "status": "success",
                         "error_code": None,
                         "latency_ms": latency,
+                        **({"origin": "live"} if current else {}),
                     }
                 ],
                 "row_count": 1,
                 "error_code": None,
                 "latency_ms": latency,
             }
+            if current:
+                case.update(
+                    direct_provider=direct_provider,
+                    evidence_kind=spec.evidence_kind,
+                    capability=spec.capability,
+                    protocol_evidence=(
+                        {
+                            "initialize": "pass", "tools_list": "pass",
+                            "schema": "pass", "read_only": "pass",
+                            "tool_call": "pass", "page_count": 1,
+                            "session_count": 1, "refresh_count": 0, "call_count": 1,
+                        }
+                        if spec.evidence_kind == "tdx_protocol_result"
+                        else None
+                    ),
+                )
             cases.append(case)
         by_id = {case["case_id"]: case for case in cases}
         by_id["explicit_wencai"].update(
@@ -203,12 +178,14 @@ class AcceptanceTests(unittest.TestCase):
                         "status": "auth_error",
                         "error_code": "HTTP_401",
                         "latency_ms": 8,
+                        **({"origin": "live"} if current else {}),
                     },
                     {
                         "provider": "pywencai",
                         "status": "dependency_missing",
                         "error_code": "PYWENCAI_RUNTIME_MISSING",
                         "latency_ms": 0,
+                        **({"origin": "live"} if current else {}),
                     },
                 ],
                 "row_count": 0,
@@ -216,50 +193,20 @@ class AcceptanceTests(unittest.TestCase):
             }
         )
         if current:
-            by_id["explicit_structured_screener"].update(
-                {
-                    "category": "five_source_fallback",
-                    "intent": "review_sentiment",
-                    "status": "empty",
-                    "provider_used": "pytdx_screener",
-                    "attempts": [
-                        {
-                            "provider": "pytdx_screener",
-                            "status": "empty",
-                            "error_code": None,
-                            "latency_ms": 9,
-                        }
-                    ],
-                    "row_count": 0,
-                    "error_code": None,
-                }
-            )
-        by_id["tdx_probe"].update(
-            {
-                "category": "owned_oauth",
-                "status": "auth_missing",
-                "provider_used": None,
-                "attempts": [],
-                "row_count": 0,
-                "error_code": None,
-            }
-        )
-        by_id["wind_probe"].update(
-            {
-                "category": "official_cli",
-                "intent": "wind_enrichment",
-                "status": "success",
-                "provider_used": "wind_mcp",
-                "attempts": [
-                    {
-                        "provider": "wind_mcp",
-                        "status": "success",
-                        "error_code": None,
-                        "latency_ms": len(cases),
-                    }
+            by_id["canonical_five_source_fallback"].update(
+                status="degraded",
+                provider_used="pytdx_screener",
+                attempts=[
+                    {"provider": provider, "status": status, "error_code": error_code, "latency_ms": 1, "origin": origin}
+                    for provider, status, error_code, origin in (
+                        ("iwencai_openapi", "auth_error", "HTTP_401", "injected"),
+                        ("pywencai", "provider_error", "PYWENCAI_PROVIDER_ERROR", "injected"),
+                        ("tdx_screener", "auth_error", "AUTH_EXPIRED", "injected"),
+                        ("wind_screener", "empty", None, "injected"),
+                        ("pytdx_screener", "success", None, "live"),
+                    )
                 ],
-            }
-        )
+            )
         counts: dict[str, int] = {}
         for case in cases:
             counts[case["status"]] = counts.get(case["status"], 0) + 1
@@ -272,7 +219,15 @@ class AcceptanceTests(unittest.TestCase):
             "cases": cases,
         }
         if current:
-            report["baseline"] = "five-source-structured-v1"
+            report.update(
+                baseline="five-source-capabilities-v1",
+                source_status={
+                    "iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass",
+                    "wind": "pass", "pytdx": "pass",
+                },
+                chain_status="pass",
+                gate_status="pass",
+            )
         return report
 
     def doctor_report(self) -> dict:
@@ -380,6 +335,7 @@ class AcceptanceTests(unittest.TestCase):
         }
 
     def calendar_report(self, date: str) -> dict:
+        previous = (datetime.fromisoformat(date) - timedelta(days=1)).date().isoformat()
         return {
             "schema_version": "1",
             "date": date,
@@ -387,6 +343,7 @@ class AcceptanceTests(unittest.TestCase):
             "weekday": datetime.fromisoformat(date).strftime("%A"),
             "is_trading_day": True,
             "confirmed": True,
+            "previous_trading_date": previous,
             "official_calendar": {
                 "exchange": "Shanghai Stock Exchange",
                 "url": "https://www.sse.com.cn/example",
@@ -467,18 +424,18 @@ class AcceptanceTests(unittest.TestCase):
         path = Path(built["path"])
         report = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual("1.2", report["schema_version"])
+        self.assertEqual("1.3", report["schema_version"])
         self.assertEqual("codex/test-acceptance", report["canonical_checkout"]["branch"])
         self.assertEqual(self.git_head(), report["canonical_checkout"]["head"])
         self.assertTrue(report["canonical_checkout"]["tracked_clean"])
         self.assertTrue(report["canonical_checkout"]["staged_clean"])
         self.assertEqual(sha256(self.smoke_path), report["smoke_evidence"]["sha256"])
-        self.assertEqual("five-source-structured-v1", report["smoke_evidence"]["baseline"])
-        self.assertEqual(11, report["smoke_evidence"]["total_cases"])
-        self.assertEqual(6, report["latency"]["p50"])
-        self.assertEqual(11, report["latency"]["p95"])
+        self.assertEqual("five-source-capabilities-v1", report["smoke_evidence"]["baseline"])
+        self.assertEqual(21, report["smoke_evidence"]["total_cases"])
+        self.assertEqual(11, report["latency"]["p50"])
+        self.assertEqual(20, report["latency"]["p95"])
         self.assertEqual(
-            "empty",
+            "success",
             report["provider_acceptance"]["pytdx_screener"]["live_status"],
         )
         self.assertEqual("nearest-rank", report["latency"]["method"])
@@ -496,20 +453,50 @@ class AcceptanceTests(unittest.TestCase):
 
         built = self.build("2026-07-30")
         report = json.loads(Path(built["path"]).read_text(encoding="utf-8"))
-        self.assertEqual(1, report["observation"]["day_count"])
+        self.assertEqual(1, report["observation"]["observation_day_count"])
+        self.assertEqual(1, report["observation"]["pass_day_count"])
         self.assertEqual(5, report["observation"]["required_trading_days"])
         self.assertFalse(report["observation"]["window_complete"])
 
     def test_current_baseline_history_counts_consecutive_new_receipts(self) -> None:
         first = self.build("2026-07-30")
-        self.assertEqual(1, first["day_count"])
+        self.assertEqual(1, first["pass_day_count"])
 
         self.write_inputs("2026-07-31")
         second = self.build(
             "2026-07-31",
             now=datetime(2026, 7, 31, 16, 20, tzinfo=self.shanghai),
         )
-        self.assertEqual(2, second["day_count"])
+        self.assertEqual(2, second["pass_day_count"])
+
+    def test_failed_gate_writes_no_acceptance_and_does_not_advance_pass_count(self) -> None:
+        module = self.require_module()
+        smoke = self.smoke_report("2026-07-30")
+        smoke["source_status"]["wind"] = "fail"
+        smoke["gate_status"] = "fail"
+        write_json(self.smoke_path, smoke)
+
+        with self.assertRaises(module.AcceptanceError) as caught:
+            self.build()
+
+        self.assertEqual("SMOKE_GATE_FAILED", caught.exception.code)
+        self.assertFalse((self.state / "2026-07-30.json").exists())
+
+    def test_missing_previous_trading_day_closes_epoch_and_restarts_day_one(self) -> None:
+        first = self.build("2026-07-30")
+        self.assertEqual(1, first["pass_day_count"])
+
+        self.write_inputs("2026-08-03")
+        calendar = self.calendar_report("2026-08-03")
+        calendar["previous_trading_date"] = "2026-07-31"
+        write_json(self.calendar_path, calendar)
+        restarted = self.build(
+            "2026-08-03",
+            now=datetime(2026, 8, 3, 16, 20, tzinfo=self.shanghai),
+        )
+
+        self.assertEqual(2, restarted["observation_day_count"])
+        self.assertEqual(1, restarted["pass_day_count"])
 
     def test_current_smoke_contract_locks_baseline_and_complete_case_specs(self) -> None:
         module = self.require_module()
@@ -795,14 +782,14 @@ class AcceptanceTests(unittest.TestCase):
         self.write_inputs("2026-07-30")
         report = json.loads(path.read_text(encoding="utf-8"))
         report["smoke_evidence"]["sha256"] = sha256(self.smoke_path)
-        report["observation"]["day_count"] = 3
+        report["observation"]["pass_day_count"] = 3
         report["integrity"] = module._report_integrity(report)
         write_json(path, report)
         with self.assertRaises(module.AcceptanceError) as caught:
             module.validate_daily_acceptance(path)
         self.assertEqual("INVALID_DAY_SEQUENCE", caught.exception.code)
 
-        report["observation"]["day_count"] = 1
+        report["observation"]["pass_day_count"] = 1
         report["integrity"] = module._report_integrity(report)
         write_json(path, report, mode=0o644)
         with self.assertRaises(module.AcceptanceError) as caught:
@@ -925,7 +912,7 @@ class AcceptanceTests(unittest.TestCase):
         downstream = template["downstream"]
         self.assertEqual("2", template["template_meta"]["smoke_schema_version"])
         self.assertEqual(
-            "five-source-structured-v1",
+            "five-source-capabilities-v1",
             template["template_meta"]["smoke_baseline"],
         )
         self.assertEqual(
