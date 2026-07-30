@@ -26,9 +26,11 @@ from .smoke_contract import (
 
 
 SCHEMA = "ym-stock-data.acceptance.daily"
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 PREVIOUS_SCHEMA_VERSION = "1.1"
 LEGACY_SCHEMA_VERSION = "1.0"
+UNPUBLISHED_SCHEMA_VERSION = "1.2"
+UNPUBLISHED_SMOKE_BASELINE = "five-source-structured-v1"
 REQUIRED_TRADING_DAYS = 5
 EARLIEST_ACCEPTANCE_TIME = time(16, 10)
 ACCEPTANCE_DIR = Path.home() / ".ym-stock-data" / "acceptance"
@@ -104,7 +106,10 @@ _DIRECT_SHORT_CIRCUIT_STATES = frozenset(
     }
 )
 _SAFE_PARAM_KEYS = frozenset(
-    {"sample_id", "code", "codes", "event", "period", "count", "limit", "capability"}
+    {
+        "sample_id", "fixture_id", "code", "codes", "event", "period",
+        "count", "limit", "capability", "days", "max_pages",
+    }
 )
 _SAFETY_KEYS = frozenset(
     {
@@ -238,17 +243,21 @@ def _short_text(value: object, code: str = "INVALID_INPUT", limit: int = 256) ->
     return value
 
 
-def _project_attempts(value: object, code: str = "INVALID_INPUT") -> list[dict]:
+def _project_attempts(
+    value: object,
+    code: str = "INVALID_INPUT",
+    *,
+    include_origin: bool = False,
+) -> list[dict]:
     if not isinstance(value, list):
         _raise(code)
     result = []
     for raw in value:
         item = _mapping(raw, code)
-        _exact_keys(
-            item,
-            required={"provider", "status", "error_code", "latency_ms"},
-            code=code,
-        )
+        required = {"provider", "status", "error_code", "latency_ms"}
+        if include_origin:
+            required.add("origin")
+        _exact_keys(item, required=required, code=code)
         provider = _enum(item["provider"], code)
         status = _enum(item["status"], code)
         if status not in _ATTEMPT_STATUSES:
@@ -256,18 +265,27 @@ def _project_attempts(value: object, code: str = "INVALID_INPUT") -> list[dict]:
         error_code = item["error_code"]
         if error_code is not None:
             error_code = _enum(error_code, code)
-        result.append(
-            {
-                "provider": provider,
-                "status": status,
-                "error_code": error_code,
-                "latency_ms": _integer(item["latency_ms"], code),
-            }
-        )
+        projected = {
+            "provider": provider,
+            "status": status,
+            "error_code": error_code,
+            "latency_ms": _integer(item["latency_ms"], code),
+        }
+        if include_origin:
+            origin = _enum(item["origin"], code)
+            if origin not in {"live", "injected"}:
+                _raise(code)
+            projected["origin"] = origin
+        result.append(projected)
     return result
 
 
-def _project_provider_result(value: object, *, extra: frozenset[str] = frozenset()) -> dict:
+def _project_provider_result(
+    value: object,
+    *,
+    extra: frozenset[str] = frozenset(),
+    include_origin: bool = False,
+) -> dict:
     item = _mapping(value)
     required = {"status", "provider_used", "attempts"}
     optional = {"row_count", "error_code", "latency_ms"} | set(extra)
@@ -281,7 +299,9 @@ def _project_provider_result(value: object, *, extra: frozenset[str] = frozenset
     result = {
         "status": status,
         "provider_used": provider,
-        "attempts": _project_attempts(item["attempts"]),
+        "attempts": _project_attempts(
+            item["attempts"], include_origin=include_origin
+        ),
     }
     if "row_count" in item:
         result["row_count"] = _integer(item["row_count"])
@@ -356,7 +376,25 @@ def _project_safe_params(value: object) -> dict:
     return projected
 
 
-def _project_case(value: object) -> dict:
+def _project_protocol(value: object) -> dict | None:
+    if value is None:
+        return None
+    item = _mapping(value)
+    state_keys = {"initialize", "tools_list", "schema", "read_only", "tool_call"}
+    count_keys = {"page_count", "session_count", "refresh_count", "call_count"}
+    _exact_keys(item, required=state_keys | count_keys)
+    result = {}
+    for key in sorted(state_keys):
+        state = _enum(item[key])
+        if state not in {"pass", "fail"}:
+            _raise("INVALID_INPUT")
+        result[key] = state
+    for key in sorted(count_keys):
+        result[key] = _integer(item[key])
+    return result
+
+
+def _project_case(value: object, *, current: bool) -> dict:
     item = _mapping(value)
     _exact_keys(
         item,
@@ -371,7 +409,15 @@ def _project_case(value: object) -> dict:
             "row_count",
             "error_code",
             "latency_ms",
-        },
+        }
+        | (
+            {
+                "direct_provider", "evidence_kind", "capability",
+                "protocol_evidence",
+            }
+            if current
+            else set()
+        ),
     )
     projected = _project_provider_result(
         {
@@ -381,7 +427,8 @@ def _project_case(value: object) -> dict:
             "row_count": item["row_count"],
             "error_code": item["error_code"],
             "latency_ms": item["latency_ms"],
-        }
+        },
+        include_origin=current,
     )
     projected.update(
         {
@@ -391,7 +438,7 @@ def _project_case(value: object) -> dict:
             "params": _project_safe_params(item["params"]),
         }
     )
-    return {
+    result = {
         "case_id": projected["case_id"],
         "category": projected["category"],
         "intent": projected["intent"],
@@ -403,6 +450,17 @@ def _project_case(value: object) -> dict:
         "error_code": projected["error_code"],
         "latency_ms": projected["latency_ms"],
     }
+    if current:
+        direct_provider = item["direct_provider"]
+        if direct_provider is not None:
+            direct_provider = _enum(direct_provider)
+        result.update(
+            direct_provider=direct_provider,
+            evidence_kind=_enum(item["evidence_kind"]),
+            capability=_enum(item["capability"]),
+            protocol_evidence=_project_protocol(item["protocol_evidence"]),
+        )
+    return result
 
 
 def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
@@ -424,7 +482,9 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
         "cases",
     }
     if current:
-        required.add("baseline")
+        required.update(
+            {"baseline", "source_status", "chain_status", "gate_status"}
+        )
     _exact_keys(value, required=required)
     expected_schema = (
         CURRENT_SMOKE_SCHEMA_VERSION if current else LEGACY_SMOKE_SCHEMA_VERSION
@@ -441,7 +501,7 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     expected_count = len(CURRENT_SMOKE_CASE_IDS) if current else LEGACY_SMOKE_CASE_COUNT
     if not isinstance(raw_cases, list) or len(raw_cases) != expected_count:
         _raise("INVALID_CASE_IDS" if current else "INVALID_CASE_COUNT")
-    cases = [_project_case(item) for item in raw_cases]
+    cases = [_project_case(item, current=current) for item in raw_cases]
     case_ids = [item["case_id"] for item in cases]
     if current:
         if tuple(case_ids) != CURRENT_SMOKE_CASE_IDS:
@@ -451,6 +511,9 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
                 case["category"] != spec.category
                 or case["intent"] != spec.intent
                 or case["params"] != spec.safe_params()
+                or case["direct_provider"] != spec.direct_provider
+                or case["evidence_kind"] != spec.evidence_kind
+                or case["capability"] != spec.capability
             ):
                 _raise("INVALID_CASE_SPEC")
             if spec.direct_provider is not None:
@@ -489,7 +552,108 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     }
     if current:
         projected["baseline"] = CURRENT_SMOKE_BASELINE
+        supplied_sources = _mapping(value["source_status"], "INVALID_SMOKE_GATE")
+        expected_source_keys = {
+            "iwencai_openapi", "pywencai", "tdx", "wind", "pytdx"
+        }
+        _exact_keys(
+            supplied_sources,
+            required=expected_source_keys,
+            code="INVALID_SMOKE_GATE",
+        )
+        source_status = {}
+        for name in sorted(expected_source_keys):
+            status = _enum(supplied_sources[name], "INVALID_SMOKE_GATE")
+            if status not in {"pass", "fail"}:
+                _raise("INVALID_SMOKE_GATE")
+            source_status[name] = status
+        chain_status = _enum(value["chain_status"], "INVALID_SMOKE_GATE")
+        gate_status = _enum(value["gate_status"], "INVALID_SMOKE_GATE")
+        if chain_status not in {"pass", "fail"} or gate_status not in {"pass", "fail"}:
+            _raise("INVALID_SMOKE_GATE")
+        expected_sources, expected_chain, expected_gate = _smoke_gate(cases)
+        if (
+            source_status != expected_sources
+            or chain_status != expected_chain
+            or gate_status != expected_gate
+        ):
+            _raise("INVALID_SMOKE_GATE")
+        projected.update(
+            source_status=source_status,
+            chain_status=chain_status,
+            gate_status=gate_status,
+        )
     return projected
+
+
+def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
+    by_id = {case["case_id"]: case for case in cases}
+
+    def passed(case_id: str, provider: str, *, protocol: bool = False) -> bool:
+        case = by_id.get(case_id, {})
+        valid = (
+            case.get("status") in {"success", "degraded"}
+            and case.get("provider_used") == provider
+            and case.get("row_count", 0) > 0
+            and any(
+                attempt.get("provider") == provider
+                and attempt.get("status") == "success"
+                and attempt.get("origin") == "live"
+                for attempt in case.get("attempts", [])
+            )
+        )
+        if not protocol:
+            return valid
+        evidence = case.get("protocol_evidence")
+        return valid and isinstance(evidence, dict) and all(
+            evidence.get(key) == "pass"
+            for key in ("initialize", "tools_list", "schema", "read_only", "tool_call")
+        ) and all(
+            evidence.get(key, 0) >= 1
+            for key in ("page_count", "session_count", "call_count")
+        )
+
+    source_status = {
+        "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
+        "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
+        "tdx": "pass" if all(
+            passed(case_id, provider, protocol=True)
+            for case_id, provider in (
+                ("tdx_probe", "tdx_quotes"),
+                ("tdx_screener_probe", "tdx_screener"),
+                ("tdx_kline_probe", "tdx_kline"),
+                ("tdx_report_probe", "tdx_report"),
+                ("tdx_notice_probe", "tdx_notice"),
+                ("tdx_news_probe", "tdx_news"),
+            )
+        ) else "fail",
+        "wind": "pass" if all(
+            passed(case_id, provider)
+            for case_id, provider in (
+                ("wind_probe", "wind_mcp"),
+                ("wind_screener_probe", "wind_screener"),
+                ("wind_filings_probe", "wind_documents"),
+            )
+        ) else "fail",
+        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
+    }
+    fallback = by_id.get("canonical_five_source_fallback", {})
+    attempts = fallback.get("attempts", [])
+    chain = "pass" if (
+        fallback.get("status") == "degraded"
+        and fallback.get("provider_used") == "pytdx_screener"
+        and fallback.get("row_count", 0) > 0
+        and [item.get("provider") for item in attempts]
+        == ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"]
+        and [item.get("status") for item in attempts]
+        == ["auth_error", "provider_error", "auth_error", "empty", "success"]
+        and [item.get("origin") for item in attempts]
+        == ["injected", "injected", "injected", "injected", "live"]
+    ) else "fail"
+    gate = "pass" if chain == "pass" and all(
+        value == "pass" for value in source_status.values()
+    ) else "fail"
+    return dict(sorted(source_status.items())), chain, gate
 
 
 def _validate_direct_provider(
@@ -537,7 +701,9 @@ def _intent_status_counts(cases: list[dict]) -> dict:
     }
 
 
-def _project_calendar(value: dict, expected_date: str) -> dict:
+def _project_calendar(
+    value: dict, expected_date: str, *, require_previous: bool = True
+) -> dict:
     _reject_forbidden(value, code="FORBIDDEN_INPUT")
     _exact_keys(
         value,
@@ -549,7 +715,8 @@ def _project_calendar(value: dict, expected_date: str) -> dict:
             "is_trading_day",
             "confirmed",
             "official_calendar",
-        },
+        }
+        | ({"previous_trading_date"} if require_previous else set()),
     )
     if value["schema_version"] != "1" or _date(value["date"]) != expected_date:
         _raise("INVALID_CALENDAR")
@@ -568,7 +735,7 @@ def _project_calendar(value: dict, expected_date: str) -> dict:
         SSE_CALENDAR_BASE_URL
     ):
         _raise("INVALID_CALENDAR")
-    return {
+    result = {
         "date": expected_date,
         "timezone": "Asia/Shanghai",
         "weekday": _short_text(value["weekday"], limit=16),
@@ -580,6 +747,12 @@ def _project_calendar(value: dict, expected_date: str) -> dict:
             "basis": _short_text(official["basis"], limit=256),
         },
     }
+    if require_previous:
+        previous = _date(value["previous_trading_date"], "INVALID_CALENDAR")
+        if previous >= expected_date:
+            _raise("INVALID_CALENDAR")
+        result["previous_trading_date"] = previous
+    return result
 
 
 def _pending_provider_result() -> dict:
@@ -605,6 +778,7 @@ def acceptance_template(date: str) -> dict:
             "weekday": date_type.fromisoformat(observed_date).strftime("%A"),
             "is_trading_day": False,
             "confirmed": False,
+            "previous_trading_date": PENDING_STATUS,
             "official_calendar": {
                 "exchange": SSE_EXCHANGE,
                 "url": SSE_CALENDAR_BASE_URL,
@@ -646,6 +820,7 @@ def acceptance_template(date: str) -> dict:
                 "calendar.is_trading_day",
                 "calendar.confirmed",
                 "calendar.official_calendar.basis",
+                "calendar.previous_trading_date",
                 "downstream.breaker_verification.status",
                 "downstream.market_watch.status",
                 "downstream.market_watch.quality_status",
@@ -1124,6 +1299,7 @@ def _validate_v11(
     *,
     include_pytdx_screener: bool,
 ) -> None:
+    current = report.get("schema_version") == SCHEMA_VERSION
     _exact_keys(
         report,
         required={
@@ -1151,19 +1327,35 @@ def _validate_v11(
     if integrity != _report_integrity(report):
         _raise("INTEGRITY_MISMATCH")
     observation = _mapping(report["observation"], "INVALID_ACCEPTANCE")
-    _exact_keys(
-        observation,
-        required={
+    calendar_keys = {
             "date",
             "timezone",
             "weekday",
             "is_trading_day",
             "confirmed",
             "official_calendar",
+    }
+    _exact_keys(
+        observation,
+        required=calendar_keys
+        | (
+            {
+                "previous_trading_date",
+                "observation_day_count",
+                "pass_day_count",
+                "required_trading_days",
+                "window_complete",
+                "gate_status",
+                "epoch_start_date",
+                "epoch_status",
+            }
+            if current
+            else {
             "day_count",
             "required_trading_days",
             "window_complete",
-        },
+            }
+        ),
         code="INVALID_ACCEPTANCE",
     )
     projected_calendar = _project_calendar(
@@ -1175,11 +1367,36 @@ def _validate_v11(
             "is_trading_day": observation["is_trading_day"],
             "confirmed": observation["confirmed"],
             "official_calendar": observation["official_calendar"],
+            **(
+                {"previous_trading_date": observation["previous_trading_date"]}
+                if current
+                else {}
+            ),
         },
         observed_date,
+        require_previous=current,
     )
     if {key: observation[key] for key in projected_calendar} != projected_calendar:
         _raise("INVALID_ACCEPTANCE")
+    if current:
+        observation_count = _integer(
+            observation["observation_day_count"], "INVALID_ACCEPTANCE"
+        )
+        pass_count = _integer(observation["pass_day_count"], "INVALID_ACCEPTANCE")
+        if observation_count < 1 or pass_count < 1 or pass_count > observation_count:
+            _raise("INVALID_ACCEPTANCE")
+        if observation["required_trading_days"] != REQUIRED_TRADING_DAYS:
+            _raise("INVALID_ACCEPTANCE")
+        if observation["window_complete"] is not (pass_count >= REQUIRED_TRADING_DAYS):
+            _raise("INVALID_ACCEPTANCE")
+        if observation["gate_status"] != "pass":
+            _raise("SMOKE_GATE_FAILED")
+        epoch_start = _date(observation["epoch_start_date"], "INVALID_ACCEPTANCE")
+        if epoch_start > observed_date:
+            _raise("INVALID_ACCEPTANCE")
+        expected_epoch_status = "complete" if pass_count >= REQUIRED_TRADING_DAYS else "open"
+        if observation["epoch_status"] != expected_epoch_status:
+            _raise("INVALID_ACCEPTANCE")
     generated = datetime.fromisoformat(report["generated_at"].replace("Z", "+00:00"))
     generated_local = generated.astimezone(TZ_SHANGHAI)
     if generated_local.date().isoformat() != observed_date or generated_local.time() < EARLIEST_ACCEPTANCE_TIME:
@@ -1239,10 +1456,28 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
     observed_date = _date(observation.get("date"), "INVALID_ACCEPTANCE")
     if observation.get("timezone") != "Asia/Shanghai" or observation.get("is_trading_day") is not True:
         _raise("INVALID_ACCEPTANCE")
-    day_count = _integer(observation.get("day_count"), "INVALID_ACCEPTANCE")
+    current = version == SCHEMA_VERSION
+    if current:
+        observation_day_count = _integer(
+            observation.get("observation_day_count"), "INVALID_ACCEPTANCE"
+        )
+        pass_day_count = _integer(
+            observation.get("pass_day_count"), "INVALID_ACCEPTANCE"
+        )
+        day_count = pass_day_count
+        if (
+            observation_day_count < 1
+            or pass_day_count < 1
+            or pass_day_count > observation_day_count
+        ):
+            _raise("INVALID_ACCEPTANCE")
+    else:
+        day_count = _integer(observation.get("day_count"), "INVALID_ACCEPTANCE")
+        observation_day_count = day_count
+        pass_day_count = day_count
     if day_count < 1 or observation.get("required_trading_days") != REQUIRED_TRADING_DAYS:
         _raise("INVALID_ACCEPTANCE")
-    if observation.get("window_complete") is not (day_count >= REQUIRED_TRADING_DAYS):
+    if observation.get("window_complete") is not (pass_day_count >= REQUIRED_TRADING_DAYS):
         _raise("INVALID_ACCEPTANCE")
     checkout = _mapping(report["canonical_checkout"], "INVALID_ACCEPTANCE")
     if not isinstance(checkout.get("branch"), str) or not _GIT_HEAD.fullmatch(str(checkout.get("head", ""))):
@@ -1258,7 +1493,6 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
         _raise("INVALID_ACCEPTANCE")
     if _sha256(smoke_path) != recorded_hash:
         _raise("RECEIPT_HASH_MISMATCH")
-    current = version == SCHEMA_VERSION
     projected_smoke = _project_smoke(smoke_path, observed_date, current=current)
     expected_count = len(CURRENT_SMOKE_CASE_IDS) if current else LEGACY_SMOKE_CASE_COUNT
     if smoke.get("total_cases") != expected_count:
@@ -1283,6 +1517,11 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
         "path": str(path) if path is not None else None,
         "date": observed_date,
         "day_count": day_count,
+        "observation_day_count": observation_day_count,
+        "pass_day_count": pass_day_count,
+        "previous_trading_date": observation.get("previous_trading_date"),
+        "epoch_start_date": observation.get("epoch_start_date"),
+        "head": checkout.get("head"),
         "schema_version": version,
     }
 
@@ -1293,18 +1532,48 @@ def _history(directory: Path) -> list[dict]:
     records = []
     for path in sorted(directory.glob("*.json")):
         report = _load_json(path)
+        if report.get("schema_version") == UNPUBLISHED_SCHEMA_VERSION:
+            smoke = report.get("smoke_evidence")
+            if (
+                report.get("schema") == SCHEMA
+                and isinstance(smoke, dict)
+                and smoke.get("baseline") == UNPUBLISHED_SMOKE_BASELINE
+            ):
+                continue
+            _raise("INVALID_SCHEMA")
         summary = _validate_report(report, path)
         records.append({**summary, "path": path})
     dates = [item["date"] for item in records]
     if len(set(dates)) != len(dates):
         _raise("DUPLICATE_DATE")
     ordered = sorted(records, key=lambda item: item["date"])
-    sequence_counts = {"current": 0, "legacy": 0}
+    current_count = 0
+    legacy_count = 0
+    previous_current = None
     for item in ordered:
-        sequence = "current" if item["schema_version"] == SCHEMA_VERSION else "legacy"
-        sequence_counts[sequence] += 1
-        if item["day_count"] != sequence_counts[sequence]:
+        if item["schema_version"] != SCHEMA_VERSION:
+            legacy_count += 1
+            if item["day_count"] != legacy_count:
+                _raise("INVALID_DAY_SEQUENCE")
+            continue
+        current_count += 1
+        if item["observation_day_count"] != current_count:
             _raise("INVALID_DAY_SEQUENCE")
+        continues = (
+            previous_current is not None
+            and item["previous_trading_date"] == previous_current["date"]
+            and item["head"] == previous_current["head"]
+        )
+        expected_pass = previous_current["pass_day_count"] + 1 if continues else 1
+        expected_epoch = (
+            previous_current["epoch_start_date"] if continues else item["date"]
+        )
+        if (
+            item["pass_day_count"] != expected_pass
+            or item["epoch_start_date"] != expected_epoch
+        ):
+            _raise("INVALID_DAY_SEQUENCE")
+        previous_current = item
     return ordered
 
 
@@ -1383,20 +1652,30 @@ def build_daily_acceptance(
         _raise("OBSERVATION_DATE_MISMATCH")
     if local_now.time() < EARLIEST_ACCEPTANCE_TIME:
         _raise("OBSERVATION_TOO_EARLY")
+    smoke = _project_smoke(Path(smoke_path), observed_date, current=True)
+    if smoke["gate_status"] != "pass":
+        _raise("SMOKE_GATE_FAILED")
+    checkout = _git_snapshot(
+        Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    )
     history = _history(output_dir)
     current_history = [
         item for item in history if item["schema_version"] == SCHEMA_VERSION
     ]
-    if len(current_history) >= REQUIRED_TRADING_DAYS:
-        _raise("WINDOW_COMPLETE")
     if history and observed_date <= history[-1]["date"]:
         _raise("DATE_NOT_INCREASING")
-    day_count = len(current_history) + 1
-    checkout = _git_snapshot(
-        Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    observation_day_count = len(current_history) + 1
+    previous = current_history[-1] if current_history else None
+    continues = (
+        previous is not None
+        and calendar["previous_trading_date"] == previous["date"]
+        and checkout["head"] == previous["head"]
     )
+    if continues and previous["pass_day_count"] >= REQUIRED_TRADING_DAYS:
+        _raise("WINDOW_COMPLETE")
+    pass_day_count = previous["pass_day_count"] + 1 if continues else 1
+    epoch_start_date = previous["epoch_start_date"] if continues else observed_date
     doctor = _project_doctor(doctor_input)
-    smoke = _project_smoke(Path(smoke_path), observed_date, current=True)
     downstream = _project_downstream(downstream_input)
     report = {
         "schema": SCHEMA,
@@ -1404,9 +1683,15 @@ def build_daily_acceptance(
         "generated_at": local_now.isoformat(timespec="seconds"),
         "observation": {
             **calendar,
-            "day_count": day_count,
+            "observation_day_count": observation_day_count,
+            "pass_day_count": pass_day_count,
             "required_trading_days": REQUIRED_TRADING_DAYS,
-            "window_complete": day_count >= REQUIRED_TRADING_DAYS,
+            "window_complete": pass_day_count >= REQUIRED_TRADING_DAYS,
+            "gate_status": smoke["gate_status"],
+            "epoch_start_date": epoch_start_date,
+            "epoch_status": (
+                "complete" if pass_day_count >= REQUIRED_TRADING_DAYS else "open"
+            ),
         },
         "canonical_checkout": checkout,
         "doctor": doctor,
@@ -1426,7 +1711,8 @@ def build_daily_acceptance(
     return {
         "path": str(path),
         "date": observed_date,
-        "day_count": day_count,
+        "observation_day_count": observation_day_count,
+        "pass_day_count": pass_day_count,
         "schema_version": SCHEMA_VERSION,
     }
 
@@ -1439,6 +1725,9 @@ def validate_daily_acceptance(path: Path) -> dict:
     summary = _validate_report(report, path)
     history = _history(path.parent)
     selected = next((item for item in history if item["path"] == path), None)
-    if selected is None or selected["day_count"] != summary["day_count"]:
+    if selected is None or (
+        selected["observation_day_count"] != summary["observation_day_count"]
+        or selected["pass_day_count"] != summary["pass_day_count"]
+    ):
         _raise("INVALID_DAY_SEQUENCE")
     return summary

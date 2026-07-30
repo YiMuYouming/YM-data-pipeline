@@ -197,6 +197,11 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertNotIn("wind_mcp", stock_event_row)
         self.assertIn("新五源范围", plan)
         self.assertIn("五类受管来源", plan)
+        self.assertIn("acceptance 1.3", plan)
+        self.assertIn("five-source-capabilities-v1", plan)
+        self.assertIn("exactly 21 ordered cases", plan)
+        self.assertIn("observation_day_count", plan)
+        self.assertIn("pass_day_count", plan)
         for source in (
             "WenCai OpenAPI",
             "portable pywencai",

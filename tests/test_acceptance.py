@@ -22,10 +22,10 @@ CURRENT_SMOKE_CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)
 CURRENT_SMOKE_SPECS = {
     spec.case_id: (spec.category, spec.intent, spec.safe_params()) for spec in CASE_SPECS
 }
-LEGACY_SMOKE_CASE_IDS = tuple(
-    case_id
-    for case_id in CURRENT_SMOKE_CASE_IDS
-    if case_id != "explicit_structured_screener"
+LEGACY_SMOKE_CASE_IDS = (
+    "zero_realtime_market", "zero_sector_index", "zero_stock_snapshot",
+    "zero_stock_kline", "zero_review_sentiment", "zero_market_limit_state",
+    "zero_stock_event", "explicit_wencai", "tdx_probe", "wind_probe",
 )
 
 
@@ -472,6 +472,19 @@ class AcceptanceTests(unittest.TestCase):
     def test_failed_gate_writes_no_acceptance_and_does_not_advance_pass_count(self) -> None:
         module = self.require_module()
         smoke = self.smoke_report("2026-07-30")
+        wind_case = next(
+            case for case in smoke["cases"] if case["case_id"] == "wind_filings_probe"
+        )
+        wind_case.update(
+            status="empty", provider_used="wind_documents", row_count=0
+        )
+        wind_case["attempts"][0]["status"] = "empty"
+        smoke["summary"]["status_counts"] = {
+            "degraded": 1,
+            "empty": 1,
+            "error": 1,
+            "success": 18,
+        }
         smoke["source_status"]["wind"] = "fail"
         smoke["gate_status"] = "fail"
         write_json(self.smoke_path, smoke)
@@ -497,6 +510,45 @@ class AcceptanceTests(unittest.TestCase):
 
         self.assertEqual(2, restarted["observation_day_count"])
         self.assertEqual(1, restarted["pass_day_count"])
+
+    def test_five_consecutive_gate_passes_complete_window(self) -> None:
+        schedule = (
+            ("2026-07-30", "2026-07-29"),
+            ("2026-07-31", "2026-07-30"),
+            ("2026-08-03", "2026-07-31"),
+            ("2026-08-04", "2026-08-03"),
+            ("2026-08-05", "2026-08-04"),
+        )
+        built = None
+        for index, (observed, previous) in enumerate(schedule, start=1):
+            self.write_inputs(observed)
+            calendar = self.calendar_report(observed)
+            calendar["previous_trading_date"] = previous
+            write_json(self.calendar_path, calendar)
+            built = self.build(
+                observed,
+                now=datetime.fromisoformat(f"{observed}T16:20:00+08:00"),
+            )
+            self.assertEqual(index, built["pass_day_count"])
+        report = json.loads(Path(built["path"]).read_text(encoding="utf-8"))
+        self.assertTrue(report["observation"]["window_complete"])
+        self.assertEqual("complete", report["observation"]["epoch_status"])
+
+    def test_unpublished_v12_baseline_is_ignored_not_counted(self) -> None:
+        unpublished = self.state / "2026-07-29.json"
+        write_json(
+            unpublished,
+            {
+                "schema": "ym-stock-data.acceptance.daily",
+                "schema_version": "1.2",
+                "smoke_evidence": {"baseline": "five-source-structured-v1"},
+            },
+        )
+
+        built = self.build("2026-07-30")
+
+        self.assertEqual(1, built["observation_day_count"])
+        self.assertEqual(1, built["pass_day_count"])
 
     def test_current_smoke_contract_locks_baseline_and_complete_case_specs(self) -> None:
         module = self.require_module()
@@ -611,9 +663,7 @@ class AcceptanceTests(unittest.TestCase):
             ),
             (
                 "empty_without_empty_attempt",
-                lambda value: value["cases"][8]["attempts"][0].update(
-                    status="success"
-                ),
+                lambda value: value["cases"][8].update(status="empty"),
                 "INVALID_DIRECT_PROVIDER",
             ),
             (
@@ -653,6 +703,8 @@ class AcceptanceTests(unittest.TestCase):
                 for case in smoke["cases"]:
                     counts[case["status"]] = counts.get(case["status"], 0) + 1
                 smoke["summary"]["status_counts"] = counts
+                smoke["source_status"]["tdx"] = "fail"
+                smoke["gate_status"] = "fail"
                 write_json(self.smoke_path, smoke)
 
                 projected = module._project_smoke(
@@ -782,14 +834,14 @@ class AcceptanceTests(unittest.TestCase):
         self.write_inputs("2026-07-30")
         report = json.loads(path.read_text(encoding="utf-8"))
         report["smoke_evidence"]["sha256"] = sha256(self.smoke_path)
-        report["observation"]["pass_day_count"] = 3
+        report["observation"]["observation_day_count"] = 3
         report["integrity"] = module._report_integrity(report)
         write_json(path, report)
         with self.assertRaises(module.AcceptanceError) as caught:
             module.validate_daily_acceptance(path)
         self.assertEqual("INVALID_DAY_SEQUENCE", caught.exception.code)
 
-        report["observation"]["pass_day_count"] = 1
+        report["observation"]["observation_day_count"] = 1
         report["integrity"] = module._report_integrity(report)
         write_json(path, report, mode=0o644)
         with self.assertRaises(module.AcceptanceError) as caught:
@@ -882,6 +934,14 @@ class AcceptanceTests(unittest.TestCase):
         write_json(self.smoke_path, legacy_smoke)
 
         report["schema_version"] = "1.1"
+        report["observation"]["day_count"] = report["observation"].pop(
+            "pass_day_count"
+        )
+        for key in (
+            "observation_day_count", "previous_trading_date", "gate_status",
+            "epoch_start_date", "epoch_status",
+        ):
+            report["observation"].pop(key)
         report["smoke_evidence"] = module._project_smoke(
             self.smoke_path,
             "2026-07-30",
@@ -951,6 +1011,7 @@ class AcceptanceTests(unittest.TestCase):
             calendar = module.acceptance_template("2026-07-30")["calendar"]
             calendar["is_trading_day"] = True
             calendar["confirmed"] = True
+            calendar["previous_trading_date"] = "2026-07-29"
             calendar["official_calendar"]["basis"] = "verified fixture"
             try:
                 projected = module._project_calendar(calendar, "2026-07-30")

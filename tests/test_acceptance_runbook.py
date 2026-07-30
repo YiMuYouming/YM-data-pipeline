@@ -40,12 +40,18 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "zero_secret_scan",
             "shasum -a 256",
             "check-ignore",
-            "acceptance 1.2",
+            "acceptance 1.3",
             "smoke schema 2",
-            "five-source-structured-v1",
-            "11 个固定 case",
+            "five-source-capabilities-v1",
+            "21 个固定 case",
             "canonical registry",
             "旧 10-case",
+            "previous_trading_date",
+            "observation_day_count",
+            "pass_day_count",
+            "gate_status",
+            "origin=injected|live",
+            "不授权 TDX 首次登录",
         )
         for value in required:
             with self.subTest(value=value):
@@ -109,6 +115,8 @@ class AcceptanceRunbookTests(unittest.TestCase):
             'query("review_sentiment", query="A股 非ST 涨停", limit=3)',
             snippets,
         )
+        self.assertNotIn("BREAKER_NOT_CONFIRMED", snippets)
+        self.assertIn("CONTROLLED_CHAIN_NOT_CONFIRMED", snippets)
         self.assertIn(
             'result = _default_resolver("review_sentiment")',
             snippets,

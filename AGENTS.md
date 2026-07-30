@@ -17,7 +17,7 @@ print(result["_meta"])
 - 改动按失败测试 → 最小实现 → 聚焦测试 → 全量测试推进。
 - 基础健康检查：`./ym-data doctor --json`。doctor 只报告脱敏状态，不证明在线。
 - 只有显式 `./ym-data smoke --live` 才联网；报告不得保存业务行、Key、token、stderr 或异常正文。
-- 五日验收从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始；唯一执行入口与安全探针见 `docs/ACCEPTANCE_RUNBOOK.md`，不要自行拼装 schema 或重复 live 调用。
+- 五日验收从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始；当前正式基线是 acceptance 1.3 / smoke schema 2 / `five-source-capabilities-v1` 的 21-case 能力矩阵。唯一执行入口与安全探针见 `docs/ACCEPTANCE_RUNBOOK.md`，不要自行拼装 schema、重复 live 调用或把一次 smoke 当成登录/五日自动化授权。
 - 完成前运行 `uv run python -m compileall -q ym_stock_data scripts tests`、`uv run python -m unittest discover -s tests -v`、`git diff --check` 和敏感路径扫描。
 
 ## 公共 API 与契约

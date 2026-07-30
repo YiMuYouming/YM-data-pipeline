@@ -2,7 +2,7 @@
 
 本文是五个交易日 daily acceptance 的唯一 Agent 执行入口。严格 JSON key、允许状态和安全门禁由 `ym_stock_data.acceptance` 拥有；不要手写另一份 schema。每天只执行一次，且仅在 `Asia/Shanghai` 16:10 后执行。
 
-当前新窗口使用 acceptance 1.2、smoke schema 2 与 baseline `five-source-structured-v1`，并严格锁定 11 个固定 case（含 `explicit_structured_screener`）。历史 acceptance 1.1/1.0 与旧 10-case receipt 仍可只读验证，但不能计入这个新五日窗口；不允许手工改写旧 receipt 或 day count。
+当前正式窗口使用 acceptance 1.3、smoke schema 2 与 baseline `five-source-capabilities-v1`，并严格锁定 21 个固定 case：原 10 个核心 case 与 PyTDX direct case全部保留，另有 OpenAPI、pywencai、TDX 六项、Wind 三项 direct 能力证据和一个 canonical 五源受控降级 case。历史 acceptance 1.1/1.0 与旧 10-case receipt 仍可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 不计正式窗口。不允许手工改写旧 receipt、`observation_day_count` 或 `pass_day_count`。
 
 本流程只保存元数据。禁止打印或保存业务 rows、查询正文、credential、stderr、exception、原始 transport/session；禁止调用底层 source、兼容 V2、手工 TDX/Wind 或交易工具；禁止向端口 8088 发 POST，禁止写 Market_Watch/live-dashboard 的 out、data、cache、runtime，禁止部署、push、券商或交易动作。
 
@@ -14,6 +14,7 @@
 set -eu
 umask 077
 acceptance_date=YYYY-MM-DD
+previous_trading_date=YYYY-MM-DD
 pipeline_root=/Users/yimu/Documents/YM_Capital/YM-data-pipeline
 acceptance_dir=/Users/yimu/.ym-stock-data/acceptance
 smoke_dir=/Users/yimu/.ym-stock-data/smoke
@@ -73,10 +74,10 @@ PY
 
 <https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20251222_10802510.shtml>
 
-人工确认三件事：页面域名是 `www.sse.com.cn`；`acceptance_date` 的 weekday 与模板一致；该日期不在休市区间。三项均成立后才执行下列更新。`basis` 只写这一事实摘要，不复制网页正文。
+人工确认四件事：页面域名是 `www.sse.com.cn`；`acceptance_date` 的 weekday 与模板一致；该日期不在休市区间；`previous_trading_date` 是 SSE 日历中紧邻本次日期的上一正式交易日（不能按自然日猜测）。四项均成立后才执行下列更新。`basis` 只写这一事实摘要，不复制网页正文。
 
 ```bash
-UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/calendar.json" <<'PY'
+UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/calendar.json" "$previous_trading_date" <<'PY'
 import json
 import os
 import sys
@@ -86,6 +87,7 @@ path = Path(sys.argv[1])
 value = json.loads(path.read_text(encoding="utf-8"))
 value["is_trading_day"] = True
 value["confirmed"] = True
+value["previous_trading_date"] = sys.argv[2]
 value["official_calendar"]["exchange"] = "Shanghai Stock Exchange"
 value["official_calendar"]["url"] = "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20251222_10802510.shtml"
 value["official_calendar"]["basis"] = "SSE 2026 closure schedule checked; date is not listed as closed"
@@ -103,7 +105,7 @@ Doctor 只运行一次并直接保存脱敏 JSON：
 chmod 600 "$acceptance_tmp/doctor.json"
 ```
 
-Smoke 只运行一次。其 CLI stdout 只保存 receipt 路径和 summary；业务行不会进入该文件。`explicit_structured_screener` 由 smoke 通过 canonical registry 直接取得 `pytdx_screener` provider 并执行固定只读小探针，所以前四个来源不能遮蔽第五源是否真正被调用；receipt 仍只保存脱敏状态、attempt、行数和耗时，不保存查询正文或业务行。不要在 runbook 外再补一次结构化查询。
+Smoke 只运行一次且完整执行 21 个 case，单项失败不遮蔽后项。所有 direct case 都经 canonical registry 的 `provider_loader` 调用；TDX 六项各自完成 official SDK 的 initialize、tools/list、schema、read-only、tool-call gate。受控降级 case 复用真实 canonical router，前四源只使用固定 injected outcome，禁止联网，末源才调用 live PyTDX；attempt 记录 `origin=injected|live`。receipt 仍只保存脱敏状态、行数、耗时和协议计数，不保存查询正文、业务行、schema/content、endpoint 或 session 标识。doctor/configured、TCP 可达和 empty 都不算能力已通。不要在 runbook 外补探针。
 
 ```bash
 ./ym-data smoke --live > "$acceptance_tmp/smoke-cli.json" 2>/dev/null
@@ -124,6 +126,13 @@ if cli.get("status") != "complete" or len(matches) != 1 or receipt != matches[0]
     raise SystemExit("SMOKE_RECEIPT_NOT_UNIQUE")
 if stat.S_IMODE(receipt.stat().st_mode) != 0o600:
     raise SystemExit("SMOKE_RECEIPT_MODE_INVALID")
+report = json.loads(receipt.read_text(encoding="utf-8"))
+if (
+    report.get("baseline") != "five-source-capabilities-v1"
+    or report.get("summary", {}).get("total") != 21
+    or report.get("gate_status") != "pass"
+):
+    raise SystemExit("SMOKE_GATE_FAILED")
 target = Path(sys.argv[4])
 target.write_text(str(receipt) + "\n", encoding="utf-8")
 os.chmod(target, 0o600)
@@ -131,31 +140,38 @@ PY
 smoke_receipt=$(tr -d '\n' < "$acceptance_tmp/smoke-path.txt")
 ```
 
-若 smoke 命令或唯一性检查失败，停止；不得重试。
+若 smoke 命令、唯一性检查或 gate 失败，停止；不得重试，不写 acceptance。下一次正式交易日即使通过，也因缺少上一正式交易日的 pass receipt 从新 epoch Day 1 开始。一次 smoke 不授权 TDX 首次登录，也不会自动安排后续五日。
 
-## 5. Breaker 脱敏复验
+## 5. 受控降级证据离线映射
 
-Smoke 的显式 WenCai case 已完成当日首次尝试。本步骤只再执行一次 canonical public `query()`，并立即用 `summarize_query_result()` 丢弃业务 rows；保存的只有 status/provider/attempts/count/error/latency。若 OpenAPI attempt 不是已有 `HTTP_401` breaker，停止审计，不发第二次探针。
+不得为 breaker 或降级链再发一次 live 请求。本步骤只从同次 smoke receipt 读取 `canonical_five_source_fallback` 的脱敏 metadata，将 injected OpenAPI 401 映射到历史兼容字段 `breaker_verification`。真实链路 gate 已由 smoke runner 校验；这里不声称远端 breaker 再次命中。
 
 ```bash
-UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/breaker.json" > /dev/null 2>/dev/null <<'PY'
+UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$smoke_receipt" "$acceptance_tmp/breaker.json" > /dev/null 2>/dev/null <<'PY'
 import json
 import os
 import sys
-import time
 from pathlib import Path
-from ym_stock_data import query
-from ym_stock_data.smoke import summarize_query_result
 
-started = time.monotonic()
-result = query("review_sentiment", query="A股 非ST 涨停", limit=3)
-summary = summarize_query_result(result)
-summary["latency_ms"] = max(0, int((time.monotonic() - started) * 1000))
-attempts = summary.get("attempts", [])
-breaker = next((item for item in attempts if item.get("provider") == "iwencai_openapi"), None)
-if not breaker or breaker.get("status") != "breaker_open" or breaker.get("error_code") != "HTTP_401":
-    raise SystemExit("BREAKER_NOT_CONFIRMED")
-path = Path(sys.argv[1])
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+case = next(
+    (item for item in report.get("cases", []) if item.get("case_id") == "canonical_five_source_fallback"),
+    None,
+)
+attempt = case.get("attempts", [None])[0] if isinstance(case, dict) else None
+if not isinstance(attempt, dict) or (
+    attempt.get("provider"), attempt.get("status"), attempt.get("error_code"), attempt.get("origin")
+) != ("iwencai_openapi", "auth_error", "HTTP_401", "injected"):
+    raise SystemExit("CONTROLLED_CHAIN_NOT_CONFIRMED")
+summary = {
+    "status": "error",
+    "provider_used": None,
+    "attempts": [{key: attempt[key] for key in ("provider", "status", "error_code", "latency_ms")}],
+    "row_count": 0,
+    "error_code": "HTTP_401",
+    "latency_ms": attempt["latency_ms"],
+}
+path = Path(sys.argv[2])
 path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 os.chmod(path, 0o600)
 PY
@@ -332,4 +348,4 @@ shasum -a 256 \
   ym_stock_data/experimental/__pycache__/wind_sidecar.cpython-314.pyc
 ```
 
-最后只汇报 receipt 绝对路径、SHA、mode、day_count/status counts/provider attempts 摘要、doctor 状态、下游元数据与未解决风险。不得输出临时 JSON 全文或宣称五日闭环；`day_count=5` 后仍需独立审核。
+最后只汇报 receipt 绝对路径、SHA、mode、`observation_day_count`、`pass_day_count`、`gate_status`、status counts/provider attempts 摘要、doctor 状态、下游元数据与未解决风险。只有同一 epoch 五个连续正式交易日全部 `gate_status=pass`，且 `window_complete=true`，才能进入独立闭环审核；单日 smoke 不能宣称五日闭环。

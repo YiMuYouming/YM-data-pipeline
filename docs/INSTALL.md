@@ -87,9 +87,11 @@ SDK HTTP client 固定为 `httpx2==2.9.1`，Keychain adapter 固定为
 `keyring==25.7.0`。
 每次只读调用都必须先通过 `initialize`、`tools/list` 和本次请求 capability 的
 allowlist schema gate；其它 capability 的缺失或 schema drift 不会连带禁用本次
-能力，完整六项健康只能由后续 smoke/acceptance 分项验收。任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
+能力，完整六项健康只能由 acceptance 1.3 / `five-source-capabilities-v1` 的 21-case smoke 分项验收；每项 receipt 只保留 initialize、tools/list、schema、read-only、tool-call 的 pass/fail 与页/session/refresh/call 计数，不保存 schema、content、endpoint 或 session 标识。任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
 明确授权并完成真实 `tools/list` 与一个白名单只读小调用，才能称为在线。本轮
 离线实现没有执行真实 DCR、没有打开浏览器，也不称为在线接通。
+
+正式 live smoke 会在单次矩阵中继续执行所有 case，不因前项失败遮蔽后项；只有 OpenAPI、pywencai、TDX 六项、Wind 三项和 PyTDX direct 都返回非空 success，且 canonical 受控五源顺序与 injected/live origin 完全匹配，`gate_status` 才为 `pass`。一次 smoke 不授权首次 OAuth 登录，也不会自动安排五个交易日。
 
 ## Wind profile
 

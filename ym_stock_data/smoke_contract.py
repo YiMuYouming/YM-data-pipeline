@@ -85,7 +85,7 @@ CASE_SPECS = (
         (("fixture_id", "large_cap_a"),),
         direct_provider="tdx_quotes",
         allow_unattempted_provider_state=True,
-        evidence_kind="direct_provider_result",
+        evidence_kind="tdx_protocol_result",
         capability="quotes",
     ),
     SmokeCaseSpec(
