@@ -14,32 +14,21 @@ from ym_stock_data.__main__ import main
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
 from ym_stock_data.smoke import run_live_smoke
+from ym_stock_data.smoke_contract import CURRENT_SMOKE_CASE_IDS
 
 
-CURRENT_CASE_IDS = (
-    "zero_realtime_market",
-    "zero_sector_index",
-    "zero_stock_snapshot",
-    "zero_stock_kline",
-    "zero_review_sentiment",
-    "zero_market_limit_state",
-    "zero_stock_event",
-    "explicit_wencai",
-    "explicit_structured_screener",
-    "tdx_probe",
-    "wind_probe",
-)
+CURRENT_CASE_IDS = CURRENT_SMOKE_CASE_IDS
 CURRENT_CASE_METADATA = {
     "explicit_structured_screener": (
         "five_source_fallback",
         "review_sentiment",
         {"sample_id": "structured_hs_a", "limit": 3},
     ),
-    "tdx_probe": ("owned_oauth", "stock_snapshot", {"codes": ["600519"]}),
+    "tdx_probe": ("owned_oauth", "stock_snapshot", {"fixture_id": "large_cap_a"}),
     "wind_probe": (
         "official_cli",
         "wind_enrichment",
-        {"capability": "company_profile", "code": "600519"},
+        {"capability": "company_profile", "fixture_id": "large_cap_a"},
     ),
 }
 
@@ -84,7 +73,7 @@ class SmokeTests(unittest.TestCase):
         output = io.StringIO()
         receipt = {
             "receipt": str(self.root / "receipt.json"),
-            "summary": {"total": 11, "status_counts": {"success": 11}},
+            "summary": {"total": 21, "status_counts": {"success": 21}},
             "cases": [{"SECRET_ROW": True}],
         }
         with patch(
@@ -103,15 +92,30 @@ class SmokeTests(unittest.TestCase):
 
     def test_live_matrix_is_sanitized_independent_and_privately_written(self):
         calls = []
-        pytdx_screener = Mock()
-        pytdx_screener.call.return_value = ProviderOutcome(
-            provider="pytdx_screener",
-            status="empty",
-            data={"datas": [], "row_count": 0},
-            quality={"returned_count": 0},
-            auth={"required": False, "status": "not_required"},
-            latency_ms=9,
-        )
+        providers = {}
+
+        def provider_loader(name):
+            if name not in providers:
+                provider = Mock()
+                container = {
+                    "tdx_quotes": {"items": []},
+                    "tdx_kline": {"bars": []},
+                    "tdx_report": {"reports": []},
+                    "tdx_notice": {"filings": []},
+                    "tdx_news": {"items": []},
+                    "wind_mcp": {"items": []},
+                    "wind_documents": {"filings": []},
+                }.get(name, {"datas": [], "row_count": 0})
+                provider.call.return_value = ProviderOutcome(
+                    provider=name,
+                    status="empty",
+                    data=container,
+                    quality={"returned_count": 0},
+                    auth={"required": False, "status": "not_required"},
+                    latency_ms=9,
+                )
+                providers[name] = provider
+            return providers[name]
 
         def fake_query(intent, **params):
             calls.append((intent, params))
@@ -123,15 +127,16 @@ class SmokeTests(unittest.TestCase):
             "providers": {
                 "tdx_mcp": {"status": "auth_missing"},
                 "wind_mcp": {"status": "configured_unverified"},
+                "iwencai_openapi": {"status": "configured_unverified"},
+                "pywencai": {"status": "configured_unverified"},
+                "pytdx_screener": {"status": "configured_unverified"},
             }
         }
         receipt = run_live_smoke(
             output_dir=self.root,
             query_fn=fake_query,
             diagnostics_fn=lambda: diagnostics,
-            provider_loader=lambda name: pytdx_screener
-            if name == "pytdx_screener"
-            else (_ for _ in ()).throw(AssertionError("TDX must not run")),
+            provider_loader=provider_loader,
             now_fn=lambda: datetime(2026, 7, 29, 12, 34, 56, tzinfo=TZ_SHANGHAI),
             case_timeout_sec=1,
             total_timeout_sec=20,
@@ -141,8 +146,8 @@ class SmokeTests(unittest.TestCase):
         report = json.loads(path.read_text(encoding="utf-8"))
         serialized = json.dumps(report, ensure_ascii=False)
         self.assertEqual("2", report["schema_version"])
-        self.assertEqual("five-source-structured-v1", report["baseline"])
-        self.assertEqual(11, len(report["cases"]))
+        self.assertEqual("five-source-capabilities-v1", report["baseline"])
+        self.assertEqual(21, len(report["cases"]))
         self.assertEqual(CURRENT_CASE_IDS, tuple(case["case_id"] for case in report["cases"]))
         for case_id, (category, intent, params) in CURRENT_CASE_METADATA.items():
             case = next(item for item in report["cases"] if item["case_id"] == case_id)
@@ -161,12 +166,8 @@ class SmokeTests(unittest.TestCase):
             "explicit_structured_screener",
             {case["case_id"] for case in report["cases"]},
         )
-        self.assertEqual(9, len(calls))
-        self.assertEqual("wind_enrichment", calls[-1][0])
-        pytdx_screener.call.assert_called_once_with(
-            "review_sentiment",
-            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
-        )
+        self.assertEqual(8, len(calls))
+        self.assertEqual(2, providers["pytdx_screener"].call.call_count)
         for forbidden in (
             "SECRET_ROW",
             "SECRET_EXCEPTION",

@@ -362,10 +362,18 @@ def _failure_quality(intent: str, params: dict, status: str, count: int) -> dict
     return quality
 
 
-def query(intent: str, **params) -> dict:
-    """Resolve one canonical intent through semantically compatible providers."""
+def _query_with(
+    intent: str,
+    params: dict,
+    *,
+    provider_loader: Callable[[str], object] | None = None,
+    state_loader: Callable[[], ProviderState] | None = None,
+) -> dict:
+    """Canonical router core with private, test/smoke-only dependency injection."""
 
     call_params = dict(params)
+    provider_loader = provider_loader or _provider_for
+    state_loader = state_loader or _provider_state
     spec: RouteSpec = route_for(intent, call_params)
     _validate_params(intent, call_params)
     attempts: list[ProviderAttempt] = []
@@ -379,12 +387,12 @@ def query(intent: str, **params) -> dict:
     observed_auth = None
 
     for provider_index, provider_name in enumerate(spec.providers):
-        breaker = _provider_state().active_breaker(provider_name)
+        breaker = state_loader().active_breaker(provider_name)
         if breaker:
             attempts.append(ProviderAttempt(provider_name, "breaker_open", breaker["error_code"], 0))
             continue
         try:
-            outcome = _provider_for(provider_name).call(intent, dict(call_params))
+            outcome = provider_loader(provider_name).call(intent, dict(call_params))
         except (TimeoutError, socket.timeout):
             outcome = ProviderOutcome(provider_name, "timeout", error_code="TIMEOUT")
         except ImportError:
@@ -495,3 +503,9 @@ def query(intent: str, **params) -> dict:
         fetched_at=fetched_at,
         auth=auth if provider_used is not None else observed_auth or auth,
     )
+
+
+def query(intent: str, **params) -> dict:
+    """Resolve one canonical intent through semantically compatible providers."""
+
+    return _query_with(intent, params)

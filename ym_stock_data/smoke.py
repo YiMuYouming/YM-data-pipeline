@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .api import _provider_for, query
+from .api import _provider_for, _query_with, query
 from .contracts import ATTEMPT_STATUSES, RESULT_STATUSES, TZ_SHANGHAI
 from .doctor import collect_diagnostics
 from .providers.base import ProviderOutcome
@@ -58,7 +58,9 @@ def _deadline(seconds: float):
             signal.setitimer(signal.ITIMER_REAL, *previous_timer)
 
 
-def _safe_attempts(value: object) -> list[dict]:
+def _safe_attempts(
+    value: object, *, injected_providers: frozenset[str] = frozenset()
+) -> list[dict]:
     if not isinstance(value, list):
         return []
     attempts = []
@@ -78,12 +80,15 @@ def _safe_attempts(value: object) -> list[dict]:
                 "status": status,
                 "error_code": error_code,
                 "latency_ms": latency_ms,
+                "origin": "injected" if provider in injected_providers else "live",
             }
         )
     return attempts
 
 
-def summarize_query_result(result: object) -> dict:
+def summarize_query_result(
+    result: object, *, injected_providers: frozenset[str] = frozenset()
+) -> dict:
     """Project a canonical result to non-business smoke metadata."""
 
     meta = result.get("_meta") if isinstance(result, dict) else None
@@ -94,12 +99,15 @@ def summarize_query_result(result: object) -> dict:
             "attempts": [],
             "row_count": 0,
             "error_code": "INVALID_RESULT",
+            "protocol_evidence": None,
         }
     status = meta.get("status")
     if status not in RESULT_STATUSES:
         status = "error"
     provider = _safe_enum(meta.get("provider_used"))
-    attempts = _safe_attempts(meta.get("attempts"))
+    attempts = _safe_attempts(
+        meta.get("attempts"), injected_providers=injected_providers
+    )
     quality = meta.get("quality")
     count = quality.get("returned_count") if isinstance(quality, dict) else 0
     row_count = count if isinstance(count, int) and count >= 0 else 0
@@ -117,7 +125,39 @@ def summarize_query_result(result: object) -> dict:
         "attempts": attempts,
         "row_count": row_count,
         "error_code": error_code,
+        "protocol_evidence": None,
     }
+
+
+_PROTOCOL_KEYS = frozenset(
+    {
+        "initialize",
+        "tools_list",
+        "schema",
+        "read_only",
+        "tool_call",
+        "page_count",
+        "session_count",
+        "refresh_count",
+        "call_count",
+    }
+)
+
+
+def _safe_protocol(value: object) -> dict | None:
+    if not isinstance(value, dict) or set(value) != _PROTOCOL_KEYS:
+        return None
+    projected = {}
+    for key in ("initialize", "tools_list", "schema", "read_only", "tool_call"):
+        if value[key] not in {"pass", "fail"}:
+            return None
+        projected[key] = value[key]
+    for key in ("page_count", "session_count", "refresh_count", "call_count"):
+        item = value[key]
+        if not isinstance(item, int) or isinstance(item, bool) or item < 0:
+            return None
+        projected[key] = item
+    return projected
 
 
 def _summarize_outcome(outcome: ProviderOutcome) -> dict:
@@ -137,10 +177,14 @@ def _summarize_outcome(outcome: ProviderOutcome) -> dict:
                 "status": status,
                 "error_code": error_code,
                 "latency_ms": max(0, int(outcome.latency_ms or 0)),
+                "origin": "live",
             }
         ],
         "row_count": count,
         "error_code": error_code,
+        "protocol_evidence": _safe_protocol(
+            (outcome.provenance or {}).get("smoke_protocol")
+        ),
     }
 
 
@@ -160,7 +204,21 @@ def _provider_state_payload(name: str, diagnostics_fn: Callable[[], dict]) -> di
         "attempts": [],
         "row_count": 0,
         "error_code": None,
+        "protocol_evidence": None,
     }
+
+
+class _NoBreakers:
+    def active_breaker(self, _provider_name: str):
+        return None
+
+
+class _InjectedProvider:
+    def __init__(self, outcome: ProviderOutcome):
+        self.outcome = outcome
+
+    def call(self, _intent: str, _params: dict) -> ProviderOutcome:
+        return self.outcome
 
 
 def _atomic_write(report: dict, output_dir: Path, now: datetime) -> Path:
@@ -200,36 +258,68 @@ def run_live_smoke(
         raise ValueError("smoke timeouts must be positive")
     started_at = now_fn()
     started = time.monotonic()
+    try:
+        diagnostics = diagnostics_fn()
+    except Exception:
+        diagnostics = {"providers": {}}
 
     def canonical(intent: str, **params):
         return lambda: summarize_query_result(query_fn(intent, **params))
 
-    def tdx_probe():
-        state = _provider_state_payload("tdx_mcp", diagnostics_fn)
+    def direct_probe(
+        provider_name: str,
+        intent: str,
+        params: dict,
+        *,
+        diagnostic_name: str | None = None,
+    ):
+        state = _provider_state_payload(
+            diagnostic_name or provider_name, lambda: diagnostics
+        )
         if state["status"] not in {"configured_unverified", "ready"}:
             return state
-        outcome = provider_loader("tdx_quotes").call(
-            "stock_snapshot", {"codes": ["600519"]}
-        )
+        outcome = provider_loader(provider_name).call(intent, dict(params))
         return _summarize_outcome(outcome)
 
     def pytdx_screener_probe():
-        outcome = provider_loader("pytdx_screener").call(
+        return direct_probe(
+            "pytdx_screener",
             "review_sentiment",
             {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
         )
-        return _summarize_outcome(outcome)
 
-    def wind_probe():
-        state = _provider_state_payload("wind_mcp", diagnostics_fn)
-        if state["status"] not in {"configured_unverified", "ready"}:
-            return state
+    def controlled_fallback():
+        injected = {
+            "iwencai_openapi": ProviderOutcome(
+                "iwencai_openapi", "auth_error", error_code="HTTP_401",
+                auth={"required": True, "status": "expired"},
+            ),
+            "pywencai": ProviderOutcome(
+                "pywencai", "provider_error", error_code="PYWENCAI_PROVIDER_ERROR"
+            ),
+            "tdx_screener": ProviderOutcome(
+                "tdx_screener", "auth_error", error_code="AUTH_EXPIRED",
+                auth={"required": True, "status": "expired"},
+            ),
+            "wind_screener": ProviderOutcome(
+                "wind_screener", "empty", data={"datas": [], "row_count": 0},
+                quality={"returned_count": 0},
+            ),
+        }
+
+        def controlled_loader(name: str):
+            if name in injected:
+                return _InjectedProvider(injected[name])
+            return provider_loader(name)
+
+        result = _query_with(
+            "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+            provider_loader=controlled_loader,
+            state_loader=_NoBreakers,
+        )
         return summarize_query_result(
-            query_fn(
-                "wind_enrichment",
-                capability="company_profile",
-                code="600519",
-            )
+            result, injected_providers=frozenset(injected)
         )
 
     callbacks = {
@@ -248,8 +338,55 @@ def run_live_smoke(
             "review_sentiment", query="A股 非ST 涨停", limit=3
         ),
         "explicit_structured_screener": pytdx_screener_probe,
-        "tdx_probe": tdx_probe,
-        "wind_probe": wind_probe,
+        "tdx_probe": lambda: direct_probe(
+            "tdx_quotes", "stock_snapshot", {"codes": ["600519"]},
+            diagnostic_name="tdx_mcp",
+        ),
+        "wind_probe": lambda: direct_probe(
+            "wind_mcp", "wind_enrichment",
+            {"capability": "company_profile", "code": "600519"},
+            diagnostic_name="wind_mcp",
+        ),
+        "direct_openapi_screener": lambda: direct_probe(
+            "iwencai_openapi", "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+        ),
+        "direct_pywencai_screener": lambda: direct_probe(
+            "pywencai", "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+        ),
+        "tdx_screener_probe": lambda: direct_probe(
+            "tdx_screener", "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+            diagnostic_name="tdx_mcp",
+        ),
+        "tdx_kline_probe": lambda: direct_probe(
+            "tdx_kline", "stock_kline",
+            {"code": "600519", "period": "daily", "count": 3},
+            diagnostic_name="tdx_mcp",
+        ),
+        "tdx_report_probe": lambda: direct_probe(
+            "tdx_report", "research", {"code": "600519", "days": 30},
+            diagnostic_name="tdx_mcp",
+        ),
+        "tdx_notice_probe": lambda: direct_probe(
+            "tdx_notice", "filings", {"code": "600519", "days": 30},
+            diagnostic_name="tdx_mcp",
+        ),
+        "tdx_news_probe": lambda: direct_probe(
+            "tdx_news", "news", {"limit": 3}, diagnostic_name="tdx_mcp",
+        ),
+        "wind_screener_probe": lambda: direct_probe(
+            "wind_screener", "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+            diagnostic_name="wind_mcp",
+        ),
+        "wind_filings_probe": lambda: direct_probe(
+            "wind_documents", "filings",
+            {"code": "600519", "days": 30, "max_pages": 1},
+            diagnostic_name="wind_mcp",
+        ),
+        "canonical_five_source_fallback": controlled_fallback,
     }
     if set(callbacks) != {spec.case_id for spec in CASE_SPECS}:
         raise RuntimeError("smoke case contract drift")
@@ -265,7 +402,8 @@ def run_live_smoke(
                 "provider_used": None,
                 "attempts": [],
                 "row_count": 0,
-                "error_code": "TOTAL_TIMEOUT",
+                    "error_code": "TOTAL_TIMEOUT",
+                    "protocol_evidence": None,
             }
         else:
             try:
@@ -281,12 +419,14 @@ def run_live_smoke(
                             "status": "timeout",
                             "error_code": "SMOKE_TIMEOUT",
                             "latency_ms": 0,
+                            "origin": "live",
                         }
                     ]
                     if spec.direct_provider
                     else [],
                     "row_count": 0,
                     "error_code": "SMOKE_TIMEOUT",
+                    "protocol_evidence": None,
                 }
             except (KeyboardInterrupt, SystemExit):
                 raise
@@ -300,12 +440,14 @@ def run_live_smoke(
                             "status": "provider_error",
                             "error_code": "UNHANDLED_EXCEPTION",
                             "latency_ms": 0,
+                            "origin": "live",
                         }
                     ]
                     if spec.direct_provider
                     else [],
                     "row_count": 0,
                     "error_code": "UNHANDLED_EXCEPTION",
+                    "protocol_evidence": None,
                 }
         cases.append(
             {
@@ -313,6 +455,9 @@ def run_live_smoke(
                 "category": spec.category,
                 "intent": spec.intent,
                 "params": spec.safe_params(),
+                "direct_provider": spec.direct_provider,
+                "evidence_kind": spec.evidence_kind,
+                "capability": spec.capability,
                 **payload,
                 "latency_ms": max(0, int((time.monotonic() - case_started) * 1000)),
             }
@@ -321,6 +466,71 @@ def run_live_smoke(
     for case in cases:
         counts[case["status"]] = counts.get(case["status"], 0) + 1
     completed_at = now_fn()
+    by_id = {case["case_id"]: case for case in cases}
+
+    def passed(case_id: str, provider: str, *, protocol: bool = False) -> bool:
+        case = by_id[case_id]
+        valid = (
+            case["status"] in {"success", "degraded"}
+            and case["provider_used"] == provider
+            and case["row_count"] > 0
+            and any(
+                attempt["provider"] == provider
+                and attempt["status"] == "success"
+                and attempt["origin"] == "live"
+                for attempt in case["attempts"]
+            )
+        )
+        if not protocol:
+            return valid
+        evidence = case["protocol_evidence"]
+        return valid and isinstance(evidence, dict) and all(
+            evidence[key] == "pass"
+            for key in ("initialize", "tools_list", "schema", "read_only", "tool_call")
+        ) and all(evidence[key] >= 1 for key in ("page_count", "session_count", "call_count"))
+
+    source_status = {
+        "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
+        "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
+        "tdx": "pass" if all(
+            passed(case_id, provider, protocol=True)
+            for case_id, provider in (
+                ("tdx_probe", "tdx_quotes"),
+                ("tdx_screener_probe", "tdx_screener"),
+                ("tdx_kline_probe", "tdx_kline"),
+                ("tdx_report_probe", "tdx_report"),
+                ("tdx_notice_probe", "tdx_notice"),
+                ("tdx_news_probe", "tdx_news"),
+            )
+        ) else "fail",
+        "wind": "pass" if all(
+            passed(case_id, provider)
+            for case_id, provider in (
+                ("wind_probe", "wind_mcp"),
+                ("wind_screener_probe", "wind_screener"),
+                ("wind_filings_probe", "wind_documents"),
+            )
+        ) else "fail",
+        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
+    }
+    fallback = by_id["canonical_five_source_fallback"]
+    expected_providers = [
+        "iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"
+    ]
+    expected_statuses = ["auth_error", "provider_error", "auth_error", "empty", "success"]
+    expected_origins = ["injected", "injected", "injected", "injected", "live"]
+    chain_status = "pass" if (
+        fallback["status"] == "degraded"
+        and fallback["provider_used"] == "pytdx_screener"
+        and fallback["row_count"] > 0
+        and [item["provider"] for item in fallback["attempts"]] == expected_providers
+        and [item["status"] for item in fallback["attempts"]] == expected_statuses
+        and [item["origin"] for item in fallback["attempts"]] == expected_origins
+    ) else "fail"
+    gate_status = "pass" if (
+        all(status == "pass" for status in source_status.values())
+        and chain_status == "pass"
+    ) else "fail"
     report = {
         "schema_version": CURRENT_SMOKE_SCHEMA_VERSION,
         "baseline": CURRENT_SMOKE_BASELINE,
@@ -328,6 +538,9 @@ def run_live_smoke(
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),
         "summary": {"total": len(cases), "status_counts": counts},
+        "source_status": source_status,
+        "chain_status": chain_status,
+        "gate_status": gate_status,
         "cases": cases,
     }
     receipt = _atomic_write(report, Path(output_dir), completed_at)

@@ -347,6 +347,7 @@ class TdxMcpClient:
 
     def __init__(self, *, session_factory: Callable = _official_sdk_session):
         self.session_factory = session_factory
+        self.protocol_evidence: dict | None = None
 
     def call_tool(
         self,
@@ -357,6 +358,17 @@ class TdxMcpClient:
         if tool_name not in TOOL_ALLOWLIST:
             raise ValueError("TDX tool is not allowlisted")
         _validate_arguments(tool_name, arguments)
+        self.protocol_evidence = {
+            "initialize": "fail",
+            "tools_list": "fail",
+            "schema": "fail",
+            "read_only": "fail",
+            "tool_call": "fail",
+            "page_count": 0,
+            "session_count": 0,
+            "refresh_count": 0,
+            "call_count": 0,
+        }
         authorization = auth_manager.authorization()
         try:
             return _run_async(
@@ -365,6 +377,7 @@ class TdxMcpClient:
         except TdxForbidden:
             raise TdxForbidden("TDX MCP permission denied") from None
         except TdxUnauthorized:
+            self.protocol_evidence["refresh_count"] += 1
             refreshed = auth_manager.authorization(
                 force_refresh=True,
                 rejected_authorization=authorization,
@@ -386,16 +399,30 @@ class TdxMcpClient:
     ) -> dict:
         try:
             async with self.session_factory(authorization) as session:
+                self.protocol_evidence["session_count"] += 1
                 await session.initialize()
-                await self._gate_tool(session, tool_name)
+                self.protocol_evidence["initialize"] = "pass"
+                page_count = await self._gate_tool(session, tool_name)
+                self.protocol_evidence.update(
+                    {
+                        "tools_list": "pass",
+                        "schema": "pass",
+                        "read_only": "pass",
+                        "page_count": self.protocol_evidence["page_count"]
+                        + page_count,
+                    }
+                )
+                self.protocol_evidence["call_count"] += 1
                 result = await session.call_tool(tool_name, dict(arguments))
-                return _extract_payload(result)
+                payload = _extract_payload(result)
+                self.protocol_evidence["tool_call"] = "pass"
+                return payload
         except Exception as error:
             _raise_sanitized_transport(error)
         raise AssertionError("unreachable")
 
     @staticmethod
-    async def _gate_tool(session, tool_name: str) -> None:
+    async def _gate_tool(session, tool_name: str) -> int:
         cursor = None
         for _page in range(10):
             params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
@@ -407,7 +434,7 @@ class TdxMcpClient:
                 name = _tool_value(item, "name")
                 if name == tool_name:
                     _validate_tool_schema(item)
-                    return
+                    return _page + 1
             cursor = _tool_value(result, "next_cursor")
             if cursor is None:
                 cursor = _tool_value(result, "nextCursor")
@@ -514,6 +541,9 @@ class TdxMcpProvider:
                 "reason_codes": [],
             },
             auth={"required": True, "status": "ok"},
+            provenance={"smoke_protocol": dict(self.client.protocol_evidence)}
+            if isinstance(getattr(self.client, "protocol_evidence", None), dict)
+            else None,
         )
 
     def _failure(
