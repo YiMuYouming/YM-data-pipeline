@@ -623,7 +623,9 @@ class TdxOwnedAuth:
         if not isinstance(servers, list) or len(servers) != 1:
             raise TdxOAuthProtocolError("TDX OAuth authorization server is ambiguous")
         issuer = _validate_https_url(servers[0], "issuer")
-        _validate_scope_from_supported(resource.get("scopes_supported"))
+        resource_scopes = resource.get("scopes_supported")
+        if resource_scopes is not None:
+            _validate_scope_from_supported(resource_scopes)
         metadata_url = f"{issuer.rstrip('/')}/.well-known/oauth-authorization-server"
         metadata = self.request_json("GET", metadata_url)
         if metadata.get("issuer") != issuer:

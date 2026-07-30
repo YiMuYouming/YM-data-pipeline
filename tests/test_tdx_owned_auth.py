@@ -437,6 +437,52 @@ class OwnedOAuthTests(unittest.TestCase):
         )
         self.assertEqual(READ_SCOPE, self.store.load()["scope"])
 
+    def test_login_accepts_resource_metadata_without_scopes_when_server_has_read(self):
+        callback = FakeCallback()
+        server = FakeAuthorizationServer(callback)
+        original_request = server.request_json
+
+        def resource_without_scopes(*args, **kwargs):
+            payload = original_request(*args, **kwargs)
+            if args[1] == RESOURCE_METADATA_URL:
+                payload = dict(payload)
+                payload.pop("scopes_supported")
+            return payload
+
+        auth, _server, opened = self.make_auth(callback, server=server)
+        auth.request_json = resource_without_scopes
+
+        def browser_open(url):
+            opened.append(url)
+            state = urllib.parse.parse_qs(
+                urllib.parse.urlsplit(url).query
+            )["state"][0]
+            callback.result = {"code": "CODE", "state": state}
+
+        auth.browser_open = browser_open
+
+        self.assertEqual("configured_unverified", auth.login(timeout=1))
+        self.assertEqual(1, len(opened))
+
+    def test_login_still_requires_authorization_server_to_advertise_read_scope(self):
+        callback = FakeCallback()
+        server = FakeAuthorizationServer(callback)
+        original_request = server.request_json
+
+        def server_without_read_scope(*args, **kwargs):
+            payload = original_request(*args, **kwargs)
+            if args[1] == f"{ISSUER}/.well-known/oauth-authorization-server":
+                payload = dict(payload)
+                payload.pop("scopes_supported")
+            return payload
+
+        auth, _server, _opened = self.make_auth(callback, server=server)
+        auth.request_json = server_without_read_scope
+
+        with self.assertRaises(TdxScopeError):
+            auth.login(timeout=1)
+        self.assertEqual("auth_missing", self.store.probe())
+
     def test_login_fails_closed_on_wrong_state_cancel_timeout_or_write_scope(self):
         cases = (
             (
