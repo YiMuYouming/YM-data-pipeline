@@ -137,6 +137,29 @@ class CompilerTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertIsNone(compile_pytdx_screener_query(query))
 
+    def test_price_and_pct_numbers_use_the_reviewed_bounded_grammar(self):
+        for query in (
+            "沪深A股 非停牌 最新价>=0",
+            "沪深A股 非停牌 最新价<=999999.1234",
+            "沪深A股 非停牌 涨幅>=+10.1234%",
+            "沪深A股 非停牌 涨幅<=-10.1234%",
+        ):
+            with self.subTest(valid=query):
+                self.assertIsNotNone(compile_pytdx_screener_query(query))
+        for query in (
+            "沪深A股 非停牌 最新价>=+10",
+            "沪深A股 非停牌 最新价>.5",
+            "沪深A股 非停牌 最新价>1.",
+            "沪深A股 非停牌 最新价>1000000",
+            "沪深A股 非停牌 最新价>1.12345",
+            "沪深A股 非停牌 最新价=10",
+            "沪深A股 非停牌 涨幅=1%",
+            "沪深A股 非停牌 涨幅>1000000%",
+            "沪深A股 非停牌 涨幅>1.12345%",
+        ):
+            with self.subTest(invalid=query):
+                self.assertIsNone(compile_pytdx_screener_query(query))
+
     def test_rejects_duplicate_filters_for_the_same_numeric_field(self):
         for query in (
             "沪深A股 非停牌 最新价>=10 最新价<20",
@@ -495,6 +518,11 @@ class ProviderTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source.lower())
+        module_source = (
+            ROOT / "ym_stock_data/providers/pytdx_screener.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("import math", module_source)
+        self.assertNotIn("def _number", module_source)
 
 
 class RoutingAndContractTests(unittest.TestCase):
