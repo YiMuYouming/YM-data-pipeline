@@ -94,6 +94,15 @@ _PROVIDER_STATES = frozenset(
 _CASE_STATUSES = _ATTEMPT_STATUSES | _PROVIDER_STATES | frozenset(
     {"degraded", "error"}
 )
+_DIRECT_SHORT_CIRCUIT_STATES = frozenset(
+    {
+        "auth_missing",
+        "auth_expired",
+        "dependency_missing",
+        "breaker_open",
+        "unavailable",
+    }
+)
 _SAFE_PARAM_KEYS = frozenset(
     {"sample_id", "code", "codes", "event", "period", "count", "limit", "capability"}
 )
@@ -495,15 +504,26 @@ def _validate_direct_provider(
         _raise("INVALID_DIRECT_PROVIDER")
     if any(attempt["provider"] != expected_provider for attempt in attempts):
         _raise("INVALID_DIRECT_PROVIDER")
-    if provider_used == expected_provider and not attempts:
-        _raise("INVALID_DIRECT_PROVIDER")
-    if case["status"] in {"success", "empty", "degraded"}:
-        if provider_used != expected_provider or not attempts:
+    terminal_attempt = {
+        "success": "success",
+        "degraded": "success",
+        "empty": "empty",
+    }.get(case["status"])
+    if terminal_attempt is not None:
+        if provider_used != expected_provider or not any(
+            attempt["status"] == terminal_attempt for attempt in attempts
+        ):
             _raise("INVALID_DIRECT_PROVIDER")
+        return
+    if provider_used is not None:
+        _raise("INVALID_DIRECT_PROVIDER")
     if not attempts:
         if case["error_code"] == "TOTAL_TIMEOUT":
             return
-        if allow_unattempted_provider_state and case["status"] in _PROVIDER_STATES:
+        if (
+            allow_unattempted_provider_state
+            and case["status"] in _DIRECT_SHORT_CIRCUIT_STATES
+        ):
             return
         _raise("INVALID_DIRECT_PROVIDER")
 
