@@ -87,21 +87,91 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual(1, len(first.calls))
         self.assertEqual([], second.calls)
 
-    def test_semantically_valid_empty_stops_the_chain(self):
+    def test_explicit_screen_openapi_empty_continues_to_pywencai_success(self):
         first = FakeProvider(
             "iwencai_openapi",
             [outcome("iwencai_openapi", "empty", data={"datas": [], "row_count": 0})],
         )
         second = FakeProvider(
             "pywencai",
-            [AssertionError("valid empty must stop")],
+            [
+                outcome(
+                    "pywencai",
+                    "success",
+                    data={"datas": [{"股票代码": "600519"}], "row_count": 1},
+                )
+            ],
         )
         with self.provider_patch({"iwencai_openapi": first, "pywencai": second}):
+            result = query("review_sentiment", query="白酒股", limit=20)
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("pywencai", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["empty", "success"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+
+    def test_explicit_screen_two_empties_continue_to_tdx_success(self):
+        providers = {
+            "iwencai_openapi": FakeProvider(
+                "iwencai_openapi",
+                [
+                    outcome(
+                        "iwencai_openapi",
+                        "empty",
+                        data={"datas": [], "row_count": 0},
+                    )
+                ],
+            ),
+            "pywencai": FakeProvider(
+                "pywencai",
+                [outcome("pywencai", "empty", data={"datas": [], "row_count": 0})],
+            ),
+            "tdx_screener": FakeProvider(
+                "tdx_screener",
+                [
+                    outcome(
+                        "tdx_screener",
+                        "success",
+                        data={"datas": [{"股票代码": "600519"}], "row_count": 1},
+                    )
+                ],
+            ),
+        }
+        with self.provider_patch(providers):
+            result = query("review_sentiment", query="白酒股", limit=20)
+
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("tdx_screener", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["empty", "empty", "success"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+
+    def test_explicit_screen_all_compatible_providers_empty_is_auditable(self):
+        providers = {
+            name: FakeProvider(
+                name,
+                [outcome(name, "empty", data={"datas": [], "row_count": 0})],
+            )
+            for name in ("iwencai_openapi", "pywencai", "tdx_screener")
+        }
+        with self.provider_patch(providers):
             result = query("review_sentiment", query="没有匹配股票", limit=20)
 
         self.assertEqual("empty", result["_meta"]["status"])
-        self.assertEqual("iwencai_openapi", result["_meta"]["provider_used"])
-        self.assertEqual([], second.calls)
+        self.assertEqual("tdx_screener", result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["iwencai_openapi", "pywencai", "tdx_screener"],
+            result["_meta"]["source_chain"],
+        )
+        self.assertEqual(
+            ["empty", "empty", "empty"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+        self.assertEqual("empty", result["_meta"]["quality"]["status"])
+        self.assertEqual(0, result["_meta"]["quality"]["returned_count"])
 
     def test_invalid_empty_continues_to_compatible_provider(self):
         first = FakeProvider(
@@ -319,12 +389,12 @@ class PublicApiTests(unittest.TestCase):
             (
                 "empty",
                 {
-                    "iwencai_openapi": FakeProvider(
-                        "iwencai_openapi",
-                        [outcome("iwencai_openapi", "empty", data={"datas": [], "row_count": 0})],
+                    "ths_industry": FakeProvider(
+                        "ths_industry",
+                        [outcome("ths_industry", "empty", data={"items": []})],
                     )
                 },
-                ("review_sentiment", {"query": "没有匹配股票"}),
+                ("sector_index", {"names": ["不存在板块"]}),
             ),
             (
                 "error",

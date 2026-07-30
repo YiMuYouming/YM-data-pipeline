@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+EMPTY_POLICY_STOP = "stop"
+EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED = "continue_until_exhausted"
+
+
 @dataclass(frozen=True)
 class RouteSpec:
     intent: str
@@ -12,6 +16,7 @@ class RouteSpec:
     data_scope: str
     trade_usage: str
     max_age_sec: int
+    empty_policy: str = EMPTY_POLICY_STOP
 
 
 _TRADE_USAGE = "辅助，不单独触发交易"
@@ -109,6 +114,7 @@ _REVIEW_SENTIMENT_QUERY = RouteSpec(
     data_scope="问财自然语言选股口径",
     trade_usage=_TRADE_USAGE,
     max_age_sec=1800,
+    empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
 )
 
 

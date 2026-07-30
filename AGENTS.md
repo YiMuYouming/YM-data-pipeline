@@ -24,7 +24,7 @@ print(result["_meta"])
 
 新代码只调用 `query(intent, **params)`，不得直接 import `ym_stock_data.sources` 或 `ym_stock_data.v2`。结果统一使用 contract 1.0：`data` 加 `_meta`，其中必须保留 `status`、真实 `provider_used`、完整 `attempts`、`quality`、`fetched_at` 与稳定错误码。
 
-正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。仅语义有效的空集终止路由；畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
+正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集默认终止路由；只有带显式 `query` 的 `review_sentiment` 按 RouteSpec 的 `continue_until_exhausted` 策略继续穷尽自然语言 screener，直到非空成功或兼容源耗尽。穷尽不保证有结果，也不允许 Wind、行情/宽度/K 线源冒充自然语言 screener。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
 
 V1 `fetch()` 与 V2 `resolve()` 仅是 compatibility wrapper：允许维持旧 shape，但不得拥有第二条 provider chain。不要在新文档或脚本中推荐它们，也不要用强制 `DeprecationWarning` 破坏消费者。
 

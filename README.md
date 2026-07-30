@@ -66,7 +66,7 @@ PY
 }
 ```
 
-仅语义有效的空集会终止路由；无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
+合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会在 OpenAPI、pywencai、TDX screener 之间按既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。穷尽不保证一定有结果，也不代表无差别轮询：Wind 和只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
 
 ## Provider ownership 与路由边界
 
@@ -86,10 +86,10 @@ TDX route provider 只在所有排在其前的语义兼容源失败后调用；�
 | `eastmoney_research` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `research` 第一源 | 允许；失败后进入 `tdx_report` |
 | `cninfo` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `filings` 第一源 | 允许；失败后进入 `tdx_notice` |
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
-| `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败后进入 `pywencai` |
-| `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败后 |
+| `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败或合法空集后进入 `pywencai` |
+| `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败或合法空集后 |
 | `tdx_mcp` | owned OAuth；`./ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
-| `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败后 |
+| `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败或合法空集后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
 | `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日周月及分钟 `stock_kline` 第三源 | 允许；仅在对应周期前置兼容源失败后 |
 | `tdx_report` | owned OAuth；同上 | 独立能力状态 | `research` 第二源 | 允许；仅在 `eastmoney_research` 失败后 |

@@ -123,6 +123,12 @@ class V2QualityTests(unittest.TestCase):
         with patch(
             "ym_stock_data.providers.iwencai.IWenCaiOpenAPIProvider.call",
             return_value=iwencai_outcome(raw),
+        ), patch(
+            "ym_stock_data.providers.iwencai.PyWenCaiProvider.call",
+            return_value=iwencai_outcome(raw, provider="pywencai"),
+        ), patch(
+            "ym_stock_data.providers.tdx_mcp.TdxMcpProvider.call",
+            return_value=iwencai_outcome(raw, provider="tdx_screener"),
         ):
             result = resolve(
                 "review_sentiment",
@@ -147,7 +153,14 @@ class V2QualityTests(unittest.TestCase):
 
         query_meta = result["data"]["queries"][0]["_meta"]
         self.assertEqual(quality, query_meta["quality"])
-        self.assertEqual(["iwencai_openapi"], query_meta["source_chain"])
+        self.assertEqual(
+            ["iwencai_openapi", "pywencai", "tdx_screener"],
+            query_meta["source_chain"],
+        )
+        self.assertEqual(
+            ["empty", "empty", "empty"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
 
     def test_review_sentiment_breadth_failure_uses_compatible_limit_pool(self):
         from ym_stock_data.v2 import resolve

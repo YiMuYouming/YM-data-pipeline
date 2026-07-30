@@ -19,7 +19,7 @@ from .providers.wind_mcp import (
     WindMcpProvider,
 )
 from .quality import assess_quality
-from .routing import RouteSpec, route_for
+from .routing import EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED, RouteSpec, route_for
 from .sources.stock_events import EVENTS as STOCK_EVENTS
 
 
@@ -336,7 +336,7 @@ def query(intent: str, **params) -> dict:
     fetched_at = None
     auth = None
 
-    for provider_name in spec.providers:
+    for provider_index, provider_name in enumerate(spec.providers):
         breaker = _provider_state().active_breaker(provider_name)
         if breaker:
             attempts.append(ProviderAttempt(provider_name, "breaker_open", breaker["error_code"], 0))
@@ -390,6 +390,21 @@ def query(intent: str, **params) -> dict:
                 )
                 continue
             terminal = "empty" if is_empty else "success"
+            if (
+                terminal == "empty"
+                and spec.empty_policy == EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED
+                and provider_index < len(spec.providers) - 1
+            ):
+                attempts.append(
+                    ProviderAttempt(
+                        actual,
+                        terminal,
+                        None,
+                        max(0, int(outcome.latency_ms)),
+                    )
+                )
+                auth = outcome.auth or auth
+                continue
             data, final_quality = normalize_success(
                 intent,
                 call_params,

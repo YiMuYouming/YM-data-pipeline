@@ -10,6 +10,7 @@ class RoutingTests(unittest.TestCase):
             ("iwencai_openapi", "pywencai", "tdx_screener"),
             spec.providers,
         )
+        self.assertEqual("continue_until_exhausted", spec.empty_policy)
 
     def test_default_sentiment_never_calls_natural_language_sources(self):
         spec = route_for("review_sentiment", {})
@@ -17,6 +18,11 @@ class RoutingTests(unittest.TestCase):
             ("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
             spec.providers,
         )
+        self.assertEqual("stop", spec.empty_policy)
+
+    def test_sector_index_keeps_terminal_empty_policy(self):
+        spec = route_for("sector_index", {"names": ["不存在板块"]})
+        self.assertEqual("stop", spec.empty_policy)
 
     def test_wind_is_not_a_realtime_market_fallback(self):
         self.assertNotIn("wind_mcp", route_for("realtime_market", {}).providers)
