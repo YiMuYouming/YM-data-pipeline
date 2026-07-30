@@ -56,11 +56,15 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             with self.subTest(stale=stale):
                 self.assertNotIn(stale, install)
         for current in (
-            "唯一明确候选",
-            "最小 TDX OAuth/client 元数据",
-            "原子写入",
-            "`0600`",
-            "不会自动扫描、导入或打印凭据",
+            "./ym-data auth login-tdx",
+            "./ym-data auth status-tdx",
+            "macOS Keychain",
+            "显式 `--store file`",
+            "目录 `0700`",
+            "文件和锁 `0600`",
+            "不会读取或导入其它应用的凭据",
+            "PKCE S256",
+            "`mcp.read`",
             "`auth_missing`",
             "`tools/list`",
             "只读小调用",
@@ -81,7 +85,8 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             "owned OAuth",
             "official CLI",
             "./ym-data setup pywencai",
-            "./ym-data auth import-tdx --from-workbuddy",
+            "./ym-data auth login-tdx",
+            "./ym-data auth status-tdx",
             "wind_enrichment",
             "automatic fallback",
         ):
@@ -121,6 +126,16 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertNotIn("`ready`", pywencai_row)
         self.assertIn("runtime installed", readme)
         self.assertIn("不证明在线", readme)
+        for relative in (
+            "README.md",
+            "docs/INSTALL.md",
+            "AGENTS.md",
+            "docs/TDX-MCP-备用源验证清单.md",
+        ):
+            with self.subTest(no_external_credential_import=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8").lower()
+                self.assertNotIn("workbuddy", text)
+                self.assertNotIn("import-tdx", text)
 
     def test_current_docs_lock_wind_screener_and_restarted_acceptance_scope(self):
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

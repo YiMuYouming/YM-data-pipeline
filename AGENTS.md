@@ -32,6 +32,12 @@ V1 `fetch()` 与 V2 `resolve()` 仅是 compatibility wrapper：允许维持旧 s
 
 - 零鉴权源优先；TDX owned OAuth 只在兼容源失败后调用固定六项只读能力。
 - TDX 不接 realtime/default breadth/sector，不调用任意 tool，不做交易写入。
+- TDX 登录只走本仓库 `./ym-data auth login-tdx`；状态只走离线
+  `./ym-data auth status-tdx`。默认 macOS Keychain，文件 fallback 必须显式
+  `--store file`，不得读取或导入其它应用凭据。
+- TDX OAuth 只允许 `mcp.read`，使用 authorization-code + PKCE S256 和 state
+  校验；403 不扩 scope。MCP 固定使用官方 `mcp==2.0.0` Streamable HTTP，
+  `tools/list` 六项 schema gate 通过前不得 `tools/call`。
 - Wind official CLI 仅支持显式 `wind_enrichment`、严格验证后的 `filings` fallback，以及显式 `review_sentiment(query=...)` 的专用 `wind_screener`；后者只调用 `stock_data.search_stocks`，沪深股票族与 `_all_share_codes` 一致，北交所当前仅允许 `920xxx.BJ`。不得让泛化 `wind_mcp` 接行情、K 线、分钟、新闻、泛选股或 `stock_event`。
 - WenCai OpenAPI 401/403/429 使用跨进程 breaker；pywencai 依赖缺失与 provider error 必须区分。
 - Key、token、credentials 不进入 argv、日志、doctor、CLI 输出、receipt 或 Git。

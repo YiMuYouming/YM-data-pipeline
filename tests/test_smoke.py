@@ -115,6 +115,8 @@ class SmokeTests(unittest.TestCase):
             "SECRET_ROW",
             "SECRET_EXCEPTION",
             "token",
+            "response",
+            "stderr",
             "query-row",
             "A股 非ST 涨停",
         ):

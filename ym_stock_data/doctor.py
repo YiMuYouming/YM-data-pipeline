@@ -119,20 +119,3 @@ def setup_pywencai(
             stderr=subprocess.DEVNULL,
         )
     return {"status": "ready", "target": str(target)}
-
-
-def report_tdx_import_unavailable(
-    *,
-    target: Path = TDX_AUTH_PATH,
-    from_workbuddy: bool = False,
-    emit: Callable[[str], object] = print,
-) -> dict:
-    """Task 8 boundary: report target, but never discover or write credentials."""
-
-    target = Path(target).expanduser()
-    emit(str(target))
-    return {
-        "status": "unavailable",
-        "action": "TDX credential import is implemented in Task 9",
-        "requested_from_workbuddy": bool(from_workbuddy),
-    }

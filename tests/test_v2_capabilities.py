@@ -61,6 +61,24 @@ class CapabilityManifestTests(unittest.TestCase):
         tdx = manifest["providers"]["tdx_mcp"]
         self.assertTrue(tdx["registered"])
         self.assertEqual("registered_optional", tdx["status"])
+        self.assertEqual("pipeline_owned_oauth", tdx["auth_ownership"])
+        self.assertEqual(["mcp.read"], tdx["oauth_scopes"])
+        self.assertEqual("macos_keychain", tdx["credential_store_default"])
+        self.assertEqual("private_file_0600", tdx["credential_store_fallback"])
+        self.assertEqual("streamable_http", tdx["transport"])
+        self.assertEqual("mcp==2.0.0", tdx["sdk"])
+        self.assertTrue(tdx["tools_list_schema_gate"])
+        self.assertEqual(
+            [
+                "tdx_kline",
+                "tdx_quotes",
+                "tdx_screener",
+                "wenda_news_query",
+                "wenda_notice_query",
+                "wenda_report_query",
+            ],
+            tdx["capabilities"],
+        )
         self.assertEqual(tdx, manifest["manual_sources"]["tdx_mcp"])
 
     def test_manifest_exposes_wind_from_registered_routes(self):

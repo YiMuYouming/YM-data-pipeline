@@ -39,13 +39,41 @@ uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选�
 
 ## TDX profile
 
-TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代源。凭据导入必须显式执行：
+TDX 是管道自有 OAuth 凭据下的只读增强源，不是通用自动替代源。首次登录必须由弈沐显式执行：
 
 ```bash
-./ym-data auth import-tdx --from-workbuddy
+./ym-data auth status-tdx
+./ym-data auth login-tdx
+./ym-data auth status-tdx
 ```
 
-`auth import-tdx --from-workbuddy` 只读取唯一明确候选；候选不唯一或包含多条 TDX 凭据时 fail closed。命令仅提取刷新所需的最小 TDX OAuth/client 元数据，原子写入 `~/.ym-stock-data/auth/tdx.json` 并设为 `0600`。它不会自动扫描、导入或打印凭据。未导入凭据时，doctor 报告 `auth_missing`；在真实 `tools/list` 与一个白名单只读小调用成功前，不称为在线。
+`login-tdx` 由本管道完成 protected-resource / authorization-server
+discovery、DCR、authorization-code、PKCE S256、localhost callback 和 state
+校验。浏览器只在显式登录命令中打开，且只请求 `mcp.read`；返回其它 scope
+（尤其 `mcp.write`）会 fail closed。默认 secure store 是 macOS Keychain，secret
+不会进入 argv。只有明确选择显式 `--store file` 时才启用文件 fallback：目录 `0700`、文件和锁 `0600`、原子写入，并用跨线程/跨进程锁串行 refresh。
+
+文件 fallback 示例（路径必须由调用者明确给出或接受项目默认值）：
+
+```bash
+./ym-data auth login-tdx --store file
+./ym-data auth status-tdx --store file
+```
+
+管道不会读取或导入其它应用的凭据，也不会扫描外部 credential 目录。缺少
+owned credential 时，doctor 报告 `auth_missing`；过期且不可 refresh 时报告
+`auth_expired`。doctor 和 `status-tdx` 都离线，只输出脱敏状态。401 只强制
+refresh 一次并重建 MCP session，最多重试一次；403 是 permission failure，
+不会扩 scope 或伪装 expired。
+
+MCP 使用固定生产依赖 `mcp==2.0.0` 的官方 Python SDK 与 Streamable HTTP；该
+稳定版要求 Python 3.10+，与本项目 `requires-python >=3.10` 一致。直接使用的
+SDK HTTP client 固定为 `httpx2==2.9.1`，Keychain adapter 固定为
+`keyring==25.7.0`。
+每次只读调用都必须先通过 `initialize`、`tools/list` 和六项 allowlist schema
+gate；任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
+明确授权并完成真实 `tools/list` 与一个白名单只读小调用，才能称为在线。本轮
+离线实现没有执行真实 DCR、没有打开浏览器，也不称为在线接通。
 
 ## Wind profile
 

@@ -71,11 +71,15 @@ class FakeCallback:
     def __init__(self, result=None, error=None):
         self.result = result or {}
         self.error = error
+        self.closed = False
 
     def wait(self, timeout):
         if self.error:
             raise self.error
         return dict(self.result)
+
+    def close(self):
+        self.closed = True
 
 
 class FakeAuthorizationServer:
@@ -318,6 +322,7 @@ class OwnedOAuthTests(unittest.TestCase):
         status = auth.login(timeout=1)
 
         self.assertEqual("configured_unverified", status)
+        self.assertTrue(callback.closed)
         self.assertEqual(1, len(opened))
         authorize_query = urllib.parse.parse_qs(
             urllib.parse.urlsplit(opened[0]).query
@@ -379,6 +384,7 @@ class OwnedOAuthTests(unittest.TestCase):
                     auth.browser_open = browser_open
                 with self.assertRaises(expected):
                     auth.login(timeout=0.01)
+                self.assertTrue(callback.closed)
                 self.assertEqual("auth_missing", self.store.probe())
 
     def test_refresh_rotates_tokens_and_concurrent_callers_refresh_once(self):

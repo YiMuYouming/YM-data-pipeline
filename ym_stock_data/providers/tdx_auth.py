@@ -320,10 +320,13 @@ class LocalhostCallbackReceiver:
             self._server.handle_request()
             result = self._server.oauth_result
         finally:
-            self._server.server_close()
+            self.close()
         if not isinstance(result, dict):
             raise TimeoutError
         return result
+
+    def close(self) -> None:
+        self._server.server_close()
 
 
 JsonRequester = Callable[..., dict]
@@ -436,6 +439,14 @@ class TdxOwnedAuth:
 
     def login(self, *, timeout: float = 180) -> str:
         callback = self.callback_factory()
+        try:
+            return self._login_with_callback(callback, timeout)
+        finally:
+            close = getattr(callback, "close", None)
+            if callable(close):
+                close()
+
+    def _login_with_callback(self, callback, timeout: float) -> str:
         redirect_uri = callback.redirect_uri
         discovery = self._discover()
         registration = self.request_json(

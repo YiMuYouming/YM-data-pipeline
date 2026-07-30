@@ -131,9 +131,9 @@ Modify:
 - `ym_stock_data/fetch.py` — compatibility mapping only; stop overwriting provider metadata.
 - `ym_stock_data/v2/resolve.py` — compatibility wrapper over `query` after contract parity.
 - `ym_stock_data/v2/capabilities.py` — derive manifest from the canonical registry.
-- `ym_stock_data/sources/iwencai.py` — retain low-level HTTP parsing only; remove WorkBuddy runtime discovery and process-local routing ownership.
-- `ym_stock_data/config.py` — remove hard-coded WorkBuddy pywencai paths; define explicit config locations.
-- `ym_stock_data/__main__.py` — add `query`, `doctor`, `setup pywencai`, `auth import-tdx`, and `smoke` subcommands.
+- `ym_stock_data/sources/iwencai.py` — retain low-level HTTP parsing only; remove external runtime discovery and process-local routing ownership.
+- `ym_stock_data/config.py` — remove hard-coded external pywencai paths; define explicit config locations.
+- `ym_stock_data/__main__.py` — add `query`, `doctor`, `setup pywencai`, owned `auth login-tdx` / `status-tdx`, and `smoke` subcommands.
 - `pyproject.toml` — add a `full` extra and keep pywencai optional for zero-auth-only installs.
 - `README.md` and `AGENTS.md` — document one public entrypoint and provider boundary.
 - `scripts/compare_external_sources.py` — call the public API and record actual provider attempts.
@@ -182,7 +182,7 @@ from ym_stock_data.sources import iwencai
 baseline = {
     "iwencai_key_present": bool(iwencai._load_api_key()),
     "configured_pywencai_python_exists": Path(
-        "/Users/yimu/WorkBuddy/Tools/data-venv/bin/python3"
+        "/legacy/external/data-venv/bin/python3"
     ).exists(),
     "tdx_wrapper_exists": Path(
         "/Users/yimu/.codex/mcp/tdx-finance-mcp.py"
@@ -489,7 +489,7 @@ Cover these exact cases with mocks:
 3. pywencai missing returns `dependency_missing`, not a vague `ImportError`.
 4. pywencai `NoneType...get` returns `provider_error` and preserves only the exception type/code, not HTML/body data.
 5. pywencai success limits rows and returns `provider="pywencai"`.
-6. The provider never refers to `WorkBuddy/Tools/data-venv` or `.workbuddy/binaries`.
+6. The provider never refers to a user-specific external runtime directory.
 
 - [ ] **Step 2: Run the failing test**
 
@@ -508,7 +508,7 @@ Runtime discovery order for pywencai must be:
 3. Project-owned `~/.ym-stock-data/runtimes/pywencai/bin/python`.
 4. Otherwise `dependency_missing` with action `ym-data setup pywencai`.
 
-Do not inspect WorkBuddy paths.
+Do not inspect unrelated external runtime paths.
 
 - [ ] **Step 4: Add the managed setup contract**
 
@@ -525,7 +525,7 @@ Use argument lists through `subprocess.run(shell=False)`. Add `pywencai` and `pa
 - [ ] **Step 5: Verify no hard-coded dependency remains**
 
 ```bash
-rg -n 'WorkBuddy/Tools/data-venv|\.workbuddy/binaries' ym_stock_data
+rg -n '/legacy/external|external/data-venv' ym_stock_data
 ```
 
 Expected: no matches.
@@ -693,12 +693,13 @@ Supported commands:
 ym-data query INTENT key=value...
 ym-data doctor [--json]
 ym-data setup pywencai
-ym-data auth import-tdx [--from-workbuddy]
+ym-data auth login-tdx [--store keychain|file]
+ym-data auth status-tdx [--store keychain|file]
 ym-data smoke --live
 ym-data list
 ```
 
-Use `argparse`. `doctor` is read-only. `setup pywencai` and `auth import-tdx` are explicit mutating commands and must print their exact target path before writing.
+Use `argparse`. `doctor` and `auth status-tdx` are read-only. `setup pywencai` and `auth login-tdx` are explicit mutating commands; login output is sanitized and never prints its credential target or values.
 
 - [ ] **Step 4: Document clean installation paths**
 
@@ -732,18 +733,18 @@ git commit -m "feat: add provider doctor and setup workflow"
 - Create: `tests/test_provider_tdx_mcp.py`
 - Modify: `ym_stock_data/doctor.py`
 - Modify: `ym_stock_data/__main__.py`
-- Reference read-only: `/Users/yimu/.codex/mcp/tdx-finance-mcp.py`
+- Reference read-only: official MCP Python SDK 2.0 protocol and transport APIs
 
 - [ ] **Step 1: Write failing TDX adapter tests**
 
 Cover:
 
 1. No owned credentials → `auth_missing` without scanning arbitrary files.
-2. Explicit `--from-workbuddy` import reads one discovered credential, extracts only the TDX OAuth/client entry, writes `~/.ym-stock-data/auth/tdx.json` mode `0600`, and never prints token values.
-3. Expiring access token with refresh token invokes refresh once.
-4. Missing/failed refresh returns `auth_expired`.
+2. Fake authorization server covers discovery, DCR, authorization-code + PKCE S256, localhost callback, state validation, cancellation, timeout, refresh and rotation.
+3. Keychain is the macOS default; explicit file fallback uses directory `0700`, credential/lock `0600`, atomic write, and cross-thread/process refresh locking.
+4. Scope is exactly `mcp.read`; missing scope and `mcp.write` fail closed.
 5. `tdx_screener`, `tdx_quotes`, `tdx_kline`, `wenda_report_query`, `wenda_notice_query`, and `wenda_news_query` map only to compatible intents.
-6. An MCP response error never becomes success data.
+6. Official SDK `initialize` and `tools/list` schema gate precede `tools/call`; 401 retries once after refresh/session rebuild, while 403 never escalates scope.
 
 - [ ] **Step 2: Run and verify failure**
 
@@ -753,17 +754,17 @@ uv run python -m unittest tests.test_provider_tdx_mcp -v
 
 - [ ] **Step 3: Implement owned credential storage**
 
-Default path:
+Default store:
 
 ```text
-~/.ym-stock-data/auth/tdx.json
+macOS Keychain service ym-stock-data/tdx-oauth
 ```
 
-The file contains only the selected TDX OAuth entry and client metadata required for refresh. Use atomic write and `chmod(0o600)`. Import is never automatic.
+The explicit file fallback contains only this pipeline's OAuth entry and client metadata required for refresh. Its directory is `0700`, file and lock are `0600`, and writes are atomic. No credential import exists.
 
 - [ ] **Step 4: Implement a read-only MCP session adapter**
 
-Reuse the proven newline-delimited JSON-RPC framing and streamable HTTP session behavior from the existing wrapper, but do not import the wrapper by absolute path. Keep the remote URL, refresh URL, timeouts, session id, and error mapping in this provider module. Expose no write/trading tool.
+Use fixed `mcp==2.0.0` as the only MCP protocol implementation with Streamable HTTP. Keep OAuth ownership in this project, inject a read-only bearer header, and expose no write/trading tool.
 
 - [ ] **Step 5: Run offline tests, then diagnose current live state**
 
@@ -772,7 +773,7 @@ uv run python -m unittest tests.test_provider_tdx_mcp tests.test_doctor -v
 uv run ym-data doctor --json
 ```
 
-Expected current live state before user re-auth/import: `tdx_mcp=auth_missing`. Do not claim TDX fallback is operational until a real `tools/list`/small read-only call passes.
+Expected offline state before user authorization: `tdx_mcp=auth_missing`. Do not claim TDX fallback is operational until a separately authorized real `tools/list`/small read-only call passes.
 
 - [ ] **Step 6: Commit**
 
@@ -1018,7 +1019,7 @@ Legacy APIs must remain functional and may emit `DeprecationWarning`, but warnin
 uv run python -m compileall -q ym_stock_data scripts tests
 uv run python -m unittest discover -s tests -v
 git diff --check
-rg -n 'WorkBuddy/Tools/data-venv|\.workbuddy/binaries' ym_stock_data README.md AGENTS.md
+rg -n '/legacy/external|external/data-venv' ym_stock_data README.md AGENTS.md
 rg -n 'from ym_stock_data\.sources|ym_stock_data\.v2\.resolve' \
   /Users/yimu/Documents/YM_Capital/live-dashboard/scripts \
   /Users/yimu/Documents/YM_Capital/Market_Watch/scripts

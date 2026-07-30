@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .. import api
-from ..providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES
+from ..providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TOOL_ALLOWLIST
 from ..providers.wind_mcp import WIND_ENRICHMENT_CAPABILITIES, WIND_PROVIDER_NAMES
 from ..routing import all_route_specs
 
@@ -57,6 +57,14 @@ def capability_manifest() -> dict:
             "routes": tdx_routes,
             "automatic_fallback_intents": tdx_routes,
             "default_route": False,
+            "auth_ownership": "pipeline_owned_oauth",
+            "oauth_scopes": ["mcp.read"],
+            "credential_store_default": "macos_keychain",
+            "credential_store_fallback": "private_file_0600",
+            "transport": "streamable_http",
+            "sdk": "mcp==2.0.0",
+            "tools_list_schema_gate": True,
+            "capabilities": sorted(TOOL_ALLOWLIST),
         },
         "wind_mcp": {
             "status": "registered_experimental",

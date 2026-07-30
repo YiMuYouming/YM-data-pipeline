@@ -1,4 +1,5 @@
 import io
+import inspect
 import json
 import subprocess
 import tempfile
@@ -12,7 +13,6 @@ from ym_stock_data.__main__ import main
 from ym_stock_data.doctor import (
     ALLOWED_PROVIDER_STATES,
     collect_diagnostics,
-    report_tdx_import_unavailable,
     setup_pywencai,
 )
 
@@ -154,19 +154,38 @@ class DoctorTests(unittest.TestCase):
         self.assertNotIn("secret-token", output.getvalue())
         self.assertNotIn("credential-row", output.getvalue())
 
-    def test_tdx_import_reports_target_but_never_scans_or_writes_in_task8(self):
-        target = self.root / "auth" / "tdx.json"
-        events = []
+    def test_doctor_has_no_credential_import_or_external_runtime_path(self):
+        import ym_stock_data.doctor as doctor_module
 
-        result = report_tdx_import_unavailable(
-            target=target,
-            from_workbuddy=True,
-            emit=events.append,
+        source = inspect.getsource(doctor_module).lower()
+        self.assertNotIn("workbuddy", source)
+        self.assertNotIn("import_tdx", source)
+        self.assertNotIn("credential import", source)
+
+    def test_tdx_doctor_only_probes_sanitized_owned_auth_state(self):
+        auth = Mock()
+        auth.probe.return_value = "auth_missing"
+        client = Mock()
+
+        class Provider:
+            def probe(self):
+                return {
+                    "provider": "tdx_mcp",
+                    "status": auth.probe(),
+                    "auth": {"required": True, "status": "missing"},
+                    "access_token": "SECRET_SENTINEL",
+                    "exception": "SECRET_SENTINEL",
+                }
+
+        report = collect_diagnostics(
+            provider_names=("tdx_mcp",),
+            provider_loader=lambda _name: Provider(),
         )
 
-        self.assertEqual(str(target), events[0])
-        self.assertEqual("unavailable", result["status"])
-        self.assertFalse(target.exists())
+        self.assertEqual("auth_missing", report["providers"]["tdx_mcp"]["status"])
+        self.assertNotIn("SECRET_SENTINEL", json.dumps(report))
+        auth.probe.assert_called_once_with()
+        client.assert_not_called()
 
     def test_cli_doctor_json_is_parseable(self):
         report = {"schema_version": "1", "providers": {}}

@@ -44,6 +44,13 @@ PY
 
 `doctor` 不联网验证数据业务，不打印 token、Key、异常正文或业务行。只有显式 `./ym-data smoke --live` 才运行只读在线探针；默认 smoke 不联网。裸 `uv run ym-data ...` 是底层调用，只适用于不受 File Provider dotpath 影响的环境，不再作为正式 CLI 指引。
 
+TDX 由本管道自行完成 OAuth discovery、DCR、authorization-code + PKCE
+S256、state 校验和 refresh rotation。首次授权命令是
+`./ym-data auth login-tdx`，离线查看脱敏状态使用
+`./ym-data auth status-tdx`。登录只请求 `mcp.read`；任何 `mcp.write`、403
+scope escalation 或白名单外工具都 fail closed。本轮离线实现没有执行真实登录，
+也没有证明线上 TDX 已接通。
+
 ## 五日验收记录
 
 盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。
@@ -88,7 +95,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
 | `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败或合法空集后进入 `pywencai` |
 | `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败或合法空集后 |
-| `tdx_mcp` | owned OAuth；`./ym-data auth import-tdx --from-workbuddy` | TDX 总状态 `ready` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
+| `tdx_mcp` | owned OAuth；`./ym-data auth login-tdx`，`./ym-data auth status-tdx` | TDX 总状态 `configured_unverified` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败或合法空集后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
 | `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日周月及分钟 `stock_kline` 第三源 | 允许；仅在对应周期前置兼容源失败后 |
@@ -99,9 +106,13 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 
-`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。`auth import-tdx --from-workbuddy` 只读取唯一明确候选并 fail closed；不会扫描整个 WorkBuddy，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
+`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。TDX 默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback。管道不会读取或导入其它应用的凭据，也不会输出凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 
-TDX 与 Wind 只允许固定只读工具白名单。它们不是交易入口，不发交易 POST，不调用券商，也不能单独触发交易建议。
+TDX MCP transport 固定使用官方 `mcp==2.0.0` SDK 的 Streamable HTTP。
+每个 session 必须先通过 `initialize` 和 `tools/list` 六项 schema gate，才允许
+`tools/call`。401 会强制 refresh、重建 session 并最多重试一次；403 直接报告
+permission failure，不伪装成 expired。TDX 与 Wind 只允许固定只读工具白名单。
+它们不是交易入口，不发交易 POST，不调用券商，也不能单独触发交易建议。
 
 ## Wind 显式研究增强
 
