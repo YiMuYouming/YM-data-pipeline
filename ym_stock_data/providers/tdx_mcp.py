@@ -164,28 +164,50 @@ def _normalize(provider_name: str, payload: dict) -> tuple[dict, int]:
     return {container: rows}, len(rows)
 
 
+def _walk_exceptions(error: BaseException):
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        marker = id(current)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        yield current
+        related = []
+        nested = getattr(current, "exceptions", None)
+        if isinstance(nested, (list, tuple)):
+            related.extend(item for item in nested if isinstance(item, BaseException))
+        for attribute in ("__cause__", "__context__"):
+            item = getattr(current, attribute, None)
+            if isinstance(item, BaseException) and item is not current:
+                related.append(item)
+        pending.extend(reversed(related))
+
+
+def _contains_exception(error: BaseException, kinds: tuple[type, ...]) -> bool:
+    return any(isinstance(item, kinds) for item in _walk_exceptions(error))
+
+
 def _status_code(error: BaseException) -> int | None:
-    response = getattr(error, "response", None)
-    value = getattr(response, "status_code", None)
-    if isinstance(value, int):
-        return value
-    nested = getattr(error, "exceptions", None)
-    if isinstance(nested, (list, tuple)):
-        for item in nested:
-            if isinstance(item, BaseException):
-                value = _status_code(item)
-                if value is not None:
-                    return value
-    cause = getattr(error, "__cause__", None)
-    if isinstance(cause, BaseException) and cause is not error:
-        return _status_code(cause)
+    for item in _walk_exceptions(error):
+        response = getattr(item, "response", None)
+        value = getattr(response, "status_code", None)
+        if isinstance(value, int):
+            return value
     return None
 
 
 def _raise_sanitized_transport(error: BaseException) -> None:
     if isinstance(
         error,
-        (TdxUnauthorized, TdxForbidden, TdxSchemaError, TdxProtocolError),
+        (
+            TdxUnauthorized,
+            TdxForbidden,
+            TdxSchemaError,
+            TdxProtocolError,
+            TdxTransportError,
+        ),
     ):
         raise error
     status = _status_code(error)
@@ -193,9 +215,10 @@ def _raise_sanitized_transport(error: BaseException) -> None:
         raise TdxUnauthorized("TDX MCP authorization failed") from None
     if status == 403:
         raise TdxForbidden("TDX MCP permission denied") from None
-    if isinstance(error, (TimeoutError, socket.timeout, asyncio.TimeoutError)):
+    timeout_errors = (TimeoutError, socket.timeout, asyncio.TimeoutError)
+    if _contains_exception(error, timeout_errors):
         raise TimeoutError("TDX MCP request timed out") from None
-    if isinstance(error, RuntimeError):
+    if _contains_exception(error, (ValueError, TypeError, RuntimeError)):
         raise TdxProtocolError("TDX MCP protocol response invalid") from None
     raise TdxTransportError("TDX MCP transport failed") from None
 

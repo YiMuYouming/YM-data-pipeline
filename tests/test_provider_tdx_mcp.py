@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx2
+from pydantic import BaseModel, ValidationError
 
 try:
     from builtins import ExceptionGroup
@@ -36,6 +37,7 @@ from ym_stock_data.providers.tdx_mcp import (
     TdxMcpProvider,
     TdxProtocolError,
     TdxSchemaError,
+    TdxTransportError,
     TdxUnauthorized,
 )
 from ym_stock_data.routing import route_for
@@ -110,6 +112,18 @@ def http_status_error(status_code):
 
 
 _DEFAULT_PAYLOAD = object()
+
+
+class _ValidationFixture(BaseModel):
+    value: int
+
+
+def sdk_validation_error():
+    try:
+        _ValidationFixture.model_validate({"value": "not-an-integer"})
+    except ValidationError as error:
+        return error
+    raise AssertionError("validation fixture must fail")
 
 
 class FakeSession:
@@ -440,6 +454,95 @@ class OfficialSdkClientTests(unittest.TestCase):
         self.assertEqual("provider_error", outcome.status)
         self.assertEqual("MCP_ERROR", outcome.error_code)
         self.assertEqual({"required": True, "status": "present"}, outcome.auth)
+
+    def test_sdk_validation_error_is_a_provider_protocol_failure(self):
+        session = FakeSession(call_error=sdk_validation_error())
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        outcome = TdxMcpProvider(
+            "tdx_screener",
+            auth_manager=FakeAuth(),
+            client=client,
+        ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+        self.assertEqual("provider_error", outcome.status)
+        self.assertEqual("MCP_ERROR", outcome.error_code)
+
+    def test_nested_sdk_validation_error_is_a_provider_protocol_failure(self):
+        session = FakeSession(
+            call_error=ExceptionGroup("sdk transport", [sdk_validation_error()])
+        )
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        outcome = TdxMcpProvider(
+            "tdx_screener",
+            auth_manager=FakeAuth(),
+            client=client,
+        ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+        self.assertEqual("provider_error", outcome.status)
+        self.assertEqual("MCP_ERROR", outcome.error_code)
+
+    def test_nested_timeout_precedes_sdk_validation_error(self):
+        session = FakeSession(
+            call_error=ExceptionGroup(
+                "sdk transport",
+                [sdk_validation_error(), TimeoutError("SECRET timeout")],
+            )
+        )
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        outcome = TdxMcpProvider(
+            "tdx_screener",
+            auth_manager=FakeAuth(),
+            client=client,
+        ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+        self.assertEqual("timeout", outcome.status)
+        self.assertEqual("TIMEOUT", outcome.error_code)
+
+    def test_semantic_error_in_cause_or_context_is_a_protocol_failure(self):
+        wrappers = []
+        with_cause = Exception("SECRET outer cause")
+        with_cause.__cause__ = TypeError("SECRET invalid SDK shape")
+        wrappers.append(with_cause)
+        with_context = Exception("SECRET outer context")
+        with_context.__context__ = RuntimeError("SECRET invalid SDK result")
+        wrappers.append(with_context)
+
+        for error in wrappers:
+            with self.subTest(wrapper=type(error).__name__):
+                session = FakeSession(call_error=error)
+                client = TdxMcpClient(
+                    session_factory=lambda _authorization, value=session: SessionContext(
+                        value
+                    )
+                )
+                outcome = TdxMcpProvider(
+                    "tdx_screener",
+                    auth_manager=FakeAuth(),
+                    client=client,
+                ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+                self.assertEqual("provider_error", outcome.status)
+                self.assertEqual("MCP_ERROR", outcome.error_code)
+
+    def test_governed_transport_error_remains_a_network_failure(self):
+        session = FakeSession(call_error=TdxTransportError("sanitized"))
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+        outcome = TdxMcpProvider(
+            "tdx_screener",
+            auth_manager=FakeAuth(),
+            client=client,
+        ).call("review_sentiment", {"query": "非ST", "limit": 1})
+
+        self.assertEqual("network_error", outcome.status)
+        self.assertEqual("NETWORK_ERROR", outcome.error_code)
 
 
 class TdxMcpProviderTests(unittest.TestCase):
