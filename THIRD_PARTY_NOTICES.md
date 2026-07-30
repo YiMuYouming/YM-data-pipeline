@@ -10,3 +10,9 @@ The Eastmoney limit-pool endpoint discovery used by
 The implementation in this repository was rewritten for YM-data-pipeline's
 thread-safety, error, provenance, and compatibility contracts. No upstream
 source code is vendored.
+
+## keyring
+
+TDX owned OAuth credentials use `keyring==25.7.0` to access macOS Keychain
+without placing secret values in process arguments. The project is distributed
+under the MIT License: <https://github.com/jaraco/keyring>.
