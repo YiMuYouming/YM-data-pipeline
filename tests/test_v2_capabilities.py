@@ -110,6 +110,16 @@ class CapabilityManifestTests(unittest.TestCase):
         )
         self.assertEqual(wind, manifest["manual_sources"]["wind_mcp"])
 
+    def test_manifest_exposes_constrained_zero_auth_pytdx_screener(self):
+        provider = capability_manifest()["providers"]["pytdx_screener"]
+
+        self.assertTrue(provider["registered"])
+        self.assertEqual("registered_optional", provider["status"])
+        self.assertEqual(["review_sentiment"], provider["routes"])
+        self.assertEqual("no_auth", provider["auth_ownership"])
+        self.assertEqual("structured_queries_only", provider["automatic_fallback_scope"])
+        self.assertEqual("pytdx-structured-1", provider["compiler_version"])
+
     def test_manifest_returns_an_isolated_copy(self):
         first = capability_manifest()
         first["v2_intents"]["realtime_market"]["status"] = "broken"
