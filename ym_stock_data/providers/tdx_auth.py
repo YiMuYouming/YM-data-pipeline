@@ -80,6 +80,31 @@ class CredentialStore(Protocol):
     def probe(self) -> str: ...
 
 
+class InvalidSelectorCredentialStore:
+    """Fail-closed store used when the persisted selector is not trustworthy."""
+
+    report_mode = "selected"
+
+    def __init__(self, selector_path: str | Path):
+        self.lock_path = Path(selector_path).expanduser()
+
+    @staticmethod
+    def _raise() -> None:
+        raise TdxAuthExpired("TDX credential selector is invalid")
+
+    def load(self) -> dict:
+        self._raise()
+
+    def save(self, _payload: dict) -> None:
+        self._raise()
+
+    def probe(self) -> str:
+        return "auth_expired"
+
+    def preflight_login(self) -> None:
+        self._raise()
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -389,7 +414,11 @@ def default_credential_store(
     """Resolve the selected store; file persistence requires explicit setup."""
 
     if mode is None:
-        selector = CredentialStoreSelector(selector_path or DEFAULT_SELECTOR_PATH).load()
+        selected_path = selector_path or DEFAULT_SELECTOR_PATH
+        try:
+            selector = CredentialStoreSelector(selected_path).load()
+        except TdxAuthExpired:
+            return InvalidSelectorCredentialStore(selected_path)
         mode = selector["mode"]
         if mode == "file":
             file_path = selector["file_path"]
@@ -617,6 +646,9 @@ class TdxOwnedAuth:
         }
 
     def login(self, *, timeout: float = 180) -> str:
+        preflight = getattr(self.store, "preflight_login", None)
+        if callable(preflight):
+            preflight()
         callback = self.callback_factory()
         try:
             return self._login_with_callback(callback, timeout)

@@ -122,6 +122,9 @@ def create_tdx_auth(
 def _credential_store_mode(auth: TdxOwnedAuth, explicit: str | None) -> str:
     if explicit in {"keychain", "file"}:
         return explicit
+    report_mode = getattr(getattr(auth, "store", None), "report_mode", None)
+    if report_mode == "selected":
+        return report_mode
     if isinstance(getattr(auth, "store", None), FileCredentialStore):
         return "file"
     return "keychain"
