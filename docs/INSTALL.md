@@ -25,6 +25,14 @@ uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选�
 
 零鉴权不代表在线可用；以 query 返回的 `provider_used`、`attempts`、`quality` 与 freshness 为准。
 
+结构化选股第五源使用固定 `pytdx==1.72`，provider id 为 `pytdx_screener`。它只在
+query 含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过的 AND filter，且
+被编译器完整消费时追加到 Wind 之后。支持 `非ST`、`非停牌`、单一股票代码、
+`最新价`、`涨幅` 及固定比较/区间语法；数值条件必须带 `非停牌`。不支持北交所，
+也不支持行业、概念、PE、PB、排名、OR 或日期。doctor 仍只报告
+`configured_unverified`，不连接 TCP；线上只能由显式 `./ym-data smoke --live`
+的脱敏结构化 case 验证。
+
 ## 完整投研 profile
 
 问财网页降级运行时由项目统一安装到 `~/.ym-stock-data/runtimes/pywencai`：

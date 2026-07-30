@@ -16,6 +16,7 @@ print(query("sector_index", names=["半导体"])["_meta"])
 print(query("stock_snapshot", codes=["603290", "688187"])["_meta"])
 print(query("stock_kline", code="603290", period="daily", count=20)["_meta"])
 print(query("review_sentiment", query="A股 IGBT 概念股 非ST", limit=20)["_meta"])
+print(query("review_sentiment", query="沪深A股 非ST 非停牌 最新价>=10 涨幅<5%", limit=20)["_meta"])
 PY
 ```
 
@@ -73,7 +74,11 @@ scope escalation 或白名单外工具都 fail closed。本轮离线实现没有
 }
 ```
 
-合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。只有四个 attempt 全部是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被末源 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。Wind 只通过专用 `wind_screener` 进入这条链，严格读取已验证 tabular envelope 的精确 `Wind代码` 列，不复用泛化 `wind_mcp` enrichment。它只接受沪市 `600/601/603/605/688/689`、深市 `000/001/002/003/300/301` 与北交所自 2025-10 全面启用的 `920` 股票族，并校验交易所 suffix；指数、ETF、旧北交所代码族和交易所错配均 fail closed。穷尽不保证一定有结果，也不代表无差别轮询；只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充任意自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
+合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会先按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源。若且仅若 query 能被 `pytdx-structured-1` 完整消费，route 才在末尾追加 `pytdx_screener`，形成 `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener` → `pytdx_screener`；不可编译时仍是四源且不会制造第五个 attempt。只有当次 route 的所有 attempt 都是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被末源 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。
+
+`pytdx_screener` 只接受唯一的 `沪深A股`、`沪市A股` / `上交所A股`、`深市A股` / `深交所A股` universe，并要求至少一个 `非ST`、`非停牌`、单一 `股票代码为/是/=六位代码`、`最新价` 或 `涨幅` AND 条件；数值条件还必须同时带 `非停牌`。比较符和 `到` / `至` / `~` 区间以固定语法完整消费。不支持北交所，也不支持行业、概念、PE、PB、排名、OR 或日期；这类请求继续由前四个自然语言源处理。它使用固定 `pytdx==1.72` 直接读取沪深完整目录与 quotes，每批最多 80 个，不调用既有 `fetch_quotes` 或腾讯、东财、Sina fallback。目录或 quote 不完整、全部价格未就绪时只能报稳定错误，不能伪装合法空集。
+
+Wind 只通过专用 `wind_screener` 进入自然语言链，严格读取已验证 tabular envelope 的精确 `Wind代码` 列，不复用泛化 `wind_mcp` enrichment。它只接受沪市 `600/601/603/605/688/689`、深市 `000/001/002/003/300/301` 与北交所自 2025-10 全面启用的 `920` 股票族，并校验交易所 suffix；指数、ETF、旧北交所代码族和交易所错配均 fail closed。穷尽不保证一定有结果。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
 
 ## Provider ownership 与路由边界
 
@@ -95,6 +100,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
 | `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败或合法空集后进入 `pywencai` |
 | `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败或合法空集后 |
+| `pytdx_screener` | 零鉴权；固定 `pytdx==1.72`；无 setup | `configured_unverified` 或明确错误 | 仅可完整编译的显式 `review_sentiment` 第五源 | 允许；仅在前四源失败或合法空集后；不可编译时不进入 route |
 | `tdx_mcp` | owned OAuth；`./ym-data auth login-tdx`，`./ym-data auth status-tdx` | TDX 总状态 `configured_unverified` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败或合法空集后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |

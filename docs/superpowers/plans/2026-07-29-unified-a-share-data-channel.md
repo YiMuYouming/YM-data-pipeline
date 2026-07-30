@@ -90,7 +90,7 @@ Canonical intent chains for this implementation:
 | `stock_snapshot` | `pytdx` → `tencent` → `sina` → `tdx_quotes` | normalized quote fields only |
 | `stock_kline` | day/week/month: `pytdx` → `tencent` → `tdx_kline`; minute: `pytdx` → `sina` → `tdx_kline` | period-aware |
 | `review_sentiment` without explicit query | `pytdx_breadth` → `eastmoney_breadth` → `eastmoney_limit_pool` | market breadth/limit-state aggregate only |
-| `review_sentiment` with explicit query | `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener` | stock-screen rows only; final empty requires four valid empty attempts |
+| `review_sentiment` with explicit query | `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`; fully compiled structured沪深 query then appends `pytdx_screener` | stock-screen rows only; final empty requires every provider in the selected four- or five-source route to be valid empty |
 | `market_limit_state` | `eastmoney_limit_pool` | no natural-language fallback |
 | `stock_event` | `eastmoney_datacenter` | only whitelisted event families; no Wind fallback |
 | `research` | `eastmoney_research` → `tdx_report` | report rows only |
@@ -1043,7 +1043,7 @@ Review the staged file list first so this command does not capture unrelated dir
 
 > **2026-07-29 CLI environment amendment:** The formal repo CLI entry is the root launcher `./ym-data`. It selects a checkout-specific external uv environment so canonical checkouts managed by macOS File Provider do not depend on a hidden project-local editable `.pth`. Bare `uv run ym-data ...` remains a lower-level command for environments not affected by File Provider metadata.
 
-> **2026-07-30 provider-scope amendment:** The 新五源范围（五类受管来源）is exactly WenCai OpenAPI, portable pywencai, TDX owned OAuth, the official Wind CLI, and zero-auth PyTDX. The current natural-language screener chain remains four sources: `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`. PyTDX participates only in its capability-compatible quote, breadth, and K-line semantics; a constrained structured PyTDX screener belongs to a later checkpoint and is not enabled here. Because the Wind screener route and the empty/error overwrite guard changed after the earlier observations, the five-trading-day 验收窗口必须重新开始 from the first eligible trading day after this amendment; earlier evidence may be retained as historical context but cannot count toward the restarted five-day graduation gate.
+> **2026-07-30 provider-scope amendment:** The 新五源范围（五类受管来源）is exactly WenCai OpenAPI, portable pywencai, TDX owned OAuth, the official Wind CLI, and zero-auth PyTDX. The natural-language screener chain remains four sources: `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`. A constrained `pytdx_screener` is now enabled only when a query contains one reviewed沪深 universe, at least one reviewed filter, and is completely consumed by `pytdx-structured-1`; it then becomes the fifth and final route provider. It supports `非ST`, `非停牌`, single-code, `最新价`, and `涨幅` AND filters, fixes `pytdx==1.72`, and does not support北交所 or 行业、概念、PE、PB、排名、OR 或日期. Because this dynamic fifth-source route, the Wind screener route, and the empty/error overwrite guard changed after the earlier observations, the five-trading-day 验收窗口必须重新开始 from the first eligible trading day after this amendment; earlier evidence may be retained as historical context but cannot count toward the restarted five-day graduation gate.
 
 **Files:**
 - Create outside Git: `~/.ym-stock-data/acceptance/YYYY-MM-DD.json`

@@ -24,7 +24,7 @@ print(result["_meta"])
 
 新代码只调用 `query(intent, **params)`，不得直接 import `ym_stock_data.sources` 或 `ym_stock_data.v2`。结果统一使用 contract 1.0：`data` 加 `_meta`，其中必须保留 `status`、真实 `provider_used`、完整 `attempts`、`quality`、`fetched_at` 与稳定错误码。
 
-正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集默认终止路由；只有带显式 `query` 的 `review_sentiment` 按 RouteSpec 的 `continue_until_exhausted` 策略继续穷尽自然语言 screener，顺序固定为 OpenAPI → pywencai → TDX screener → 专用 Wind `stock_data.search_stocks`，直到非空成功或兼容源耗尽。Wind 必须使用 `wind_screener` 专名并严格验证 tabular `Wind代码`，不得借泛化 `wind_mcp` 扩展其它 intent；行情/宽度/K 线源也不得冒充自然语言 screener。穷尽不保证有结果。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
+正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集默认终止路由；只有带显式 `query` 的 `review_sentiment` 按 RouteSpec 的 `continue_until_exhausted` 策略继续穷尽自然语言 screener，基础顺序固定为 OpenAPI → pywencai → TDX screener → 专用 Wind `stock_data.search_stocks`。只有 query 被 `pytdx-structured-1` 完整消费时才在末尾追加 `pytdx_screener`；不可编译时不得产生第五源 attempt。Wind 必须使用 `wind_screener` 专名并严格验证 tabular `Wind代码`，不得借泛化 `wind_mcp` 扩展其它 intent。穷尽不保证有结果。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
 
 V1 `fetch()` 与 V2 `resolve()` 仅是 compatibility wrapper：允许维持旧 shape，但不得拥有第二条 provider chain。不要在新文档或脚本中推荐它们，也不要用强制 `DeprecationWarning` 破坏消费者。
 
@@ -40,6 +40,7 @@ V1 `fetch()` 与 V2 `resolve()` 仅是 compatibility wrapper：允许维持旧 s
   `tools/list` 六项 schema gate 通过前不得 `tools/call`。
 - Wind official CLI 仅支持显式 `wind_enrichment`、严格验证后的 `filings` fallback，以及显式 `review_sentiment(query=...)` 的专用 `wind_screener`；后者只调用 `stock_data.search_stocks`，沪深股票族与 `_all_share_codes` 一致，北交所当前仅允许 `920xxx.BJ`。不得让泛化 `wind_mcp` 接行情、K 线、分钟、新闻、泛选股或 `stock_event`。
 - WenCai OpenAPI 401/403/429 使用跨进程 breaker；pywencai 依赖缺失与 provider error 必须区分。
+- 零鉴权 `pytdx_screener` 固定 `pytdx==1.72`，只接受唯一沪深 universe 加至少一个 `非ST` / `非停牌` / 单代码 / `最新价` / `涨幅` AND 条件；数值条件必须含 `非停牌`。不支持北交所，也不支持行业、概念、PE、PB、排名、OR 或日期。它必须读取完整目录与完整 quotes，batch 不超过 80，不调用现有 source fallback。
 - Key、token、credentials 不进入 argv、日志、doctor、CLI 输出、receipt 或 Git。
 - 不发交易 POST、不调用券商、不部署、不 push，除非弈沐另行明确授权。
 

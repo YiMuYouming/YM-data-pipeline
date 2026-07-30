@@ -49,6 +49,12 @@ screen = query(
 | official Wind CLI | Wind 官方 CLI 自行鉴权 | 自然语言 `wind_screener`、显式 `wind_enrichment` 和严格验证后的 `filings` fallback |
 | zero-auth PyTDX | 无鉴权 TCP 数据源 | 行情、快照、K 线和市场宽度；只处理自身字段足以表达的结构化条件，不冒充任意自然语言筛选 |
 
+零鉴权结构化第五源名为 `pytdx_screener`。只有包含唯一沪深 universe 且能被
+`pytdx-structured-1` 完整消费的 AND 查询才会在 Wind 后追加它，例如
+`沪深A股 非ST 非停牌 最新价>=10 涨幅<5%`。数值条件必须带 `非停牌`；不支持北交所，
+也不支持行业、概念、PE、PB、排名、OR 或日期。运行时固定 `pytdx==1.72`，目录、
+quote 或价格未就绪均 fail closed，不调用其它 HTTP fallback。
+
 合法空集、鉴权失败、依赖缺失、provider error 和网络失败不是同一种状态。只有
 当前 intent 定义允许继续的空集才会进入下一兼容源；最终结果必须保留全部 attempts。
 

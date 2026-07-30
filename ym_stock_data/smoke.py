@@ -229,6 +229,17 @@ def run_live_smoke(
         ("zero_market_limit_state", "zero_auth", "market_limit_state", {}, canonical("market_limit_state")),
         ("zero_stock_event", "zero_auth", "stock_event", {"code": "600519", "event": "lockup"}, canonical("stock_event", code="600519", event="lockup", page_size=3)),
         ("explicit_wencai", "api_key", "review_sentiment", {"sample_id": "explicit_wencai", "limit": 3}, canonical("review_sentiment", query="A股 非ST 涨停", limit=3)),
+        (
+            "explicit_structured_screener",
+            "five_source_fallback",
+            "review_sentiment",
+            {"sample_id": "structured_hs_a", "limit": 3},
+            canonical(
+                "review_sentiment",
+                query="沪深A股 非ST 非停牌 最新价>=1",
+                limit=3,
+            ),
+        ),
         ("tdx_probe", "owned_oauth", "stock_snapshot", {"codes": ["600519"]}, tdx_probe),
         ("wind_probe", "official_cli", "wind_enrichment", {"capability": "company_profile", "code": "600519"}, wind_probe),
     ]

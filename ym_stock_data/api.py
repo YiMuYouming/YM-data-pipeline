@@ -12,6 +12,7 @@ from .provider_state import ProviderState
 from .providers.base import ProviderOutcome
 from .providers.iwencai import IWenCaiOpenAPIProvider, PyWenCaiProvider
 from .providers.local import LOCAL_PROVIDER_NAMES, LocalProvider
+from .providers.pytdx_screener import PytdxScreenerProvider
 from .providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TdxMcpProvider
 from .providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
@@ -102,6 +103,7 @@ PROVIDER_REGISTRY: dict[str, object] = {
     **{name: _wind_factory(name) for name in WIND_PROVIDER_NAMES},
     "iwencai_openapi": IWenCaiOpenAPIProvider,
     "pywencai": PyWenCaiProvider,
+    "pytdx_screener": PytdxScreenerProvider,
 }
 _STATE: ProviderState | None = None
 

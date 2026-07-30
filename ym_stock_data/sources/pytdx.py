@@ -17,6 +17,7 @@ import time
 import threading
 import urllib.parse
 import urllib.request
+import warnings
 from datetime import datetime
 from contextlib import contextmanager
 from functools import wraps
@@ -36,6 +37,27 @@ _PYTDX_DOWN_COOLDOWN = 60
 # 均线缓存: {code: {ma5_d, ma10_d, ma20_d, ma10_60m, ma10_60m_dir, _strong}}
 _ma_cache = {}
 _vol_cache = {}
+
+
+def _load_tdx_hq_api():
+    """Load the pinned runtime while suppressing only its two known warnings."""
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r'"is not" with \'str\' literal\. Did you mean "!="\?',
+            category=SyntaxWarning,
+            lineno=117,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r'"is not" with \'str\' literal\. Did you mean "!="\?',
+            category=SyntaxWarning,
+            lineno=128,
+        )
+        from pytdx.hq import TdxHq_API
+
+    return TdxHq_API
 
 
 def _serialized_pytdx_call(fn):
@@ -78,7 +100,7 @@ def _get_api():
                 pass
 
         try:
-            from pytdx.hq import TdxHq_API
+            TdxHq_API = _load_tdx_hq_api()
         except ImportError:
             _fail_count += 1
             return None

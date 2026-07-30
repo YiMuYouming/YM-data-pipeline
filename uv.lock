@@ -2417,7 +2417,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'full'" },
     { name = "pandas", marker = "extra == 'full'" },
     { name = "pandas", marker = "extra == 'pywencai'" },
-    { name = "pytdx", specifier = ">=0.3" },
+    { name = "pytdx", specifier = "==1.72" },
     { name = "pywencai", marker = "extra == 'full'", specifier = "==0.13.1" },
     { name = "pywencai", marker = "extra == 'pywencai'", specifier = ">=0.13" },
     { name = "requests", specifier = ">=2.28" },

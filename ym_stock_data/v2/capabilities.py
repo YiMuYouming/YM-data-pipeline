@@ -82,6 +82,18 @@ def capability_manifest() -> dict:
                 [*WIND_ENRICHMENT_CAPABILITIES, "stock_screener"]
             ),
         },
+        "pytdx_screener": {
+            "status": "registered_optional",
+            "registered": "pytdx_screener" in registry_names,
+            "provider_names": ["pytdx_screener"],
+            "routes": ["review_sentiment"],
+            "automatic_fallback_intents": ["review_sentiment"],
+            "automatic_fallback_scope": "structured_queries_only",
+            "default_route": False,
+            "auth_ownership": "no_auth",
+            "compiler_version": "pytdx-structured-1",
+            "capabilities": ["structured_stock_screener"],
+        },
     }
     return {
         "schema_version": CAPABILITY_SCHEMA_VERSION,
