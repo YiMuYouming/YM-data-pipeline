@@ -16,11 +16,15 @@ from .acceptance import (
 from .api import query as canonical_query
 from .doctor import (
     collect_diagnostics,
-    report_tdx_import_unavailable,
     setup_pywencai,
 )
 from .fetch import CANONICAL_ROUTES, LEGACY_DIRECT_ROUTES, list_supported
-from .providers.tdx_mcp import CredentialImportError, import_tdx_credentials
+from .providers.tdx_auth import (
+    READ_SCOPE,
+    TdxAuthError,
+    TdxOwnedAuth,
+    default_credential_store,
+)
 from .routing import _ROUTES
 from .smoke import run_live_smoke
 
@@ -45,8 +49,14 @@ def _parser() -> argparse.ArgumentParser:
 
     auth_parser = commands.add_parser("auth", help="explicit owned-auth operations")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
-    import_tdx = auth_commands.add_parser("import-tdx")
-    import_tdx.add_argument("--from-workbuddy", action="store_true")
+    for auth_name in ("login-tdx", "status-tdx"):
+        tdx_auth = auth_commands.add_parser(auth_name)
+        tdx_auth.add_argument(
+            "--store",
+            choices=("keychain", "file"),
+            default="keychain",
+        )
+        tdx_auth.add_argument("--file-path", type=Path)
 
     smoke_parser = commands.add_parser("smoke", help="explicit live read-only probes")
     smoke_parser.add_argument("--live", action="store_true")
@@ -93,6 +103,19 @@ def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+def create_tdx_auth(
+    *,
+    mode: str = "keychain",
+    file_path: Path | None = None,
+) -> TdxOwnedAuth:
+    if file_path is not None and mode != "file":
+        raise ValueError("--file-path requires --store file")
+    kwargs = {"mode": mode}
+    if file_path is not None:
+        kwargs["file_path"] = file_path
+    return TdxOwnedAuth(store=default_credential_store(**kwargs))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -116,14 +139,26 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         _print_json(result)
         return 0
-    if args.command == "auth" and args.auth_command == "import-tdx":
+    if args.command == "auth":
         try:
-            result = import_tdx_credentials(from_workbuddy=args.from_workbuddy)
-        except CredentialImportError:
-            _print_json({"status": "unavailable", "error_code": "IMPORT_FAILED"})
+            auth = create_tdx_auth(mode=args.store, file_path=args.file_path)
+            status = (
+                auth.login()
+                if args.auth_command == "login-tdx"
+                else auth.probe()
+            )
+        except (TdxAuthError, ValueError):
+            _print_json(
+                {
+                    "status": "unavailable",
+                    "error_code": "TDX_AUTH_FAILED",
+                    "scope": READ_SCOPE,
+                    "store": args.store,
+                }
+            )
             return 2
-        _print_json(result)
-        return 0 if result.get("status") == "ready" else 2
+        _print_json({"status": status, "scope": READ_SCOPE, "store": args.store})
+        return 0 if status == "configured_unverified" else 2
     if args.command == "smoke":
         if not args.live:
             _print_json({"status": "not_run", "action": "pass --live explicitly"})

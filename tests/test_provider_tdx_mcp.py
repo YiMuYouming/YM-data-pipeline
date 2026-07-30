@@ -1,229 +1,350 @@
+import importlib.metadata
+import inspect
 import io
 import json
-import os
-import stat
 import tempfile
-import time
 import unittest
-import urllib.error
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import httpx2
 import ym_stock_data.api as api
-from ym_stock_data.__main__ import main
-from ym_stock_data.doctor import collect_diagnostics
+from ym_stock_data.__main__ import _parser, main
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.providers.tdx_auth import (
+    FileCredentialStore,
+    TdxAuthMissing,
+    TdxOwnedAuth,
+)
 from ym_stock_data.providers.tdx_mcp import (
     SERVER_URL,
     TOOL_ALLOWLIST,
-    CredentialImportError,
-    TdxAuthExpired,
-    TdxCredentialStore,
+    TOOL_SCHEMA_CONTRACTS,
+    TdxForbidden,
     TdxMcpClient,
     TdxMcpProvider,
     TdxProtocolError,
-    import_workbuddy_credentials,
+    TdxSchemaError,
+    TdxUnauthorized,
 )
 from ym_stock_data.routing import route_for
 
 
-class StubStore:
-    def __init__(self, *, status="configured_unverified", authorization="TestScheme REDACTED"):
+def valid_tool_schemas():
+    return {
+        "tdx_screener": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+        "tdx_quotes": {
+            "type": "object",
+            "properties": {
+                "codes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["codes"],
+        },
+        "tdx_kline": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"},
+                "period": {"type": "string"},
+                "count": {"type": "integer"},
+            },
+            "required": ["code"],
+        },
+        "wenda_report_query": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"},
+                "days": {"type": "integer"},
+            },
+            "required": ["code"],
+        },
+        "wenda_notice_query": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"},
+                "days": {"type": "integer"},
+            },
+            "required": ["code"],
+        },
+        "wenda_news_query": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "required": [],
+        },
+    }
+
+
+def tool(name, schema):
+    return SimpleNamespace(
+        name=name,
+        input_schema=schema,
+        annotations=SimpleNamespace(read_only_hint=True, destructive_hint=False),
+    )
+
+
+def http_status_error(status_code):
+    request = httpx2.Request("POST", SERVER_URL)
+    response = httpx2.Response(status_code, request=request)
+    return httpx2.HTTPStatusError(
+        "SECRET_RESPONSE_BODY",
+        request=request,
+        response=response,
+    )
+
+
+_DEFAULT_PAYLOAD = object()
+
+
+class FakeSession:
+    def __init__(self, *, schemas=None, payload=_DEFAULT_PAYLOAD, call_error=None):
+        schemas = schemas or valid_tool_schemas()
+        self.tools = [tool(name, schema) for name, schema in schemas.items()]
+        self.payload = {"datas": []} if payload is _DEFAULT_PAYLOAD else payload
+        self.call_error = call_error
+        self.calls = []
+
+    async def initialize(self):
+        self.calls.append(("initialize", None))
+
+    async def list_tools(self, *, params=None):
+        self.calls.append(("tools/list", params))
+        return SimpleNamespace(tools=self.tools, next_cursor=None)
+
+    async def call_tool(self, name, arguments):
+        self.calls.append(("tools/call", (name, arguments)))
+        if self.call_error:
+            raise self.call_error
+        return SimpleNamespace(
+            structured_content=self.payload,
+            content=[],
+            is_error=False,
+        )
+
+
+class SessionContext:
+    def __init__(self, session):
+        self.session = session
+
+    async def __aenter__(self):
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class FakeAuth:
+    def __init__(self, *, status="configured_unverified"):
         self.status = status
-        self.authorization_value = authorization
-        self.refresh_calls = 0
+        self.calls = []
 
     def probe(self):
         return self.status
 
-    def authorization(self, *, refresher):
-        self.refresh_calls += 1
-        if self.status == "auth_expired":
-            raise TdxAuthExpired("sanitized")
-        return self.authorization_value
+    def authorization(self, *, force_refresh=False, rejected_authorization=None):
+        self.calls.append((force_refresh, rejected_authorization))
+        if self.status == "auth_missing":
+            raise TdxAuthMissing("sanitized")
+        return "Bearer ROTATED" if force_refresh else "Bearer INITIAL"
 
 
-class FakeClient:
-    def __init__(self, payload):
+class FakeProviderClient:
+    def __init__(self, payload=None, error=None):
         self.payload = payload
+        self.error = error
         self.calls = []
 
-    def call_tool(self, tool_name, arguments, authorization):
-        self.calls.append((tool_name, arguments, authorization))
+    def call_tool(self, name, arguments, auth_manager):
+        self.calls.append((name, arguments, auth_manager))
+        auth_manager.authorization()
+        if self.error:
+            raise self.error
         return self.payload
 
 
-def owned_payload(*, expires_at_ms=None):
-    return {
-        "schema_version": "1",
-        "client_id": "TEST_ONLY_CLIENT",
-        "access_token": "TEST_ONLY_ACCESS",
-        "refresh_token": "TEST_ONLY_REFRESH",
-        "token_type": "TestScheme",
-        "expires_at_ms": expires_at_ms
-        if expires_at_ms is not None
-        else int(time.time() * 1000) + 3_600_000,
-    }
+class OfficialSdkClientTests(unittest.TestCase):
+    def test_official_sdk_is_fixed_and_custom_jsonrpc_transport_is_gone(self):
+        self.assertEqual("2.0.0", importlib.metadata.version("mcp"))
+        import ym_stock_data.providers.tdx_mcp as module
 
+        source = inspect.getsource(module)
+        self.assertIn("streamable_http_client", source)
+        self.assertIn("ClientSession", source)
+        for forbidden in ("urllib.request", '"jsonrpc"', "_HttpSession"):
+            self.assertNotIn(forbidden, source)
 
-def workbuddy_payload(*, duplicate_tdx=False):
-    oauth = {
-        "tdx-one": {
-            "serverUrl": SERVER_URL,
-            "serverName": "tdx-connector",
-            "accessToken": "TEST_ONLY_ACCESS",
-            "refreshToken": "TEST_ONLY_REFRESH",
-            "tokenType": "TestScheme",
-            "expiresAt": int(time.time() * 1000) + 3_600_000,
-            "ignoredField": "must-not-copy",
-        },
-        "other": {
-            "serverUrl": "https://example.invalid/mcp",
-            "accessToken": "OTHER_TEST_ONLY",
-        },
-    }
-    clients = {
-        "tdx-one": {"client_id": "TEST_ONLY_CLIENT", "ignored": "drop"},
-        "other": {"client_id": "OTHER_CLIENT"},
-    }
-    if duplicate_tdx:
-        oauth["tdx-two"] = dict(oauth["tdx-one"])
-        clients["tdx-two"] = {"client_id": "SECOND_CLIENT"}
-    return {"mcpOAuth": oauth, "mcpClientInfo": clients, "unrelated": "drop"}
+    def test_allowlist_and_schema_contracts_are_exactly_six_read_only_tools(self):
+        expected = {
+            "tdx_screener",
+            "tdx_quotes",
+            "tdx_kline",
+            "wenda_report_query",
+            "wenda_notice_query",
+            "wenda_news_query",
+        }
+        self.assertEqual(expected, set(TOOL_ALLOWLIST))
+        self.assertEqual(expected, set(TOOL_SCHEMA_CONTRACTS))
+        for forbidden in ("trade", "order", "write", "ticket", "cancel"):
+            self.assertFalse(any(forbidden in item.lower() for item in expected))
 
+    def test_initialize_list_schema_gate_then_call(self):
+        session = FakeSession(payload={"datas": [{"code": "600519"}]})
+        authorizations = []
 
-class TdxCredentialTests(unittest.TestCase):
-    def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.root = Path(self.temp_dir.name)
-        self.target = self.root / "owned" / "tdx.json"
+        def factory(authorization):
+            authorizations.append(authorization)
+            return SessionContext(session)
 
-    def test_missing_owned_credentials_probe_auth_missing_without_discovery(self):
-        store = TdxCredentialStore(self.target)
-
-        self.assertEqual("auth_missing", store.probe())
-        self.assertFalse(self.target.exists())
-
-    def test_explicit_import_reads_one_candidate_and_writes_minimal_private_file(self):
-        source_root = self.root / "connectors"
-        candidate = source_root / "only" / ".credentials.json"
-        candidate.parent.mkdir(parents=True)
-        candidate.write_text(json.dumps(workbuddy_payload()), encoding="utf-8")
-        output = []
-
-        result = import_workbuddy_credentials(
-            source_root=source_root,
-            target=self.target,
-            emit=output.append,
+        result = TdxMcpClient(session_factory=factory).call_tool(
+            "tdx_screener", {"query": "非ST", "limit": 1}, FakeAuth()
         )
 
-        self.assertEqual(str(self.target), output[0])
-        self.assertEqual("ready", result["status"])
-        self.assertEqual(0o700, stat.S_IMODE(self.target.parent.stat().st_mode))
-        self.assertEqual(0o600, stat.S_IMODE(self.target.stat().st_mode))
-        stored = json.loads(self.target.read_text(encoding="utf-8"))
+        self.assertEqual({"datas": [{"code": "600519"}]}, result)
+        self.assertEqual(["Bearer INITIAL"], authorizations)
         self.assertEqual(
-            {
-                "schema_version",
-                "client_id",
-                "access_token",
-                "refresh_token",
-                "token_type",
-                "expires_at_ms",
-            },
-            set(stored),
-        )
-        rendered = json.dumps(result) + " ".join(output)
-        for forbidden in ("TEST_ONLY_ACCESS", "TEST_ONLY_REFRESH", "TEST_ONLY_CLIENT"):
-            self.assertNotIn(forbidden, rendered)
-
-    def test_multiple_candidate_files_fail_closed_without_reading_or_writing(self):
-        source_root = self.root / "connectors"
-        for name in ("one", "two"):
-            path = source_root / name / ".credentials.json"
-            path.parent.mkdir(parents=True)
-            path.write_text("not-json", encoding="utf-8")
-
-        with self.assertRaises(CredentialImportError):
-            import_workbuddy_credentials(
-                source_root=source_root,
-                target=self.target,
-                emit=lambda _value: None,
-            )
-
-        self.assertFalse(self.target.exists())
-
-    def test_multiple_tdx_entries_in_one_candidate_fail_closed(self):
-        source_root = self.root / "connectors"
-        candidate = source_root / "only" / ".credentials.json"
-        candidate.parent.mkdir(parents=True)
-        candidate.write_text(
-            json.dumps(workbuddy_payload(duplicate_tdx=True)),
-            encoding="utf-8",
+            ["initialize", "tools/list", "tools/call"],
+            [name for name, _value in session.calls],
         )
 
-        with self.assertRaises(CredentialImportError):
-            import_workbuddy_credentials(
-                source_root=source_root,
-                target=self.target,
-                emit=lambda _value: None,
-            )
+    def test_extra_or_trading_tool_is_rejected_before_auth_and_transport(self):
+        factory = Mock()
+        auth = FakeAuth()
+        client = TdxMcpClient(session_factory=factory)
 
-        self.assertFalse(self.target.exists())
+        for name in ("place_order", "arbitrary_tool"):
+            with self.assertRaises(ValueError):
+                client.call_tool(name, {}, auth)
 
-    def test_expiring_token_refreshes_once_and_persists_private_file(self):
-        store = TdxCredentialStore(self.target)
-        store.save(owned_payload(expires_at_ms=1))
-        refresher = Mock(
-            return_value={
-                "access_token": "TEST_ONLY_NEW_ACCESS",
-                "refresh_token": "TEST_ONLY_NEW_REFRESH",
-                "token_type": "TestScheme",
-                "expires_in": 3600,
-            }
+        self.assertEqual([], auth.calls)
+        factory.assert_not_called()
+
+    def test_tools_list_missing_capability_or_schema_drift_fails_before_call(self):
+        cases = []
+        missing = valid_tool_schemas()
+        missing.pop("wenda_news_query")
+        cases.append(missing)
+        wrong_type = valid_tool_schemas()
+        wrong_type["tdx_quotes"] = {
+            **wrong_type["tdx_quotes"],
+            "properties": {"codes": {"type": "string"}},
+        }
+        cases.append(wrong_type)
+        extra_required = valid_tool_schemas()
+        extra_required["tdx_screener"] = {
+            **extra_required["tdx_screener"],
+            "required": ["query", "trade_confirmation"],
+        }
+        cases.append(extra_required)
+
+        for schemas in cases:
+            with self.subTest(tool_count=len(schemas)):
+                session = FakeSession(schemas=schemas)
+                client = TdxMcpClient(
+                    session_factory=lambda _authorization, value=session: SessionContext(value)
+                )
+                with self.assertRaises(TdxSchemaError):
+                    client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+                self.assertNotIn("tools/call", [name for name, _ in session.calls])
+
+    def test_explicit_destructive_annotation_fails_schema_gate(self):
+        session = FakeSession()
+        target = next(item for item in session.tools if item.name == "tdx_screener")
+        target.annotations.destructive_hint = True
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
         )
 
-        authorization = store.authorization(refresher=refresher)
+        with self.assertRaises(TdxSchemaError):
+            client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
 
-        self.assertEqual("TestScheme TEST_ONLY_NEW_ACCESS", authorization)
-        refresher.assert_called_once()
-        self.assertEqual(0o600, stat.S_IMODE(self.target.stat().st_mode))
+        self.assertNotIn("tools/call", [name for name, _ in session.calls])
 
-    def test_missing_or_failed_refresh_is_auth_expired_and_called_at_most_once(self):
-        for payload, refresher in (
+    def test_401_refreshes_once_rebuilds_session_and_retries_once(self):
+        first = FakeSession(
+            call_error=ExceptionGroup("sdk transport", [http_status_error(401)])
+        )
+        second = FakeSession(payload={"datas": []})
+        sessions = iter((first, second))
+        factory_calls = []
+
+        def factory(authorization):
+            factory_calls.append(authorization)
+            return SessionContext(next(sessions))
+
+        auth = FakeAuth()
+        result = TdxMcpClient(session_factory=factory).call_tool(
+            "tdx_screener", {"query": "无匹配"}, auth
+        )
+
+        self.assertEqual({"datas": []}, result)
+        self.assertEqual(["Bearer INITIAL", "Bearer ROTATED"], factory_calls)
+        self.assertEqual(
+            [(False, None), (True, "Bearer INITIAL")],
+            auth.calls,
+        )
+        self.assertEqual(1, len([x for x in second.calls if x[0] == "tools/call"]))
+
+    def test_second_401_fails_without_third_session_or_refresh(self):
+        sessions = iter(
             (
-                {**owned_payload(expires_at_ms=1), "refresh_token": None},
-                Mock(),
-            ),
-            (owned_payload(expires_at_ms=1), Mock(side_effect=OSError("secret body"))),
-        ):
-            with self.subTest(has_refresh=bool(payload.get("refresh_token"))):
-                store = TdxCredentialStore(self.target)
-                store.save(payload)
-                with self.assertRaises(TdxAuthExpired):
-                    store.authorization(refresher=refresher)
-                self.assertLessEqual(refresher.call_count, 1)
+                FakeSession(call_error=TdxUnauthorized("first")),
+                FakeSession(call_error=TdxUnauthorized("second secret body")),
+            )
+        )
+        factory = Mock(side_effect=lambda _authorization: SessionContext(next(sessions)))
+        auth = FakeAuth()
+
+        with self.assertRaisesRegex(TdxUnauthorized, "authorization failed") as caught:
+            TdxMcpClient(session_factory=factory).call_tool(
+                "tdx_screener", {"query": "非ST"}, auth
+            )
+
+        self.assertEqual(2, factory.call_count)
+        self.assertEqual(2, len(auth.calls))
+        self.assertNotIn("secret body", str(caught.exception))
+
+    def test_403_fails_closed_without_refresh_or_retry(self):
+        session = FakeSession(
+            call_error=ExceptionGroup("sdk transport", [http_status_error(403)])
+        )
+        factory = Mock(return_value=SessionContext(session))
+        auth = FakeAuth()
+
+        with self.assertRaisesRegex(TdxForbidden, "permission denied") as caught:
+            TdxMcpClient(session_factory=factory).call_tool(
+                "tdx_screener", {"query": "非ST"}, auth
+            )
+
+        factory.assert_called_once()
+        self.assertEqual([(False, None)], auth.calls)
+        self.assertNotIn("secret permission body", str(caught.exception))
+
+    def test_malformed_or_embedded_error_payload_never_succeeds(self):
+        payloads = (
+            None,
+            {"error": "bad"},
+            {"isError": True},
+            ["not-a-dict"],
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                session = FakeSession(payload=payload)
+                client = TdxMcpClient(
+                    session_factory=lambda _authorization, value=session: SessionContext(value)
+                )
+                with self.assertRaises(TdxProtocolError):
+                    client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
 
 
 class TdxMcpProviderTests(unittest.TestCase):
-    def test_allowlist_contains_only_six_read_only_tools(self):
-        self.assertEqual(
-            {
-                "tdx_screener",
-                "tdx_quotes",
-                "tdx_kline",
-                "wenda_report_query",
-                "wenda_notice_query",
-                "wenda_news_query",
-            },
-            set(TOOL_ALLOWLIST),
-        )
-        for forbidden in ("trade", "order", "write", "ticket", "cancel"):
-            self.assertFalse(any(forbidden in name.lower() for name in TOOL_ALLOWLIST))
-
     def test_provider_capabilities_map_only_to_compatible_intents(self):
         cases = {
             "tdx_screener": ("review_sentiment", {"query": "非ST", "limit": 1}, {"datas": [{}]}),
@@ -233,170 +354,117 @@ class TdxMcpProviderTests(unittest.TestCase):
             "tdx_notice": ("filings", {"code": "600519"}, {"filings": [{}]}),
             "tdx_news": ("news", {"limit": 1}, {"items": [{}]}),
         }
-        expected_tools = {
-            "tdx_screener": "tdx_screener",
-            "tdx_quotes": "tdx_quotes",
-            "tdx_kline": "tdx_kline",
-            "tdx_report": "wenda_report_query",
-            "tdx_notice": "wenda_notice_query",
-            "tdx_news": "wenda_news_query",
-        }
-        for provider_name, (intent, params, payload) in cases.items():
-            with self.subTest(provider=provider_name):
-                client = FakeClient(payload)
-                provider = TdxMcpProvider(
-                    provider_name,
-                    credential_store=StubStore(),
-                    client=client,
-                )
-                result = provider.call(intent, params)
-                self.assertEqual("success", result.status)
-                self.assertEqual(provider_name, result.provider)
-                self.assertEqual(expected_tools[provider_name], client.calls[0][0])
-                incompatible = provider.call("realtime_market", {})
-                self.assertEqual("incompatible", incompatible.status)
-                self.assertEqual(1, len(client.calls))
-
-    def test_arbitrary_or_trading_tool_is_rejected_before_transport(self):
-        sender = Mock()
-        client = TdxMcpClient(sender=sender)
-
-        for tool_name in ("place_order", "arbitrary_tool"):
-            with self.assertRaises(ValueError):
-                client.call_tool(tool_name, {}, "TestScheme REDACTED")
-
-        sender.assert_not_called()
-
-    def test_jsonrpc_error_malformed_payload_and_embedded_error_never_succeed(self):
-        bad_payloads = (
-            {"error": {"code": -32000, "message": "secret body"}},
-            {"result": {"content": [{"type": "text", "text": "not-json"}]}},
-            {"result": {"isError": True, "content": []}},
-            {"result": {"content": [{"type": "text", "text": json.dumps({"error": "bad"})}]}},
-        )
-        for response in bad_payloads:
-            with self.subTest(response_keys=tuple(response)):
-                client = TdxMcpClient(
-                    sender=Mock(return_value=response),
-                    skip_initialize=True,
-                )
-                provider = TdxMcpProvider(
-                    "tdx_screener",
-                    credential_store=StubStore(),
-                    client=client,
-                )
-                outcome = provider.call(
-                    "review_sentiment", {"query": "非ST", "limit": 1}
-                )
-                self.assertEqual("provider_error", outcome.status)
-                self.assertIsNone(outcome.data)
-                self.assertNotIn("secret body", outcome.detail or "")
-
-    def test_missing_wrong_or_explicit_failure_containers_are_provider_errors(self):
-        cases = (
-            ("tdx_report", "research", {"code": "600519"}, {}),
-            ("tdx_report", "research", {"code": "600519"}, {"reports": {}}),
-            ("tdx_notice", "filings", {"code": "600519"}, {"success": False, "filings": []}),
-            ("tdx_news", "news", {"limit": 1}, {"status": "failed", "items": []}),
-            ("tdx_kline", "stock_kline", {"code": "600519"}, {"isError": True, "bars": []}),
-        )
-        for provider_name, intent, params, payload in cases:
-            with self.subTest(provider=provider_name, payload=payload):
-                provider = TdxMcpProvider(
-                    provider_name,
-                    credential_store=StubStore(),
-                    client=FakeClient(payload),
-                )
+        for name, (intent, params, payload) in cases.items():
+            with self.subTest(name=name):
+                client = FakeProviderClient(payload=payload)
+                auth = FakeAuth()
+                provider = TdxMcpProvider(name, auth_manager=auth, client=client)
                 outcome = provider.call(intent, params)
-                self.assertEqual("provider_error", outcome.status)
-                self.assertEqual("MCP_ERROR", outcome.error_code)
-                self.assertIsNone(outcome.data)
+                self.assertEqual("success", outcome.status)
+                self.assertIs(auth, client.calls[0][2])
+                self.assertEqual("incompatible", provider.call("realtime_market", {}).status)
+                self.assertEqual(1, len(client.calls))
 
     def test_only_explicit_empty_expected_container_becomes_empty(self):
         cases = (
-            ("tdx_screener", "review_sentiment", {"query": "无匹配"}, {"datas": []}),
+            ("tdx_screener", "review_sentiment", {"query": "none"}, {"datas": []}),
             ("tdx_quotes", "stock_snapshot", {"codes": ["600519"]}, {"items": []}),
             ("tdx_kline", "stock_kline", {"code": "600519"}, {"bars": []}),
             ("tdx_report", "research", {"code": "600519"}, {"reports": []}),
             ("tdx_notice", "filings", {"code": "600519"}, {"filings": []}),
             ("tdx_news", "news", {"limit": 1}, {"items": []}),
         )
-        for provider_name, intent, params, payload in cases:
-            with self.subTest(provider=provider_name):
+        for name, intent, params, payload in cases:
+            outcome = TdxMcpProvider(
+                name,
+                auth_manager=FakeAuth(),
+                client=FakeProviderClient(payload=payload),
+            ).call(intent, params)
+            self.assertEqual("empty", outcome.status)
+
+    def test_missing_auth_403_and_protocol_error_are_distinct_sanitized_states(self):
+        cases = (
+            (FakeAuth(status="auth_missing"), FakeProviderClient(payload={"datas": []}), "AUTH_MISSING", "missing"),
+            (FakeAuth(), FakeProviderClient(error=TdxForbidden("secret")), "AUTH_FORBIDDEN", "forbidden"),
+            (FakeAuth(), FakeProviderClient(error=TdxProtocolError("secret")), "MCP_ERROR", "present"),
+        )
+        for auth, client, code, auth_state in cases:
+            with self.subTest(code=code):
                 outcome = TdxMcpProvider(
-                    provider_name,
-                    credential_store=StubStore(),
-                    client=FakeClient(payload),
-                ).call(intent, params)
-                self.assertEqual("empty", outcome.status)
+                    "tdx_screener", auth_manager=auth, client=client
+                ).call("review_sentiment", {"query": "非ST"})
+                self.assertEqual(code, outcome.error_code)
+                self.assertEqual(auth_state, outcome.auth["status"])
+                self.assertNotIn("secret", outcome.detail or "")
 
-    def test_sender_mode_runs_initialize_notification_then_allowlisted_tool_call(self):
-        messages = []
 
-        def sender(message, _authorization):
-            messages.append(message)
-            if message.get("method") == "initialize":
-                return {"jsonrpc": "2.0", "id": message["id"], "result": {"protocolVersion": "2025-03-26"}}
-            if message.get("method") == "notifications/initialized":
-                return {}
-            return {
-                "jsonrpc": "2.0",
-                "id": message["id"],
-                "result": {"structuredContent": {"datas": []}},
-            }
+class OwnedAuthCliTests(unittest.TestCase):
+    def test_parser_exposes_only_login_and_status_with_explicit_store_choice(self):
+        help_text = _parser().format_help()
+        auth_parser = next(
+            action for action in _parser()._actions if action.dest == "command"
+        ).choices["auth"]
+        auth_help = auth_parser.format_help()
 
-        client = TdxMcpClient(sender=sender)
-        result = client.call_tool("tdx_screener", {"query": "无匹配"}, "TestScheme REDACTED")
+        self.assertIn("login-tdx", auth_help)
+        self.assertIn("status-tdx", auth_help)
+        self.assertNotIn("import-tdx", auth_help)
+        self.assertNotIn("workbuddy", (help_text + auth_help).lower())
 
-        self.assertEqual({"datas": []}, result)
+    def test_login_cli_calls_owned_flow_and_prints_only_sanitized_state(self):
+        output = io.StringIO()
+        auth = Mock()
+        auth.login.return_value = "configured_unverified"
+        with patch(
+            "ym_stock_data.__main__.create_tdx_auth", return_value=auth
+        ) as factory, redirect_stdout(output):
+            exit_code = main(["auth", "login-tdx", "--store", "file"])
+
+        self.assertEqual(0, exit_code)
+        factory.assert_called_once_with(mode="file", file_path=None)
+        auth.login.assert_called_once_with()
         self.assertEqual(
-            ["initialize", "notifications/initialized", "tools/call"],
-            [message["method"] for message in messages],
-        )
-        self.assertEqual("tdx_screener", messages[-1]["params"]["name"])
-
-    def test_refresh_failure_returns_auth_error_with_expired_auth_state(self):
-        provider = TdxMcpProvider(
-            "tdx_screener",
-            credential_store=StubStore(status="auth_expired"),
-            client=FakeClient({"datas": [{}]}),
+            {
+                "scope": "mcp.read",
+                "status": "configured_unverified",
+                "store": "file",
+            },
+            json.loads(output.getvalue()),
         )
 
-        outcome = provider.call(
-            "review_sentiment", {"query": "非ST", "limit": 1}
+    def test_status_cli_is_offline_sanitized_and_never_runs_login(self):
+        output = io.StringIO()
+        auth = Mock()
+        auth.probe.return_value = "auth_expired"
+        with patch(
+            "ym_stock_data.__main__.create_tdx_auth", return_value=auth
+        ), redirect_stdout(output):
+            exit_code = main(["auth", "status-tdx"])
+
+        self.assertEqual(2, exit_code)
+        auth.probe.assert_called_once_with()
+        auth.login.assert_not_called()
+        self.assertEqual(
+            {"scope": "mcp.read", "status": "auth_expired", "store": "keychain"},
+            json.loads(output.getvalue()),
         )
 
-        self.assertEqual("auth_error", outcome.status)
-        self.assertEqual("AUTH_EXPIRED", outcome.error_code)
-        self.assertEqual("expired", outcome.auth["status"])
+    def test_removed_import_flag_fails_at_parser_without_scanning(self):
+        output = io.StringIO()
+        errors = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(errors), self.assertRaises(SystemExit):
+            main(["auth", "import-tdx", "--from-workbuddy"])
 
-    def test_http_oauth_error_never_becomes_success_or_leaks_response_body(self):
-        provider = TdxMcpProvider(
-            "tdx_screener",
-            credential_store=StubStore(),
-            client=TdxMcpClient(),
-        )
-        error = urllib.error.HTTPError(
-            SERVER_URL,
-            401,
-            "secret response body",
-            hdrs=None,
-            fp=io.BytesIO(b"redacted"),
-        )
-        self.addCleanup(error.close)
+        self.assertEqual("", output.getvalue())
+        import ym_stock_data.__main__ as cli_module
+        import ym_stock_data.providers.tdx_mcp as provider_module
 
-        with patch("urllib.request.urlopen", side_effect=error):
-            outcome = provider.call(
-                "review_sentiment", {"query": "非ST", "limit": 1}
-            )
-
-        self.assertEqual("auth_error", outcome.status)
-        self.assertEqual("AUTH_EXPIRED", outcome.error_code)
-        self.assertIsNone(outcome.data)
-        self.assertNotIn("secret", outcome.detail or "")
+        source = inspect.getsource(cli_module) + inspect.getsource(provider_module)
+        self.assertNotIn("workbuddy", source.lower())
+        self.assertNotIn("import_tdx_credentials", source)
 
 
-class TdxRegistryRoutingDoctorTests(unittest.TestCase):
+class TdxRegistryTests(unittest.TestCase):
     def test_canonical_query_audits_missing_owned_auth_after_compatible_failures(self):
         class FailedProvider:
             def __init__(self, name):
@@ -414,81 +482,27 @@ class TdxRegistryRoutingDoctorTests(unittest.TestCase):
             state = ProviderState(root / "state.sqlite3")
             tdx = TdxMcpProvider(
                 "tdx_quotes",
-                credential_store=TdxCredentialStore(root / "missing.json"),
-                client=FakeClient({"items": []}),
+                auth_manager=TdxOwnedAuth(
+                    store=FileCredentialStore(root / "missing.json")
+                ),
+                client=FakeProviderClient(payload={"items": []}),
             )
             providers = {
                 name: FailedProvider(name) for name in ("pytdx", "tencent", "sina")
             }
             providers["tdx_quotes"] = tdx
             with patch.object(api, "_STATE", state), patch.object(
-                api,
-                "_provider_for",
-                side_effect=lambda name: providers[name],
+                api, "_provider_for", side_effect=lambda name: providers[name]
             ):
                 result = api.query("stock_snapshot", codes=["600519"])
 
         self.assertEqual("error", result["_meta"]["status"])
-        self.assertEqual(
-            ["pytdx", "tencent", "sina", "tdx_quotes"],
-            result["_meta"]["source_chain"],
-        )
-        self.assertEqual("auth_error", result["_meta"]["attempts"][-1]["status"])
         self.assertEqual("AUTH_MISSING", result["_meta"]["attempts"][-1]["error_code"])
 
-    def test_canonical_query_zero_auth_success_never_calls_tdx(self):
-        class SuccessProvider:
-            name = "pytdx"
-
-            def call(self, _intent, _params):
-                return ProviderOutcome(
-                    provider="pytdx",
-                    status="success",
-                    data={"600519": {"price": 1}},
-                    latency_ms=1,
-                )
-
-        with tempfile.TemporaryDirectory() as directory:
-            state = ProviderState(Path(directory) / "state.sqlite3")
-            tdx_client = FakeClient({"items": [{"code": "600519"}]})
-            tdx = TdxMcpProvider(
-                "tdx_quotes",
-                credential_store=StubStore(),
-                client=tdx_client,
-            )
-            with patch.object(api, "_STATE", state), patch.object(
-                api,
-                "_provider_for",
-                side_effect=lambda name: SuccessProvider() if name == "pytdx" else tdx,
-            ):
-                result = api.query("stock_snapshot", codes=["600519"])
-
-        self.assertEqual("success", result["_meta"]["status"])
-        self.assertEqual(["pytdx"], result["_meta"]["source_chain"])
-        self.assertEqual([], tdx_client.calls)
-
-    def test_registry_and_routes_include_tdx_only_after_compatible_sources(self):
-        for name in (
-            "tdx_mcp",
-            "tdx_screener",
-            "tdx_quotes",
-            "tdx_kline",
-            "tdx_report",
-            "tdx_notice",
-            "tdx_news",
-        ):
-            self.assertIn(name, api.PROVIDER_REGISTRY)
-        self.assertEqual(
-            "tdx_screener",
-            route_for("review_sentiment", {"query": "非ST"}).providers[-2],
-        )
+    def test_routes_keep_tdx_after_compatible_sources_only(self):
         self.assertEqual("tdx_quotes", route_for("stock_snapshot", {}).providers[-1])
-        self.assertEqual("tdx_kline", route_for("stock_kline", {"period": "daily"}).providers[-1])
+        self.assertEqual("tdx_kline", route_for("stock_kline", {}).providers[-1])
         self.assertEqual("tdx_report", route_for("research", {}).providers[-1])
-        self.assertEqual(
-            ("cninfo", "tdx_notice", "wind_documents"),
-            route_for("filings", {}).providers,
-        )
         self.assertEqual("tdx_news", route_for("news", {}).providers[-1])
         for intent, params in (
             ("realtime_market", {}),
@@ -498,49 +512,6 @@ class TdxRegistryRoutingDoctorTests(unittest.TestCase):
             self.assertFalse(
                 any(name.startswith("tdx_") for name in route_for(intent, params).providers)
             )
-
-    def test_doctor_reports_total_and_all_six_capabilities(self):
-        report = collect_diagnostics(
-            provider_names=(
-                "tdx_mcp",
-                "tdx_screener",
-                "tdx_quotes",
-                "tdx_kline",
-                "tdx_report",
-                "tdx_notice",
-                "tdx_news",
-            ),
-            tdx_auth_path=Path("/unused-by-provider-probes"),
-        )
-
-        expected = {
-            "tdx_mcp",
-            "tdx_screener",
-            "tdx_quotes",
-            "tdx_kline",
-            "tdx_report",
-            "tdx_notice",
-            "tdx_news",
-        }
-        self.assertTrue(expected.issubset(report["providers"]))
-        self.assertTrue(
-            all(report["providers"][name]["status"] == "auth_missing" for name in expected)
-        )
-
-    def test_cli_import_failure_is_sanitized_and_never_scans_implicitly(self):
-        output = io.StringIO()
-        with patch(
-            "ym_stock_data.__main__.import_tdx_credentials",
-            side_effect=CredentialImportError("secret token body"),
-        ) as importer, redirect_stdout(output):
-            exit_code = main(["auth", "import-tdx", "--from-workbuddy"])
-
-        importer.assert_called_once_with(from_workbuddy=True)
-        self.assertEqual(2, exit_code)
-        payload = json.loads(output.getvalue())
-        self.assertEqual("unavailable", payload["status"])
-        self.assertNotIn("secret", output.getvalue())
-        self.assertNotIn("token", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -1,38 +1,67 @@
-"""Pipeline-owned, read-only TDX MCP provider."""
+"""Governed read-only TDX provider using the official MCP Python SDK."""
 
 from __future__ import annotations
 
+import asyncio
 import json
-import os
 import socket
-import tempfile
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import Callable
 
+import httpx2
+from mcp import ClientSession, types
+from mcp.client.streamable_http import streamable_http_client
+
 from .base import ProviderOutcome
-
-
-SERVER_URL = "https://txmcp.tdx.com.cn:3001/txmcp"
-TOKEN_URL = "https://auth.tdx.com.cn/token"
-REQUEST_TIMEOUT_SEC = 90
-REFRESH_SKEW_MS = 5 * 60 * 1000
-TDX_AUTH_PATH = Path.home() / ".ym-stock-data" / "auth" / "tdx.json"
-WORKBUDDY_CONNECTORS_DIR = Path.home() / ".workbuddy" / "connectors"
-
-TOOL_ALLOWLIST = frozenset(
-    {
-        "tdx_screener",
-        "tdx_quotes",
-        "tdx_kline",
-        "wenda_report_query",
-        "wenda_notice_query",
-        "wenda_news_query",
-    }
+from .tdx_auth import (
+    DEFAULT_FILE_PATH,
+    DEFAULT_RESOURCE_URL,
+    FileCredentialStore,
+    TdxAuthExpired,
+    TdxAuthMissing,
+    TdxOwnedAuth,
+    TdxScopeError,
+    default_credential_store,
 )
+
+
+SERVER_URL = DEFAULT_RESOURCE_URL
+REQUEST_TIMEOUT_SEC = 90
+TDX_AUTH_PATH = DEFAULT_FILE_PATH
+TdxCredentialStore = FileCredentialStore
+
+TOOL_SCHEMA_CONTRACTS = {
+    "tdx_screener": {
+        "required": frozenset({"query"}),
+        "properties": {"query": ("string", None), "limit": ("integer", None)},
+    },
+    "tdx_quotes": {
+        "required": frozenset({"codes"}),
+        "properties": {"codes": ("array", "string")},
+    },
+    "tdx_kline": {
+        "required": frozenset({"code"}),
+        "properties": {
+            "code": ("string", None),
+            "period": ("string", None),
+            "count": ("integer", None),
+        },
+    },
+    "wenda_report_query": {
+        "required": frozenset({"code"}),
+        "properties": {"code": ("string", None), "days": ("integer", None)},
+    },
+    "wenda_notice_query": {
+        "required": frozenset({"code"}),
+        "properties": {"code": ("string", None), "days": ("integer", None)},
+    },
+    "wenda_news_query": {
+        "required": frozenset(),
+        "properties": {"limit": ("integer", None)},
+    },
+}
+TOOL_ALLOWLIST = frozenset(TOOL_SCHEMA_CONTRACTS)
 TDX_PROVIDER_SPECS = {
     "tdx_screener": ("review_sentiment", "tdx_screener"),
     "tdx_quotes": ("stock_snapshot", "tdx_quotes"),
@@ -45,387 +74,24 @@ TDX_PROVIDER_NAMES = tuple(TDX_PROVIDER_SPECS)
 TDX_DIAGNOSTIC_NAMES = ("tdx_mcp",) + TDX_PROVIDER_NAMES
 
 
-class CredentialImportError(RuntimeError):
-    """A bounded credential import could not be completed safely."""
-
-
-class TdxAuthMissing(RuntimeError):
-    """No pipeline-owned TDX credentials exist."""
-
-
-class TdxAuthExpired(RuntimeError):
-    """TDX authorization cannot be refreshed."""
-
-
 class TdxProtocolError(RuntimeError):
-    """TDX returned an invalid or explicit error response."""
+    """The MCP response violated the governed provider contract."""
+
+
+class TdxSchemaError(TdxProtocolError):
+    """tools/list was missing a capability or its schema drifted."""
 
 
 class TdxTransportError(RuntimeError):
-    """TDX transport failed without exposing response content."""
+    """The SDK transport failed without exposing response content."""
 
 
-def _now_ms() -> int:
-    return int(time.time() * 1000)
+class TdxUnauthorized(RuntimeError):
+    """The current access token was rejected with HTTP 401."""
 
 
-class TdxCredentialStore:
-    """Minimal owned OAuth store with private, atomic writes."""
-
-    def __init__(self, path: str | Path = TDX_AUTH_PATH):
-        self.path = Path(path).expanduser()
-
-    def _load(self) -> dict:
-        if not self.path.is_file():
-            raise TdxAuthMissing("owned TDX credentials are missing")
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise TdxAuthExpired("owned TDX credentials are invalid") from exc
-        if not isinstance(payload, dict):
-            raise TdxAuthExpired("owned TDX credentials are invalid")
-        return payload
-
-    def probe(self) -> str:
-        try:
-            payload = self._load()
-        except TdxAuthMissing:
-            return "auth_missing"
-        except TdxAuthExpired:
-            return "auth_expired"
-        expires_at = payload.get("expires_at_ms")
-        access_token = payload.get("access_token")
-        refresh_token = payload.get("refresh_token")
-        client_id = payload.get("client_id")
-        if not isinstance(expires_at, int):
-            return "auth_expired"
-        if expires_at <= _now_ms() + REFRESH_SKEW_MS and not (
-            isinstance(refresh_token, str)
-            and refresh_token
-            and isinstance(client_id, str)
-            and client_id
-        ):
-            return "auth_expired"
-        if not isinstance(access_token, str) or not access_token:
-            return "auth_expired" if not refresh_token else "configured_unverified"
-        return "configured_unverified"
-
-    def save(self, payload: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.path.parent, 0o700)
-        temporary_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=".tdx-auth-",
-                delete=False,
-            ) as handle:
-                temporary_path = Path(handle.name)
-                os.chmod(temporary_path, 0o600)
-                json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self.path)
-            os.chmod(self.path, 0o600)
-        finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink()
-
-    def authorization(
-        self,
-        *,
-        refresher: Callable[[dict], dict] = None,
-    ) -> str:
-        payload = self._load()
-        access_token = payload.get("access_token")
-        expires_at = payload.get("expires_at_ms")
-        if (
-            isinstance(access_token, str)
-            and access_token
-            and isinstance(expires_at, int)
-            and expires_at > _now_ms() + REFRESH_SKEW_MS
-        ):
-            return f"{payload.get('token_type') or 'Bearer'} {access_token}"
-        refresh_token = payload.get("refresh_token")
-        client_id = payload.get("client_id")
-        if not isinstance(refresh_token, str) or not refresh_token:
-            raise TdxAuthExpired("TDX refresh is unavailable")
-        if not isinstance(client_id, str) or not client_id:
-            raise TdxAuthExpired("TDX refresh is unavailable")
-        refresh = refresher or refresh_access_token
-        try:
-            refreshed = refresh(dict(payload))
-        except Exception as exc:
-            raise TdxAuthExpired("TDX refresh failed") from exc
-        new_access = refreshed.get("access_token") if isinstance(refreshed, dict) else None
-        try:
-            expires_in = int(refreshed.get("expires_in", 0))
-        except (TypeError, ValueError, AttributeError):
-            expires_in = 0
-        if not isinstance(new_access, str) or not new_access or expires_in <= 0:
-            raise TdxAuthExpired("TDX refresh failed")
-        updated = {
-            "schema_version": "1",
-            "client_id": client_id,
-            "access_token": new_access,
-            "refresh_token": refreshed.get("refresh_token") or refresh_token,
-            "token_type": refreshed.get("token_type") or payload.get("token_type") or "Bearer",
-            "expires_at_ms": _now_ms() + expires_in * 1000,
-        }
-        self.save(updated)
-        return f"{updated['token_type']} {updated['access_token']}"
-
-
-def refresh_access_token(payload: dict) -> dict:
-    form = urllib.parse.urlencode(
-        {
-            "grant_type": "refresh_token",
-            "refresh_token": payload["refresh_token"],
-            "client_id": payload["client_id"],
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        TOKEN_URL,
-        data=form,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:
-        raise TdxAuthExpired("TDX refresh failed") from exc
-    if not isinstance(result, dict):
-        raise TdxAuthExpired("TDX refresh failed")
-    return result
-
-
-def _minimal_owned_credentials(data: dict) -> dict:
-    oauth = data.get("mcpOAuth") if isinstance(data, dict) else None
-    clients = data.get("mcpClientInfo") if isinstance(data, dict) else None
-    if not isinstance(oauth, dict) or not isinstance(clients, dict):
-        raise CredentialImportError("credential container is invalid")
-    matches = [
-        (key, entry)
-        for key, entry in oauth.items()
-        if isinstance(entry, dict)
-        and (
-            entry.get("serverUrl") == SERVER_URL
-            or entry.get("serverName") == "tdx-connector"
-        )
-    ]
-    if len(matches) != 1:
-        raise CredentialImportError("TDX credential selection is ambiguous")
-    key, entry = matches[0]
-    client = clients.get(key)
-    client_id = client.get("client_id") if isinstance(client, dict) else None
-    refresh_token = entry.get("refreshToken")
-    if not isinstance(client_id, str) or not client_id:
-        raise CredentialImportError("TDX client metadata is incomplete")
-    if not isinstance(refresh_token, str) or not refresh_token:
-        raise CredentialImportError("TDX refresh metadata is incomplete")
-    try:
-        expires_at = int(entry.get("expiresAt") or 0)
-    except (TypeError, ValueError):
-        expires_at = 0
-    return {
-        "schema_version": "1",
-        "client_id": client_id,
-        "access_token": entry.get("accessToken"),
-        "refresh_token": refresh_token,
-        "token_type": entry.get("tokenType") or "Bearer",
-        "expires_at_ms": expires_at,
-    }
-
-
-def import_workbuddy_credentials(
-    *,
-    source_root: str | Path = WORKBUDDY_CONNECTORS_DIR,
-    target: str | Path = TDX_AUTH_PATH,
-    emit: Callable[[str], object] = print,
-) -> dict:
-    """Read exactly one bounded WorkBuddy candidate and import one TDX entry."""
-
-    target_path = Path(target).expanduser()
-    emit(str(target_path))
-    root = Path(source_root).expanduser()
-    candidates = sorted(
-        path for path in root.glob("*/.credentials.json") if path.is_file()
-    ) if root.is_dir() else []
-    if len(candidates) != 1:
-        raise CredentialImportError("credential candidate selection is ambiguous")
-    try:
-        source = json.loads(candidates[0].read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise CredentialImportError("credential candidate is invalid") from exc
-    store = TdxCredentialStore(target_path)
-    store.save(_minimal_owned_credentials(source))
-    return {"status": "ready", "target": str(target_path)}
-
-
-def import_tdx_credentials(*, from_workbuddy: bool = False) -> dict:
-    if not from_workbuddy:
-        return {
-            "status": "unavailable",
-            "action": "pass --from-workbuddy for an explicit bounded import",
-        }
-    return import_workbuddy_credentials()
-
-
-def _parse_messages(body: str) -> list[dict]:
-    body = body.strip()
-    if not body:
-        return []
-    if body.startswith("{"):
-        value = json.loads(body)
-        return [value] if isinstance(value, dict) else []
-    messages = []
-    for block in body.split("\n\n"):
-        data = "\n".join(
-            line[5:].strip()
-            for line in block.splitlines()
-            if line.startswith("data:")
-        ).strip()
-        if data and data != "[DONE]":
-            value = json.loads(data)
-            if isinstance(value, dict):
-                messages.append(value)
-    return messages
-
-
-class _HttpSession:
-    def __init__(self):
-        self.session_id: str | None = None
-
-    def send(self, message: dict, authorization: str) -> dict:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "Authorization": authorization,
-        }
-        if self.session_id:
-            headers["Mcp-Session-Id"] = self.session_id
-        request = urllib.request.Request(
-            SERVER_URL,
-            data=json.dumps(message, ensure_ascii=False).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SEC) as response:
-                session_id = response.headers.get("Mcp-Session-Id")
-                if session_id:
-                    self.session_id = session_id
-                body = response.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:
-            if exc.code in {401, 403}:
-                raise TdxAuthExpired("TDX HTTP authorization failed") from exc
-            raise TdxTransportError("TDX HTTP request failed") from exc
-        except (TimeoutError, socket.timeout):
-            raise
-        except (OSError, urllib.error.URLError) as exc:
-            raise TdxTransportError("TDX transport failed") from exc
-        try:
-            messages = _parse_messages(body)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise TdxProtocolError("TDX returned invalid JSON") from exc
-        message_id = message.get("id")
-        if message_id is None:
-            return {}
-        for candidate in messages:
-            if candidate.get("id") == message_id:
-                return candidate
-        raise TdxProtocolError("TDX response did not match the request")
-
-
-class TdxMcpClient:
-    def __init__(
-        self,
-        *,
-        sender: Callable[[dict, str], dict] | None = None,
-        skip_initialize: bool = False,
-    ):
-        self._session = _HttpSession() if sender is None else None
-        self._sender = sender or self._session.send
-        self._initialized = bool(skip_initialize)
-        self._request_id = 0
-
-    def _next_id(self) -> int:
-        self._request_id += 1
-        return self._request_id
-
-    def _request(self, method: str, params: dict, authorization: str) -> dict:
-        response = self._sender(
-            {
-                "jsonrpc": "2.0",
-                "id": self._next_id(),
-                "method": method,
-                "params": params,
-            },
-            authorization,
-        )
-        if not isinstance(response, dict) or response.get("error"):
-            raise TdxProtocolError("TDX MCP returned an error")
-        result = response.get("result")
-        if not isinstance(result, dict):
-            raise TdxProtocolError("TDX MCP returned an invalid result")
-        return result
-
-    def _ensure_initialized(self, authorization: str) -> None:
-        if self._initialized:
-            return
-        self._request(
-            "initialize",
-            {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "ym-stock-data", "version": "1.0"},
-            },
-            authorization,
-        )
-        self._sender(
-            {"jsonrpc": "2.0", "method": "notifications/initialized"},
-            authorization,
-        )
-        self._initialized = True
-
-    def call_tool(self, tool_name: str, arguments: dict, authorization: str) -> dict:
-        if tool_name not in TOOL_ALLOWLIST:
-            raise ValueError("TDX tool is not allowlisted")
-        self._ensure_initialized(authorization)
-        result = self._request(
-            "tools/call",
-            {"name": tool_name, "arguments": dict(arguments)},
-            authorization,
-        )
-        if _payload_failed(result):
-            raise TdxProtocolError("TDX MCP tool returned an error")
-        structured = result.get("structuredContent")
-        if isinstance(structured, dict):
-            payload = structured
-        else:
-            content = result.get("content")
-            if not isinstance(content, list):
-                raise TdxProtocolError("TDX MCP payload is malformed")
-            texts = [
-                item.get("text")
-                for item in content
-                if isinstance(item, dict)
-                and item.get("type") == "text"
-                and isinstance(item.get("text"), str)
-            ]
-            if len(texts) != 1:
-                raise TdxProtocolError("TDX MCP payload is malformed")
-            try:
-                payload = json.loads(texts[0])
-            except json.JSONDecodeError as exc:
-                raise TdxProtocolError("TDX MCP payload is malformed") from exc
-        if not isinstance(payload, dict) or _payload_failed(payload):
-            raise TdxProtocolError("TDX MCP payload is an error")
-        return payload
+class TdxForbidden(RuntimeError):
+    """The read-only token lacks permission; scope escalation is forbidden."""
 
 
 def _arguments(provider_name: str, params: dict) -> dict:
@@ -497,24 +163,253 @@ def _normalize(provider_name: str, payload: dict) -> tuple[dict, int]:
     return {container: rows}, len(rows)
 
 
+def _status_code(error: BaseException) -> int | None:
+    response = getattr(error, "response", None)
+    value = getattr(response, "status_code", None)
+    if isinstance(value, int):
+        return value
+    nested = getattr(error, "exceptions", None)
+    if isinstance(nested, (list, tuple)):
+        for item in nested:
+            if isinstance(item, BaseException):
+                value = _status_code(item)
+                if value is not None:
+                    return value
+    cause = getattr(error, "__cause__", None)
+    if isinstance(cause, BaseException) and cause is not error:
+        return _status_code(cause)
+    return None
+
+
+def _raise_sanitized_transport(error: BaseException) -> None:
+    if isinstance(
+        error,
+        (TdxUnauthorized, TdxForbidden, TdxSchemaError, TdxProtocolError),
+    ):
+        raise error
+    status = _status_code(error)
+    if status == 401:
+        raise TdxUnauthorized("TDX MCP authorization failed") from None
+    if status == 403:
+        raise TdxForbidden("TDX MCP permission denied") from None
+    if isinstance(error, (TimeoutError, socket.timeout, asyncio.TimeoutError)):
+        raise TimeoutError("TDX MCP request timed out") from None
+    raise TdxTransportError("TDX MCP transport failed") from None
+
+
+@asynccontextmanager
+async def _official_sdk_session(authorization: str):
+    """Create one official SDK Streamable HTTP session for one attempt."""
+
+    async with httpx2.AsyncClient(
+        headers={"Authorization": authorization},
+        timeout=REQUEST_TIMEOUT_SEC,
+    ) as http_client:
+        async with streamable_http_client(
+            SERVER_URL,
+            http_client=http_client,
+        ) as streams:
+            read_stream, write_stream, _get_session_id = streams
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                client_info=types.Implementation(
+                    name="ym-stock-data",
+                    version="2.0.0",
+                ),
+            ) as session:
+                yield session
+
+
+def _tool_value(tool, name: str, default=None):
+    if isinstance(tool, dict):
+        return tool.get(name, default)
+    return getattr(tool, name, default)
+
+
+def _annotation_value(annotations, snake: str, camel: str):
+    if annotations is None:
+        return None
+    if isinstance(annotations, dict):
+        return annotations.get(snake, annotations.get(camel))
+    return getattr(annotations, snake, None)
+
+
+def _validate_tool_schema(tool) -> None:
+    name = _tool_value(tool, "name")
+    contract = TOOL_SCHEMA_CONTRACTS.get(name)
+    if contract is None:
+        return
+    schema = _tool_value(tool, "input_schema")
+    if schema is None:
+        schema = _tool_value(tool, "inputSchema")
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        raise TdxSchemaError("TDX MCP tool schema drifted")
+    required = schema.get("required", [])
+    if not isinstance(required, list) or set(required) != set(contract["required"]):
+        raise TdxSchemaError("TDX MCP tool schema drifted")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise TdxSchemaError("TDX MCP tool schema drifted")
+    for property_name, (expected_type, expected_item_type) in contract[
+        "properties"
+    ].items():
+        definition = properties.get(property_name)
+        if not isinstance(definition, dict) or definition.get("type") != expected_type:
+            raise TdxSchemaError("TDX MCP tool schema drifted")
+        if expected_item_type is not None:
+            items = definition.get("items")
+            if not isinstance(items, dict) or items.get("type") != expected_item_type:
+                raise TdxSchemaError("TDX MCP tool schema drifted")
+    annotations = _tool_value(tool, "annotations")
+    if _annotation_value(annotations, "destructive_hint", "destructiveHint") is True:
+        raise TdxSchemaError("TDX MCP tool is marked destructive")
+    if _annotation_value(annotations, "read_only_hint", "readOnlyHint") is False:
+        raise TdxSchemaError("TDX MCP tool is not marked read-only")
+
+
+def _validate_arguments(tool_name: str, arguments: dict) -> None:
+    if not isinstance(arguments, dict):
+        raise ValueError("TDX tool arguments must be an object")
+    contract = TOOL_SCHEMA_CONTRACTS[tool_name]
+    if not set(contract["required"]).issubset(arguments):
+        raise ValueError("TDX tool arguments are incomplete")
+    if not set(arguments).issubset(contract["properties"]):
+        raise ValueError("TDX tool argument is not allowlisted")
+    for name, value in arguments.items():
+        expected_type, item_type = contract["properties"][name]
+        valid = {
+            "string": isinstance(value, str),
+            "integer": isinstance(value, int) and not isinstance(value, bool),
+            "array": isinstance(value, list),
+        }[expected_type]
+        if not valid:
+            raise ValueError("TDX tool argument type is invalid")
+        if item_type == "string" and not all(isinstance(item, str) for item in value):
+            raise ValueError("TDX tool argument type is invalid")
+
+
+def _extract_payload(result) -> dict:
+    if _tool_value(result, "is_error", _tool_value(result, "isError", False)) is True:
+        raise TdxProtocolError("TDX MCP tool returned an error")
+    payload = _tool_value(result, "structured_content")
+    if payload is None:
+        payload = _tool_value(result, "structuredContent")
+    if payload is None:
+        content = _tool_value(result, "content")
+        if not isinstance(content, list):
+            raise TdxProtocolError("TDX MCP payload is malformed")
+        texts = [
+            _tool_value(item, "text")
+            for item in content
+            if _tool_value(item, "type") == "text"
+            and isinstance(_tool_value(item, "text"), str)
+        ]
+        if len(texts) != 1:
+            raise TdxProtocolError("TDX MCP payload is malformed")
+        try:
+            payload = json.loads(texts[0])
+        except json.JSONDecodeError:
+            raise TdxProtocolError("TDX MCP payload is malformed") from None
+    if not isinstance(payload, dict) or _payload_failed(payload):
+        raise TdxProtocolError("TDX MCP payload is an error")
+    return payload
+
+
+class TdxMcpClient:
+    """Synchronous governed facade over one official SDK session per attempt."""
+
+    def __init__(self, *, session_factory: Callable = _official_sdk_session):
+        self.session_factory = session_factory
+
+    def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        auth_manager: TdxOwnedAuth,
+    ) -> dict:
+        if tool_name not in TOOL_ALLOWLIST:
+            raise ValueError("TDX tool is not allowlisted")
+        _validate_arguments(tool_name, arguments)
+        authorization = auth_manager.authorization()
+        try:
+            return asyncio.run(self._call_once(tool_name, arguments, authorization))
+        except TdxForbidden:
+            raise TdxForbidden("TDX MCP permission denied") from None
+        except TdxUnauthorized:
+            refreshed = auth_manager.authorization(
+                force_refresh=True,
+                rejected_authorization=authorization,
+            )
+            try:
+                return asyncio.run(self._call_once(tool_name, arguments, refreshed))
+            except TdxUnauthorized:
+                raise TdxUnauthorized("TDX MCP authorization failed") from None
+            except TdxForbidden:
+                raise TdxForbidden("TDX MCP permission denied") from None
+
+    async def _call_once(
+        self,
+        tool_name: str,
+        arguments: dict,
+        authorization: str,
+    ) -> dict:
+        try:
+            async with self.session_factory(authorization) as session:
+                await session.initialize()
+                await self._gate_tools(session)
+                result = await session.call_tool(tool_name, dict(arguments))
+                return _extract_payload(result)
+        except Exception as error:
+            _raise_sanitized_transport(error)
+        raise AssertionError("unreachable")
+
+    @staticmethod
+    async def _gate_tools(session) -> None:
+        found = {}
+        cursor = None
+        for _page in range(10):
+            params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
+            result = await session.list_tools(params=params)
+            page_tools = _tool_value(result, "tools")
+            if not isinstance(page_tools, list):
+                raise TdxSchemaError("TDX MCP tools/list is malformed")
+            for item in page_tools:
+                name = _tool_value(item, "name")
+                if name in TOOL_ALLOWLIST:
+                    _validate_tool_schema(item)
+                    found[name] = item
+            cursor = _tool_value(result, "next_cursor")
+            if cursor is None:
+                cursor = _tool_value(result, "nextCursor")
+            if not cursor:
+                break
+        if set(found) != set(TOOL_ALLOWLIST):
+            raise TdxSchemaError("TDX MCP read-only tool set is incomplete")
+
+
 class TdxMcpProvider:
     def __init__(
         self,
         name: str,
         *,
-        credential_store: TdxCredentialStore | None = None,
+        auth_manager: TdxOwnedAuth | None = None,
         client: TdxMcpClient | None = None,
-        refresher: Callable[[dict], dict] | None = None,
+        credential_store: FileCredentialStore | None = None,
     ):
         if name not in TDX_DIAGNOSTIC_NAMES:
             raise ValueError("unknown TDX provider")
+        if auth_manager is not None and credential_store is not None:
+            raise ValueError("provide auth_manager or credential_store, not both")
         self.name = name
-        self.store = credential_store or TdxCredentialStore()
+        if auth_manager is None:
+            store = credential_store or default_credential_store()
+            auth_manager = TdxOwnedAuth(store=store)
+        self.auth = auth_manager
         self.client = client or TdxMcpClient()
-        self.refresher = refresher or refresh_access_token
 
     def probe(self) -> dict:
-        status = self.store.probe()
+        status = self.auth.probe()
         return {
             "provider": self.name,
             "status": status,
@@ -538,15 +433,16 @@ class TdxMcpProvider:
             )
         started = time.perf_counter()
         try:
-            authorization = self.store.authorization(refresher=self.refresher)
             payload = self.client.call_tool(
-                spec[1], _arguments(self.name, params), authorization
+                spec[1], _arguments(self.name, params), self.auth
             )
             data, count = _normalize(self.name, payload)
         except TdxAuthMissing:
             return self._failure(started, "auth_error", "AUTH_MISSING", "missing")
-        except TdxAuthExpired:
+        except (TdxAuthExpired, TdxScopeError, TdxUnauthorized):
             return self._failure(started, "auth_error", "AUTH_EXPIRED", "expired")
+        except TdxForbidden:
+            return self._failure(started, "auth_error", "AUTH_FORBIDDEN", "forbidden")
         except (TimeoutError, socket.timeout):
             return self._failure(started, "timeout", "TIMEOUT", "present")
         except (TdxProtocolError, ValueError):
