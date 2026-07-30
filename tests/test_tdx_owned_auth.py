@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import os
 import stat
 import tempfile
 import threading
@@ -8,6 +9,9 @@ import unittest
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
+
+import ym_stock_data.providers.tdx_auth as tdx_auth
 
 from ym_stock_data.providers.tdx_auth import (
     DEFAULT_RESOURCE_METADATA_URL,
@@ -20,6 +24,7 @@ from ym_stock_data.providers.tdx_auth import (
     TdxLoginCancelled,
     TdxLoginTimeout,
     TdxOwnedAuth,
+    TdxOAuthProtocolError,
     TdxScopeError,
     TdxStateMismatch,
     default_credential_store,
@@ -245,6 +250,89 @@ class StoreTests(unittest.TestCase):
         self.assertIsInstance(default, KeychainCredentialStore)
         self.assertIsInstance(fallback, FileCredentialStore)
         self.assertEqual(fallback_path, fallback.path)
+
+    def test_existing_unsafe_parent_fails_closed_without_chmod(self):
+        parent = self.root / "shared-auth"
+        parent.mkdir(mode=0o755)
+        os.chmod(parent, 0o755)
+        store = FileCredentialStore(parent / "tdx.json")
+
+        with self.assertRaises(TdxAuthExpired):
+            store.save(token_bundle())
+
+        self.assertEqual(0o755, stat.S_IMODE(parent.stat().st_mode))
+        self.assertFalse(store.path.exists())
+
+    def test_non_owned_parent_and_symlink_paths_fail_closed(self):
+        owned = self.root / "owned"
+        owned.mkdir(mode=0o700)
+        os.chmod(owned, 0o700)
+        linked = self.root / "linked"
+        linked.symlink_to(owned, target_is_directory=True)
+
+        with self.assertRaises(TdxAuthExpired):
+            FileCredentialStore(linked / "tdx.json").save(token_bundle())
+
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        os.chmod(private, 0o700)
+        with patch.object(tdx_auth.os, "getuid", return_value=os.getuid() + 1):
+            with self.assertRaises(TdxAuthExpired):
+                FileCredentialStore(private / "tdx.json").save(token_bundle())
+
+    def test_load_rejects_symlink_non_regular_and_non_private_file(self):
+        safe_path = self.root / "safe" / "tdx.json"
+        safe_store = FileCredentialStore(safe_path)
+        safe_store.save(token_bundle())
+
+        os.chmod(safe_path, 0o644)
+        with self.assertRaises(TdxAuthExpired):
+            safe_store.load()
+
+        os.chmod(safe_path, 0o600)
+        linked_path = self.root / "safe" / "linked.json"
+        linked_path.symlink_to(safe_path)
+        with self.assertRaises(TdxAuthExpired):
+            FileCredentialStore(linked_path).load()
+
+        directory_path = self.root / "safe" / "directory.json"
+        directory_path.mkdir(mode=0o700)
+        with self.assertRaises(TdxAuthExpired):
+            FileCredentialStore(directory_path).load()
+
+    def test_selector_persists_custom_file_for_all_default_consumers(self):
+        self.assertTrue(hasattr(tdx_auth, "CredentialStoreSelector"))
+        selector_path = self.root / "selector" / "tdx-store.json"
+        custom_path = self.root / "custom-auth" / "owned.json"
+        selector = tdx_auth.CredentialStoreSelector(selector_path)
+
+        self.assertIsInstance(
+            tdx_auth.default_credential_store(selector_path=selector_path),
+            KeychainCredentialStore,
+        )
+        selector.save("file", file_path=custom_path)
+        resolved = tdx_auth.default_credential_store(selector_path=selector_path)
+
+        self.assertIsInstance(resolved, FileCredentialStore)
+        self.assertEqual(custom_path, resolved.path)
+        self.assertEqual(0o700, stat.S_IMODE(selector_path.parent.stat().st_mode))
+        self.assertEqual(0o600, stat.S_IMODE(selector_path.stat().st_mode))
+
+    def test_selector_rejects_symlink_or_malformed_configuration(self):
+        self.assertTrue(hasattr(tdx_auth, "CredentialStoreSelector"))
+        selector_path = self.root / "selector" / "tdx-store.json"
+        selector = tdx_auth.CredentialStoreSelector(selector_path)
+        selector.save("keychain")
+        os.chmod(selector_path, 0o644)
+
+        with self.assertRaises(TdxAuthExpired):
+            selector.load()
+
+        os.chmod(selector_path, 0o600)
+        linked = self.root / "selector-link.json"
+        linked.symlink_to(selector_path)
+        with self.assertRaises(TdxAuthExpired):
+            tdx_auth.CredentialStoreSelector(linked).load()
 
 
 class OwnedOAuthTests(unittest.TestCase):
@@ -494,6 +582,69 @@ class OwnedOAuthTests(unittest.TestCase):
                 rendered = str(caught.exception)
                 self.assertNotIn("ACCESS_SENTINEL", rendered)
                 self.assertNotIn("REFRESH_SENTINEL", rendered)
+
+    def test_probe_requires_complete_refresh_metadata_and_bearer_token(self):
+        cases = []
+        for field in ("issuer", "token_endpoint", "client_id", "refresh_token"):
+            value = token_bundle()
+            value.pop(field)
+            cases.append(value)
+        cases.append({**token_bundle(), "token_type": "Basic"})
+
+        for value in cases:
+            with self.subTest(keys=sorted(value)):
+                self.store.save(value)
+                self.assertEqual("auth_expired", self.store.probe())
+
+    def test_refresh_network_and_protocol_failures_map_to_auth_expired(self):
+        failures = (
+            OSError("SECRET network body"),
+            TdxOAuthProtocolError("SECRET protocol body"),
+        )
+        for failure in failures:
+            with self.subTest(error=type(failure).__name__):
+                self.store.save(token_bundle(expires_at_ms=1))
+                auth = TdxOwnedAuth(
+                    resource_url=RESOURCE_URL,
+                    resource_metadata_url=RESOURCE_METADATA_URL,
+                    store=self.store,
+                    request_json=lambda *_args, value=failure, **_kwargs: (_ for _ in ()).throw(value),
+                    browser_open=lambda _url: None,
+                    callback_factory=lambda: None,
+                )
+
+                with self.assertRaises(TdxAuthExpired) as caught:
+                    auth.authorization()
+
+                self.assertNotIn("SECRET", str(caught.exception))
+
+    def test_login_and_refresh_reject_non_bearer_token_type(self):
+        callback = FakeCallback()
+        server = FakeAuthorizationServer(callback)
+        original_request = server.request_json
+
+        def non_bearer_request(*args, **kwargs):
+            payload = original_request(*args, **kwargs)
+            if isinstance(payload, dict) and "access_token" in payload:
+                payload = {**payload, "token_type": "Basic"}
+            return payload
+
+        auth, _server, opened = self.make_auth(callback, server=server)
+        auth.request_json = non_bearer_request
+
+        def browser_open(url):
+            opened.append(url)
+            state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+            callback.result = {"code": "CODE", "state": state}
+
+        auth.browser_open = browser_open
+        with self.assertRaises(TdxOAuthProtocolError):
+            auth.login(timeout=1)
+        self.assertEqual("auth_missing", self.store.probe())
+
+        self.store.save(token_bundle(expires_at_ms=1))
+        with self.assertRaises(TdxAuthExpired):
+            auth.authorization()
 
 
 if __name__ == "__main__":

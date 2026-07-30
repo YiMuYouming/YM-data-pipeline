@@ -5,6 +5,7 @@ import io
 import json
 import tempfile
 import unittest
+import warnings
 from contextlib import asynccontextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -269,10 +270,10 @@ class OfficialSdkClientTests(unittest.TestCase):
         self.assertEqual([], auth.calls)
         factory.assert_not_called()
 
-    def test_tools_list_missing_capability_or_schema_drift_fails_before_call(self):
+    def test_tools_list_target_missing_or_schema_drift_fails_before_call(self):
         cases = []
         missing = valid_tool_schemas()
-        missing.pop("wenda_news_query")
+        missing.pop("tdx_screener")
         cases.append(missing)
         wrong_type = valid_tool_schemas()
         wrong_type["tdx_quotes"] = {
@@ -296,6 +297,43 @@ class OfficialSdkClientTests(unittest.TestCase):
                 with self.assertRaises(TdxSchemaError):
                     client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
                 self.assertNotIn("tools/call", [name for name, _ in session.calls])
+
+    def test_unrelated_missing_or_drifted_tool_does_not_disable_target(self):
+        cases = []
+        missing = valid_tool_schemas()
+        missing.pop("wenda_news_query")
+        cases.append(missing)
+        drifted = valid_tool_schemas()
+        drifted["tdx_quotes"] = {
+            **drifted["tdx_quotes"],
+            "properties": {"codes": {"type": "string"}},
+        }
+        cases.append(drifted)
+
+        for schemas in cases:
+            with self.subTest(tool_count=len(schemas)):
+                session = FakeSession(schemas=schemas, payload={"datas": []})
+                result = TdxMcpClient(
+                    session_factory=lambda _authorization, value=session: SessionContext(value)
+                ).call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+
+                self.assertEqual({"datas": []}, result)
+                self.assertIn("tools/call", [name for name, _ in session.calls])
+
+    def test_sync_client_runs_inside_existing_event_loop_without_coroutine_warning(self):
+        session = FakeSession(payload={"datas": []})
+        client = TdxMcpClient(
+            session_factory=lambda _authorization: SessionContext(session)
+        )
+
+        async def exercise():
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", RuntimeWarning)
+                return client.call_tool(
+                    "tdx_screener", {"query": "非ST"}, FakeAuth()
+                )
+
+        self.assertEqual({"datas": []}, asyncio.run(exercise()))
 
     def test_explicit_destructive_annotation_fails_schema_gate(self):
         session = FakeSession()
@@ -491,6 +529,66 @@ class OwnedAuthCliTests(unittest.TestCase):
             },
             json.loads(output.getvalue()),
         )
+
+    def test_login_switches_persisted_selector_only_after_success(self):
+        custom_path = Path("/private/custom/tdx-owned.json")
+        output = io.StringIO()
+        auth = Mock()
+        auth.store = FileCredentialStore(custom_path)
+        auth.login.return_value = "configured_unverified"
+        with (
+            patch("ym_stock_data.__main__.create_tdx_auth", return_value=auth),
+            patch(
+                "ym_stock_data.__main__.persist_credential_store_selection",
+                create=True,
+            ) as persist,
+            redirect_stdout(output),
+        ):
+            exit_code = main(
+                [
+                    "auth",
+                    "login-tdx",
+                    "--store",
+                    "file",
+                    "--file-path",
+                    str(custom_path),
+                ]
+            )
+
+        self.assertEqual(0, exit_code)
+        persist.assert_called_once_with("file", file_path=custom_path)
+        self.assertNotIn(str(custom_path), output.getvalue())
+
+        failed = Mock()
+        failed.login.side_effect = TdxAuthMissing("SECRET failed login")
+        with (
+            patch("ym_stock_data.__main__.create_tdx_auth", return_value=failed),
+            patch(
+                "ym_stock_data.__main__.persist_credential_store_selection",
+                create=True,
+            ) as persist,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(
+                2,
+                main(["auth", "login-tdx", "--store", "keychain"]),
+            )
+        persist.assert_not_called()
+
+    def test_status_uses_persisted_selector_when_store_is_omitted(self):
+        output = io.StringIO()
+        auth = Mock()
+        auth.store = FileCredentialStore("/private/custom/tdx-owned.json")
+        auth.probe.return_value = "auth_expired"
+        with patch(
+            "ym_stock_data.__main__.create_tdx_auth", return_value=auth
+        ) as factory, redirect_stdout(output):
+            exit_code = main(["auth", "status-tdx"])
+
+        self.assertEqual(2, exit_code)
+        factory.assert_called_once_with(mode=None, file_path=None)
+        self.assertEqual("file", json.loads(output.getvalue())["store"])
+        self.assertNotIn("/private/custom", output.getvalue())
 
     def test_status_cli_is_offline_sanitized_and_never_runs_login(self):
         output = io.StringIO()
