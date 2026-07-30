@@ -20,6 +20,7 @@
 6. Secrets, tokens, credential file contents, and raw Authorization headers must never appear in logs, results, fixtures, snapshots, or commits.
 7. Unit tests are network-free. Live provider checks run only through the explicit `ym-data smoke --live` command and write snapshots outside Git under `~/.ym-stock-data/smoke/`.
 8. Existing consumers migrate one at a time and keep a compatibility rollback path until five successful trading days are recorded.
+9. For explicit `review_sentiment`, a final `empty` is valid only when every compatible screener attempt is a semantically valid empty; any auth/provider/dependency error keeps the exhausted result at `error` with `provider_used=null`.
 
 ## Target public contract
 
@@ -86,12 +87,12 @@ Canonical intent chains for this implementation:
 | --- | --- | --- |
 | `realtime_market` | `pytdx` → `eastmoney` → `tencent` | zero-auth only |
 | `sector_index` | `ths_industry` | no semantic substitute |
-| `stock_snapshot` | `pytdx` → `tencent` → `sina` | normalized quote fields only |
-| `stock_kline` | `pytdx` → `tencent` for day/week/month; `sina` for minute periods | period-aware |
-| `review_sentiment` without explicit query | `pytdx_breadth` → `eastmoney_limit_pool` | market breadth/limit-state aggregate only |
-| `review_sentiment` with explicit query | `iwencai_openapi` → `pywencai` → `tdx_screener` | stock-screen rows only |
+| `stock_snapshot` | `pytdx` → `tencent` → `sina` → `tdx_quotes` | normalized quote fields only |
+| `stock_kline` | day/week/month: `pytdx` → `tencent` → `tdx_kline`; minute: `pytdx` → `sina` → `tdx_kline` | period-aware |
+| `review_sentiment` without explicit query | `pytdx_breadth` → `eastmoney_breadth` → `eastmoney_limit_pool` | market breadth/limit-state aggregate only |
+| `review_sentiment` with explicit query | `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener` | stock-screen rows only; final empty requires four valid empty attempts |
 | `market_limit_state` | `eastmoney_limit_pool` | no natural-language fallback |
-| `stock_event` | `eastmoney_datacenter` → `wind_mcp` | only whitelisted event families |
+| `stock_event` | `eastmoney_datacenter` | only whitelisted event families; no Wind fallback |
 | `research` | `eastmoney_research` → `tdx_report` | report rows only |
 | `filings` | `cninfo` → `tdx_notice` → `wind_documents` | announcement metadata/document retrieval |
 | `news` | `cls` → `tdx_news` | news rows; material facts still require primary-source verification |
@@ -1040,6 +1041,8 @@ Review the staged file list first so this command does not capture unrelated dir
 ### Task 14: Five-trading-day acceptance and closure receipt
 
 > **2026-07-29 CLI environment amendment:** The formal repo CLI entry is the root launcher `./ym-data`. It selects a checkout-specific external uv environment so canonical checkouts managed by macOS File Provider do not depend on a hidden project-local editable `.pth`. Bare `uv run ym-data ...` remains a lower-level command for environments not affected by File Provider metadata.
+
+> **2026-07-30 provider-scope amendment:** The 新五源范围（五类受管来源）is exactly WenCai OpenAPI, portable pywencai, TDX owned OAuth, the official Wind CLI, and zero-auth PyTDX. The current natural-language screener chain remains four sources: `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`. PyTDX participates only in its capability-compatible quote, breadth, and K-line semantics; a constrained structured PyTDX screener belongs to a later checkpoint and is not enabled here. Because the Wind screener route and the empty/error overwrite guard changed after the earlier observations, the five-trading-day 验收窗口必须重新开始 from the first eligible trading day after this amendment; earlier evidence may be retained as historical context but cannot count toward the restarted five-day graduation gate.
 
 **Files:**
 - Create outside Git: `~/.ym-stock-data/acceptance/YYYY-MM-DD.json`

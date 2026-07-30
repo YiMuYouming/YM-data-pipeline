@@ -411,18 +411,20 @@ def query(intent: str, **params) -> dict:
             if (
                 terminal == "empty"
                 and spec.empty_policy == EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED
-                and provider_index < len(spec.providers) - 1
             ):
-                attempts.append(
-                    ProviderAttempt(
-                        actual,
-                        terminal,
-                        None,
-                        max(0, int(outcome.latency_ms)),
-                    )
+                empty_attempt = ProviderAttempt(
+                    actual,
+                    terminal,
+                    None,
+                    max(0, int(outcome.latency_ms)),
                 )
-                auth = outcome.auth or auth
-                continue
+                if (
+                    provider_index < len(spec.providers) - 1
+                    or any(item.status != "empty" for item in attempts)
+                ):
+                    attempts.append(empty_attempt)
+                    auth = outcome.auth or auth
+                    continue
             data, final_quality = normalize_success(
                 intent,
                 call_params,

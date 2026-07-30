@@ -21,6 +21,7 @@ from datetime import datetime
 from contextlib import contextmanager
 from functools import wraps
 
+from ..a_share_codes import A_SHARE_CODE_PREFIXES_BY_EXCHANGE
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
 
 # === 连接池（线程安全）===
@@ -680,8 +681,8 @@ def _all_share_codes(api):
         return _all_codes_cache
 
     prefixes = {
-        0: ("000", "001", "002", "003", "300", "301"),
-        1: ("600", "601", "603", "605", "688", "689"),
+        0: A_SHARE_CODE_PREFIXES_BY_EXCHANGE["SZ"],
+        1: A_SHARE_CODE_PREFIXES_BY_EXCHANGE["SH"],
     }
     codes = []
     seen = set()

@@ -178,7 +178,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertFalse(runner.call_args.kwargs["shell"])
 
     @staticmethod
-    def screener_envelope(rows):
+    def screener_envelope(rows, *, columns=None):
         return {
             "content": [
                 {
@@ -188,7 +188,9 @@ class WindProviderTests(unittest.TestCase):
                             "data": {
                                 "data": [
                                     {
-                                        "columns": [
+                                        "columns": columns
+                                        if columns is not None
+                                        else [
                                             {"name": "Wind代码", "type": "string"}
                                         ],
                                         "rows": rows,
@@ -323,6 +325,57 @@ class WindProviderTests(unittest.TestCase):
                 ).call("review_sentiment", {"query": "白酒", "limit": 20})
                 self.assertEqual("provider_error", rejected.status)
                 self.assertEqual("INVALID_RESPONSE", rejected.error_code)
+
+    def test_wind_screener_empty_table_still_requires_exact_code_column(self):
+        for columns in (
+            [],
+            [{"name": "股票代码", "type": "string"}],
+            [{"name": " Wind代码 ", "type": "string"}],
+        ):
+            with self.subTest(columns=columns):
+                rejected = self.provider(
+                    name="wind_screener",
+                    runner=Mock(
+                        return_value=self.completed(
+                            self.screener_envelope([], columns=columns)
+                        )
+                    ),
+                ).call("review_sentiment", {"query": "白酒", "limit": 20})
+
+                self.assertEqual("provider_error", rejected.status)
+                self.assertEqual("INVALID_RESPONSE", rejected.error_code)
+
+    def test_wind_screener_rejects_non_a_share_and_exchange_mismatched_codes(self):
+        for code in (
+            "000001.SH",
+            "600519.SZ",
+            "510300.SH",
+            "999999.BJ",
+            "430047.BJ",
+            "830001.BJ",
+            "870001.BJ",
+            "880001.BJ",
+        ):
+            with self.subTest(code=code):
+                rejected = self.provider(
+                    name="wind_screener",
+                    runner=Mock(
+                        return_value=self.completed(self.screener_envelope([[code]]))
+                    ),
+                ).call("review_sentiment", {"query": "A股", "limit": 20})
+
+                self.assertEqual("provider_error", rejected.status)
+                self.assertEqual("INVALID_RESPONSE", rejected.error_code)
+
+        beijing = self.provider(
+            name="wind_screener",
+            runner=Mock(
+                return_value=self.completed(
+                    self.screener_envelope([["920001.BJ"]])
+                )
+            ),
+        ).call("review_sentiment", {"query": "北交所股票", "limit": 20})
+        self.assertEqual("success", beijing.status)
 
     def test_missing_fixed_config_does_not_preempt_cli_auth_resolution(self):
         missing_config = self.root / "not-present"

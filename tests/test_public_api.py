@@ -221,6 +221,75 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("empty", result["_meta"]["quality"]["status"])
         self.assertEqual(0, result["_meta"]["quality"]["returned_count"])
 
+    def test_explicit_screen_last_empty_does_not_overwrite_prior_failures(self):
+        statuses = (
+            ("iwencai_openapi", "auth_error", "HTTP_401"),
+            ("pywencai", "provider_error", "UPSTREAM_ERROR"),
+            ("tdx_screener", "empty", None),
+            ("wind_screener", "empty", None),
+        )
+        providers = {
+            name: FakeProvider(
+                name,
+                [
+                    outcome(
+                        name,
+                        status,
+                        data={"datas": [], "row_count": 0}
+                        if status == "empty"
+                        else None,
+                        error_code=error_code,
+                    )
+                ],
+            )
+            for name, status, error_code in statuses
+        }
+
+        with self.provider_patch(providers):
+            result = query("review_sentiment", query="没有匹配股票", limit=20)
+
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertIsNone(result["_meta"]["provider_used"])
+        self.assertIsNone(result["data"])
+        self.assertEqual(
+            ["auth_error", "provider_error", "empty", "empty"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+
+    def test_explicit_screen_initial_empty_then_remaining_failures_is_error(self):
+        statuses = (
+            ("iwencai_openapi", "empty", None),
+            ("pywencai", "auth_error", "HTTP_401"),
+            ("tdx_screener", "provider_error", "UPSTREAM_ERROR"),
+            ("wind_screener", "dependency_missing", "CLI_NOT_FOUND"),
+        )
+        providers = {
+            name: FakeProvider(
+                name,
+                [
+                    outcome(
+                        name,
+                        status,
+                        data={"datas": [], "row_count": 0}
+                        if status == "empty"
+                        else None,
+                        error_code=error_code,
+                    )
+                ],
+            )
+            for name, status, error_code in statuses
+        }
+
+        with self.provider_patch(providers):
+            result = query("review_sentiment", query="没有匹配股票", limit=20)
+
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertIsNone(result["_meta"]["provider_used"])
+        self.assertEqual(
+            ["empty", "auth_error", "provider_error", "dependency_missing"],
+            [attempt["status"] for attempt in result["_meta"]["attempts"]],
+        )
+
     def test_invalid_empty_continues_to_compatible_provider(self):
         first = FakeProvider(
             "pytdx",

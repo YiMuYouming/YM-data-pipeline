@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from ..a_share_codes import is_supported_a_share_code
 from ..contracts import TZ_SHANGHAI
 from .base import ProviderOutcome
 
@@ -64,7 +65,7 @@ WIND_SCREENER_SPEC = {
     "parameter": "question",
 }
 _AUTH_CODES = frozenset({"AUTH_ERROR", "HTTP_401", "HTTP_403"})
-_A_SHARE_WIND_CODE = re.compile(r"^\d{6}\.(?:SH|SZ|BJ)$")
+_A_SHARE_WIND_CODE = re.compile(r"^(?P<code>\d{6})\.(?P<exchange>SH|SZ|BJ)$")
 
 
 @dataclass(frozen=True)
@@ -171,11 +172,15 @@ def _enrichment_rows(payload: dict) -> list:
     raise ValueError("INVALID_RESPONSE")
 
 
-def _tabular_rows(container: dict) -> list[dict]:
+def _tabular_rows(
+    container: dict, *, required_columns: frozenset[str] = frozenset()
+) -> list[dict]:
     """Normalize the Wind CLI's explicit column/row table envelope."""
 
     tables = container.get("data")
     if not isinstance(tables, list):
+        raise ValueError("INVALID_RESPONSE")
+    if required_columns and not tables:
         raise ValueError("INVALID_RESPONSE")
     normalized = []
     for table in tables:
@@ -186,6 +191,7 @@ def _tabular_rows(container: dict) -> list[dict]:
         if not isinstance(columns, list) or not isinstance(rows, list):
             raise ValueError("INVALID_RESPONSE")
         names = []
+        raw_names = []
         for column in columns:
             if (
                 not isinstance(column, dict)
@@ -194,8 +200,11 @@ def _tabular_rows(container: dict) -> list[dict]:
                 or not isinstance(column.get("type"), str)
             ):
                 raise ValueError("INVALID_RESPONSE")
+            raw_names.append(column["name"])
             names.append(column["name"].strip())
         if len(names) != len(set(names)):
+            raise ValueError("INVALID_RESPONSE")
+        if not required_columns.issubset(raw_names):
             raise ValueError("INVALID_RESPONSE")
         for row in rows:
             if not isinstance(row, list) or len(row) != len(names):
@@ -217,11 +226,14 @@ def _screener_rows(payload: dict, *, limit: int) -> list[dict]:
     container = payload.get("data")
     if not isinstance(container, dict):
         raise ValueError("INVALID_RESPONSE")
-    rows = _tabular_rows(container)
+    rows = _tabular_rows(container, required_columns=frozenset({"Wind代码"}))
     normalized = []
     for row in rows:
         code = row.get("Wind代码")
-        if not isinstance(code, str) or not _A_SHARE_WIND_CODE.fullmatch(code):
+        match = _A_SHARE_WIND_CODE.fullmatch(code) if isinstance(code, str) else None
+        if match is None or not is_supported_a_share_code(
+            match.group("code"), match.group("exchange")
+        ):
             raise ValueError("INVALID_RESPONSE")
         normalized.append({"股票代码": code, "Wind代码": code})
     return normalized[:limit]

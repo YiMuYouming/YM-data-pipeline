@@ -122,6 +122,50 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertIn("runtime installed", readme)
         self.assertIn("不证明在线", readme)
 
+    def test_current_docs_lock_wind_screener_and_restarted_acceptance_scope(self):
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        provider_boundary = agents.split("## Provider 边界", 1)[1].split(
+            "## 下游与回滚", 1
+        )[0]
+        self.assertIn("`wind_screener`", provider_boundary)
+        self.assertIn("`stock_data.search_stocks`", provider_boundary)
+        self.assertNotIn(
+            "仅支持显式 `wind_enrichment` 与严格验证后的 `filings` fallback",
+            provider_boundary,
+        )
+
+        plan = (
+            ROOT / "docs/superpowers/plans/2026-07-29-unified-a-share-data-channel.md"
+        ).read_text(encoding="utf-8")
+        explicit_review_row = next(
+            line
+            for line in plan.splitlines()
+            if line.startswith("| `review_sentiment` with explicit query |")
+        )
+        self.assertIn(
+            "`iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`",
+            explicit_review_row,
+        )
+        stock_event_row = next(
+            line
+            for line in plan.splitlines()
+            if line.startswith("| `stock_event` |")
+        )
+        self.assertNotIn("wind_mcp", stock_event_row)
+        self.assertIn("新五源范围", plan)
+        self.assertIn("五类受管来源", plan)
+        for source in (
+            "WenCai OpenAPI",
+            "portable pywencai",
+            "TDX owned OAuth",
+            "official Wind CLI",
+            "zero-auth PyTDX",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(source, plan)
+        self.assertIn("constrained structured PyTDX screener", plan)
+        self.assertIn("验收窗口必须重新开始", plan)
+
     def test_v2_design_documents_are_explicitly_historical(self):
         for relative in (
             "docs/YM-data-pipeline-2.0-数据源治理方案.md",

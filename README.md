@@ -66,7 +66,7 @@ PY
 }
 ```
 
-合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。Wind 只通过专用 `wind_screener` 进入这条链，严格读取已验证 tabular envelope 的 `Wind代码`，不复用泛化 `wind_mcp` enrichment。穷尽不保证一定有结果，也不代表无差别轮询；只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充任意自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
+合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源，直到非空成功或链路耗尽。只有四个 attempt 全部是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被末源 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。Wind 只通过专用 `wind_screener` 进入这条链，严格读取已验证 tabular envelope 的精确 `Wind代码` 列，不复用泛化 `wind_mcp` enrichment。它只接受沪市 `600/601/603/605/688/689`、深市 `000/001/002/003/300/301` 与北交所自 2025-10 全面启用的 `920` 股票族，并校验交易所 suffix；指数、ETF、旧北交所代码族和交易所错配均 fail closed。穷尽不保证一定有结果，也不代表无差别轮询；只能回答行情、宽度、K 线的零鉴权 PyTDX 不会冒充任意自然语言 screener。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
 
 ## Provider ownership 与路由边界
 
