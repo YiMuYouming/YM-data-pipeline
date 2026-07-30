@@ -18,6 +18,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DeprecationAndDocumentationTests(unittest.TestCase):
+    def test_root_claude_recommends_only_the_canonical_channel(self):
+        text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+        for current in (
+            "from ym_stock_data import query",
+            "./ym-data doctor --json",
+            '`result["_meta"]["attempts"]`',
+            '`result["_meta"]["provider_used"]`',
+            "WenCai OpenAPI",
+            "portable pywencai",
+            "TDX owned OAuth",
+            "official Wind CLI",
+            "zero-auth PyTDX",
+            "./ym-data auth login-tdx",
+            "./ym-data auth status-tdx",
+            "compatibility wrapper",
+        ):
+            with self.subTest(current=current):
+                self.assertIn(current, text)
+
+        for stale in (
+            "from ym_stock_data import fetch",
+            "from ym_stock_data.v2.resolve import resolve",
+            "tdx-finance",
+            "WorkBuddy",
+            "tdx_lookup_stock",
+        ):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, text)
+
     def test_readme_and_agents_recommend_only_public_query(self):
         for relative in ("README.md", "AGENTS.md"):
             with self.subTest(file=relative):

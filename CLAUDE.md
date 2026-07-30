@@ -1,98 +1,86 @@
-# ym-stock-data — 弈沐资本 A 股数据管道
+# ym-stock-data — 弈沐资本 A 股统一数据管道
 
-弈沐资本统一数据获取基座。零鉴权优先，多源自动降级。
+本仓库的正式事实入口只有 public `query()`。provider 选择、鉴权、自动降级、
+合法空集和 provenance 都由 canonical registry 管理；调用方不得在失败后绕过
+registry 直连 source、MCP tool 或 sidecar。
 
-## 一句话用法
+## 正式用法
 
 ```python
-from ym_stock_data import fetch
-from ym_stock_data.v2.resolve import resolve
+from ym_stock_data import query
 
-# 实时行情
-fetch("quotes", codes=["688017", "300476"])     # 个股报价+MA
-fetch("index")                                   # 三大指数+涨跌家数
-fetch("breadth")                                 # 全市场涨跌分布
-fetch("sector_index", names=["算力", "CPO"])     # 板块指数
-fetch("kline_15m")                               # 三大指数15分钟量价
-fetch("northbound")                              # 北向资金实时
-fetch("ths_hot")                                 # 同花顺热榜+题材
-fetch("sector_inflow")                           # 行业板块净流入
-fetch("dragon_tiger")                            # 龙虎榜
-
-# 问财查询（OpenAPI→pywencai 自动降级）
-resolve("review_sentiment", query="昨日涨停 今日涨跌幅", limit=20)
+market = query("realtime_market")
+sectors = query("sector_index", names=["半导体"])
+snapshot = query("stock_snapshot", codes=["603290", "688187"])
+kline = query("stock_kline", code="603290", period="daily", count=20)
+screen = query(
+    "review_sentiment",
+    query="A股 IGBT 概念股 非ST 总市值 PE PB",
+    limit=20,
+)
 ```
 
-## 安装
+结果统一为 contract 1.0：`data + _meta`。判断实际降级过程时读取
+`result["_meta"]["attempts"]`、`result["_meta"]["provider_used"]`、
+`auth`、`error_code`、`quality` 和 `fetched_at`，不能根据预设顺序猜来源。
+
+## CLI 与诊断
+
+所有仓库命令通过根目录 launcher 执行：
 
 ```bash
-cd YM-data-pipeline
-pip install -e .              # 基础安装（PyTDX/requests/akshare）
-pip install -e .[pywencai]    # 启用问财 pywencai 降级能力
+./ym-data doctor --json
+./ym-data setup pywencai
 ```
 
-## 数据源降级策略
+`doctor` 只做离线、脱敏的配置和依赖检查，不证明 provider 在线。只有任务明确
+授权联网时才运行 `./ym-data smoke --live`；不得自行拼装 live 探针。
 
-| 源 | 优先 | 降级 | 说明 |
-|------|------|------|------|
-| PyTDX | TCP 长连接 | easyquotation | 零鉴权，TCP 7709 端口 |
-| 问财 | OpenAPI | pywencai 网页抓取 → TDX MCP 人工备用 | OpenAPI 额度耗尽自动切 pywencai；两者都挂时才用授权型 TDX MCP |
-| 腾讯 | HTTP API | — | PE/PB 等财务数据 |
+## 五类受管来源
 
-问财降级自动进行：OpenAPI 401/403/429 → 300 秒 breaker；5xx、网络、超时或无效响应 → 60 秒 breaker；breaker 期间由带失败缓存的 pywencai 接管，到期后再试 OpenAPI。
+五类来源不是每个 intent 都依次调用。registry 只把请求交给语义兼容的 provider，
+并在 `_meta.attempts` 中保留每次真实尝试。
 
-### TDX MCP 备用源
+| 来源 | 所有权与角色 | 主要语义 |
+| --- | --- | --- |
+| WenCai OpenAPI | API key；自然语言主源 | 显式 `review_sentiment` 查询；401/403/429 进入跨进程 breaker 后继续兼容路由 |
+| portable pywencai | 本管道可移植 runtime；无 OpenAPI key | WenCai 兼容降级；dependency missing、provider error 和合法空集分别记录 |
+| TDX owned OAuth | 本管道自有只读 OAuth，仅请求 `mcp.read` | 兼容源失败后的选股、报价、K 线、研报、公告和新闻能力 |
+| official Wind CLI | Wind 官方 CLI 自行鉴权 | 自然语言 `wind_screener`、显式 `wind_enrichment` 和严格验证后的 `filings` fallback |
+| zero-auth PyTDX | 无鉴权 TCP 数据源 | 行情、快照、K 线和市场宽度；只处理自身字段足以表达的结构化条件，不冒充任意自然语言筛选 |
 
-Codex MCP `tdx-finance` 可作为问财故障时的备用源和交叉验证源。常用工具包括 `tdx_screener`、`tdx_quotes`、`tdx_kline`、`tdx_lookup_stock`、`wenda_report_query`、`wenda_notice_query`、`wenda_news_query`。
+合法空集、鉴权失败、依赖缺失、provider error 和网络失败不是同一种状态。只有
+当前 intent 定义允许继续的空集才会进入下一兼容源；最终结果必须保留全部 attempts。
 
-硬规则：
+## TDX 自有鉴权与只读边界
 
-- 主流程仍优先使用 `YM-data-pipeline` 本地 V1/V2 管道。
-- 使用 TDX MCP 时，输出必须标注 `source=tdx_mcp` 和查询时间。
-- 如果 `tdx-finance` 未暴露工具、`tools/list` 失败、token 过期、HTTP 401/400、或 WorkBuddy OAuth 缓存失效，必须向弈沐请求重新授权；禁止猜测、补齐或基于旧结果下结论。
-- TDX MCP 只补投研宽度、个股细节、研报/公告/新闻，不单独触发交易建议。
+首次登录和离线状态检查统一使用：
 
-## 目录结构
-
-```
-ym_stock_data/
-├── fetch.py          # 统一入口 fetch() — 路由到各源
-├── config.py         # 服务器列表/超时/路径配置
-├── sources/
-│   ├── pytdx.py      # PyTDX 行情（个股/指数/K线/板块/涨跌分布）
-│   ├── iwencai.py    # 问财 OpenAPI + pywencai 自动降级
-│   ├── ths_hot.py    # 同花顺热榜
-│   ├── northbound.py # 北向资金
-│   ├── ths_industry.py # 行业板块净流入
-│   ├── eastmoney.py  # 龙虎榜
-│   ├── tencent.py    # 腾讯 PE/PB/市值
-│   ├── research.py   # 个股研报
-│   ├── filings.py    # 公司公告
-│   └── news.py       # 实时新闻
-└── __init__.py
+```bash
+./ym-data auth login-tdx
+./ym-data auth status-tdx
 ```
 
-## 配置（config.py）
+默认凭据保存到 macOS Keychain；只有显式选择 file store 时才使用本管道私有的
+`0700` 目录和 `0600` 文件。命令、日志、doctor、smoke 和 receipts 都不得输出
+token、Key、授权正文或凭据路径。
 
-```python
-PYTDX_SERVERS = [(ip, 7709)]      # 通达信行情服务器
-PYTDX_CONNECT_TIMEOUT = 5         # 连接超时（秒）
-PYTDX_MAX_AGE = 60                # 连接复用时长（超时自动重连）
-PYTDX_MAX_FAIL = 3                # 连续失败切换兜底
-IWENCAI_API_KEY_PATH = ~/.zshrc   # 问财 API Key 读取路径
-PYWENCAI_VENV                     # pywencai 运行环境路径
-```
+TDX 固定只读能力只有六项：`tdx_screener`、`tdx_quotes`、`tdx_kline`、
+`wenda_report_query`、`wenda_notice_query`、`wenda_news_query`。每次连接必须先
+`initialize` 和 `tools/list`，只校验当前目标 tool 的严格 schema；不允许任意 tool、
+写入 tool、交易接口或 scope 扩张。401 只刷新一次，403 直接失败关闭。
 
-## 问财 API Key
+## 兼容与开发边界
 
-IWENCAI_API_KEY 读取优先级：环境变量 → ~/.zshrc → ~/.bash_profile → ~/.bashrc
+V1 `fetch()` 和 V2 `resolve()` 只是旧消费者的 compatibility wrapper，用来维持
+历史业务 shape；它们不拥有第二条 provider chain，也不推荐新代码使用。未完成
+side-by-side shape、provider/attempts、empty/error overwrite guard 前，不切换下游
+默认值。
 
-## 线程安全
+新代码只调用 `query()`，只通过 registry 增加 provider，并使用稳定错误码和
+脱敏元数据。不得把数据查询结果当作交易授权，不发交易 POST，不调用券商接口，
+不覆盖生产 runtime/cache/data。
 
-所有 PyTDX 调用受 `threading.Lock` 保护，多个 collector 线程可安全共享。详见 `sources/pytdx.py` 的 `_get_api()`。
-
-## 所属项目
-
-- 代码: `~/Documents/YM_Capital/YM-data-pipeline/`
-- 被 live-dashboard bridge.py、WorkBuddy 脚本 import
-- live-dashboard CLAUDE.md: `~/Documents/YM_Capital/live-dashboard/CLAUDE.md`
+更完整的 provider ownership、capability 和自动降级矩阵见 `README.md`；安装、
+Keychain/file store 和登录验收步骤见 `docs/INSTALL.md` 与
+`docs/TDX-MCP-备用源验证清单.md`。
