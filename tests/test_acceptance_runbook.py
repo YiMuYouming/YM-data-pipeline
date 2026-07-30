@@ -139,6 +139,10 @@ class AcceptanceRunbookTests(unittest.TestCase):
             snippets,
             r'rg -n -i .*?"\$acceptance_tmp" "\$smoke_receipt"',
         )
+        self.assertRegex(
+            snippets,
+            r'rg -n -i .*?"\$acceptance_target"',
+        )
 
         dashboard_block = re.search(
             r"## 7\. live-dashboard unified no-save 探针.*?```bash\n(.*?)```",

@@ -5,12 +5,14 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
 from ym_stock_data import smoke as smoke_module
 from ym_stock_data.smoke import run_live_smoke
 from ym_stock_data.smoke_contract import CASE_SPECS, CURRENT_SMOKE_BASELINE, CURRENT_SMOKE_CASE_IDS
+from ym_stock_data.routing import RouteSpec
 
 
 EXPECTED_CASE_IDS = (
@@ -151,6 +153,38 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         self.assertEqual(["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"], [a["provider"] for a in case["attempts"]])
         self.assertEqual(["injected", "injected", "injected", "injected", "live"], [a["origin"] for a in case["attempts"]])
         self.assertEqual(["auth_error", "provider_error", "auth_error", "empty", "success"], [a["status"] for a in case["attempts"]])
+
+    def test_controlled_fallback_route_drift_fails_before_any_extra_live_provider(self) -> None:
+        drifted_route = RouteSpec(
+            intent="review_sentiment",
+            providers=(
+                "iwencai_openapi",
+                "unexpected_live_provider",
+                "pywencai",
+                "tdx_screener",
+                "wind_screener",
+                "pytdx_screener",
+            ),
+            data_scope="test",
+            trade_usage="test",
+            max_age_sec=1,
+            empty_policy="continue_until_exhausted",
+        )
+        with patch("ym_stock_data.api.route_for", return_value=drifted_route):
+            report, calls = self._run()
+
+        controlled = next(
+            case
+            for case in report["cases"]
+            if case["case_id"] == "canonical_five_source_fallback"
+        )
+        called_names = [name for name, _intent, _params in calls]
+        self.assertNotIn("unexpected_live_provider", called_names)
+        self.assertEqual(1, called_names.count("pytdx_screener"))
+        self.assertEqual("error", controlled["status"])
+        self.assertEqual("CONTROLLED_ROUTE_DRIFT", controlled["error_code"])
+        self.assertEqual("fail", report["chain_status"])
+        self.assertEqual("fail", report["gate_status"])
 
     def test_empty_direct_capability_fails_source_and_gate_without_stopping_matrix(self) -> None:
         report, calls = self._run(empty_provider="wind_documents")
