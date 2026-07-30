@@ -227,7 +227,14 @@ class PytdxScreenerProvider:
                 if not isinstance(row, dict):
                     raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
                 code = row.get("code")
-                if not isinstance(code, str) or not _stock_family(market, code):
+                if (
+                    not isinstance(code, str)
+                    or len(code) != 6
+                    or not code.isascii()
+                    or not code.isdigit()
+                ):
+                    raise _PayloadError("PYTDX_DIRECTORY_INCOMPLETE")
+                if not _stock_family(market, code):
                     continue
                 name = row.get("name")
                 key = (market, code)

@@ -15,9 +15,18 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+from .smoke_contract import (
+    CURRENT_SMOKE_BASELINE,
+    CURRENT_SMOKE_CASE_IDS,
+    CURRENT_SMOKE_SCHEMA_VERSION,
+    LEGACY_SMOKE_CASE_COUNT,
+    LEGACY_SMOKE_SCHEMA_VERSION,
+)
+
 
 SCHEMA = "ym-stock-data.acceptance.daily"
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
+PREVIOUS_SCHEMA_VERSION = "1.1"
 LEGACY_SCHEMA_VERSION = "1.0"
 REQUIRED_TRADING_DAYS = 5
 EARLIEST_ACCEPTANCE_TIME = time(16, 10)
@@ -386,7 +395,7 @@ def _project_case(value: object) -> dict:
     }
 
 
-def _project_smoke(path: Path, expected_date: str) -> dict:
+def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     path = Path(path).expanduser().resolve()
     try:
         mode = stat.S_IMODE(path.stat().st_mode)
@@ -396,27 +405,43 @@ def _project_smoke(path: Path, expected_date: str) -> dict:
         _raise("INVALID_RECEIPT_PERMISSIONS")
     value = _load_json(path)
     _reject_forbidden(value, code="FORBIDDEN_INPUT")
-    _exact_keys(
-        value,
-        required={"schema_version", "live", "started_at", "completed_at", "summary", "cases"},
+    required = {
+        "schema_version",
+        "live",
+        "started_at",
+        "completed_at",
+        "summary",
+        "cases",
+    }
+    if current:
+        required.add("baseline")
+    _exact_keys(value, required=required)
+    expected_schema = (
+        CURRENT_SMOKE_SCHEMA_VERSION if current else LEGACY_SMOKE_SCHEMA_VERSION
     )
-    if value["schema_version"] != "1" or value["live"] is not True:
+    if value["schema_version"] != expected_schema or value["live"] is not True:
         _raise("INVALID_SMOKE_RECEIPT")
+    if current and value["baseline"] != CURRENT_SMOKE_BASELINE:
+        _raise("INVALID_SMOKE_BASELINE")
     started_at = _iso(value["started_at"], "INVALID_SMOKE_RECEIPT")
     completed_at = _iso(value["completed_at"], "INVALID_SMOKE_RECEIPT")
     if completed_at[:10] != expected_date or started_at[:10] != expected_date:
         _raise("SMOKE_DATE_MISMATCH")
     raw_cases = value["cases"]
-    if not isinstance(raw_cases, list) or len(raw_cases) != 10:
-        _raise("INVALID_CASE_COUNT")
+    expected_count = len(CURRENT_SMOKE_CASE_IDS) if current else LEGACY_SMOKE_CASE_COUNT
+    if not isinstance(raw_cases, list) or len(raw_cases) != expected_count:
+        _raise("INVALID_CASE_IDS" if current else "INVALID_CASE_COUNT")
     cases = [_project_case(item) for item in raw_cases]
     case_ids = [item["case_id"] for item in cases]
-    if len(set(case_ids)) != 10:
+    if current:
+        if tuple(case_ids) != CURRENT_SMOKE_CASE_IDS:
+            _raise("INVALID_CASE_IDS")
+    elif len(set(case_ids)) != LEGACY_SMOKE_CASE_COUNT:
         _raise("INVALID_CASE_COUNT")
     summary = _mapping(value["summary"])
     _exact_keys(summary, required={"total", "status_counts"})
-    if _integer(summary["total"]) != 10:
-        _raise("INVALID_CASE_COUNT")
+    if _integer(summary["total"]) != expected_count:
+        _raise("INVALID_CASE_IDS" if current else "INVALID_CASE_COUNT")
     counts = dict(sorted(Counter(item["status"] for item in cases).items()))
     supplied_counts = _mapping(summary["status_counts"])
     normalized_counts = {
@@ -424,19 +449,22 @@ def _project_smoke(path: Path, expected_date: str) -> dict:
     }
     if normalized_counts != counts:
         _raise("INVALID_STATUS_COUNTS")
-    return {
+    projected = {
         "path": str(path),
         "sha256": _sha256(path),
         "file_mode": "0600",
-        "schema_version": "1",
+        "schema_version": expected_schema,
         "live": True,
         "started_at": started_at,
         "completed_at": completed_at,
-        "total_cases": 10,
+        "total_cases": expected_count,
         "status_counts": counts,
         "intent_status_counts": _intent_status_counts(cases),
         "cases": cases,
     }
+    if current:
+        projected["baseline"] = CURRENT_SMOKE_BASELINE
+    return projected
 
 
 def _intent_status_counts(cases: list[dict]) -> dict:
@@ -547,6 +575,9 @@ def acceptance_template(date: str) -> dict:
             "safety": safety,
         },
         "template_meta": {
+            "smoke_schema_version": CURRENT_SMOKE_SCHEMA_VERSION,
+            "smoke_baseline": CURRENT_SMOKE_BASELINE,
+            "smoke_case_ids": list(CURRENT_SMOKE_CASE_IDS),
             "pending_sentinel": PENDING_STATUS,
             "allowed_result_statuses": sorted(_CASE_STATUSES),
             "allowed_attempt_statuses": sorted(_ATTEMPT_STATUSES),
@@ -802,7 +833,13 @@ def _case(cases: list[dict], case_id: str) -> dict:
     return next((item for item in cases if item["case_id"] == case_id), {})
 
 
-def _provider_acceptance(doctor: dict, smoke: dict, downstream: dict) -> dict:
+def _provider_acceptance(
+    doctor: dict,
+    smoke: dict,
+    downstream: dict,
+    *,
+    include_pytdx_screener: bool = True,
+) -> dict:
     cases = smoke["cases"]
     smoke_attempts = [attempt for case in cases for attempt in case["attempts"]]
     breaker_attempts = downstream["breaker_verification"]["attempts"]
@@ -825,7 +862,7 @@ def _provider_acceptance(doctor: dict, smoke: dict, downstream: dict) -> dict:
     tdx_case = _case(cases, "tdx_probe")
     wind_case = _case(cases, "wind_probe")
     wind_state = providers.get("wind_mcp", {})
-    return {
+    result = {
         "iwencai_openapi": {
             "http_401_count": http_401_count,
             "breaker_prevented_repeat": breaker_prevented,
@@ -860,6 +897,21 @@ def _provider_acceptance(doctor: dict, smoke: dict, downstream: dict) -> dict:
             "latency_ms": wind_case.get("latency_ms", 0),
         },
     }
+    if include_pytdx_screener:
+        pytdx_case = _case(cases, "explicit_structured_screener")
+        pytdx_state = providers.get("pytdx_screener", {})
+        result["pytdx_screener"] = {
+            "doctor_status": pytdx_state.get("status", "unavailable"),
+            "auth": pytdx_state.get(
+                "auth", {"required": False, "status": "not_required"}
+            ),
+            "live_status": pytdx_case.get("status", "unavailable"),
+            "provider_used": pytdx_case.get("provider_used"),
+            "row_count": pytdx_case.get("row_count", 0),
+            "latency_ms": pytdx_case.get("latency_ms", 0),
+            "error_code": pytdx_case.get("error_code"),
+        }
+    return result
 
 
 def _report_integrity(report: dict) -> dict:
@@ -1004,7 +1056,13 @@ def _validate_downstream(value: object, safety: dict) -> dict:
     return projected
 
 
-def _validate_v11(report: dict, observed_date: str, smoke: dict) -> None:
+def _validate_v11(
+    report: dict,
+    observed_date: str,
+    smoke: dict,
+    *,
+    include_pytdx_screener: bool,
+) -> None:
     _exact_keys(
         report,
         required={
@@ -1073,7 +1131,12 @@ def _validate_v11(report: dict, observed_date: str, smoke: dict) -> None:
     if report["safety"] != safety:
         _raise("INVALID_ACCEPTANCE")
     downstream = _validate_downstream(report["downstream_checks"], safety)
-    if report["provider_acceptance"] != _provider_acceptance(doctor, smoke, downstream):
+    if report["provider_acceptance"] != _provider_acceptance(
+        doctor,
+        smoke,
+        downstream,
+        include_pytdx_screener=include_pytdx_screener,
+    ):
         _raise("INVALID_ACCEPTANCE")
     if report["latency"] != _latency(smoke["cases"]):
         _raise("INVALID_ACCEPTANCE")
@@ -1101,7 +1164,11 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
     if report.get("schema") != SCHEMA:
         _raise("INVALID_SCHEMA")
     version = report.get("schema_version")
-    if version not in {SCHEMA_VERSION, LEGACY_SCHEMA_VERSION}:
+    if version not in {
+        SCHEMA_VERSION,
+        PREVIOUS_SCHEMA_VERSION,
+        LEGACY_SCHEMA_VERSION,
+    }:
         _raise("INVALID_SCHEMA")
     for key in ("generated_at", "observation", "canonical_checkout", "smoke_evidence", "safety"):
         if key not in report:
@@ -1121,7 +1188,7 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
         _raise("INVALID_ACCEPTANCE")
     if checkout.get("tracked_clean") is not True or checkout.get("staged_clean") is not True:
         _raise("INVALID_ACCEPTANCE")
-    if version == SCHEMA_VERSION:
+    if version in {SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION}:
         _validate_head_binding(checkout)
     smoke = _mapping(report["smoke_evidence"], "INVALID_ACCEPTANCE")
     smoke_path = Path(str(smoke.get("path", ""))).expanduser()
@@ -1130,11 +1197,18 @@ def _validate_report(report: dict, path: Path | None = None) -> dict:
         _raise("INVALID_ACCEPTANCE")
     if _sha256(smoke_path) != recorded_hash:
         _raise("RECEIPT_HASH_MISMATCH")
-    projected_smoke = _project_smoke(smoke_path, observed_date)
-    if smoke.get("total_cases") != 10:
+    current = version == SCHEMA_VERSION
+    projected_smoke = _project_smoke(smoke_path, observed_date, current=current)
+    expected_count = len(CURRENT_SMOKE_CASE_IDS) if current else LEGACY_SMOKE_CASE_COUNT
+    if smoke.get("total_cases") != expected_count:
         _raise("INVALID_CASE_COUNT")
-    if version == SCHEMA_VERSION:
-        _validate_v11(report, observed_date, projected_smoke)
+    if version in {SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION}:
+        _validate_v11(
+            report,
+            observed_date,
+            projected_smoke,
+            include_pytdx_screener=current,
+        )
     else:
         _validate_legacy_cases(smoke.get("cases"))
     _project_safety(report["safety"], legacy=version == LEGACY_SCHEMA_VERSION)
@@ -1164,8 +1238,11 @@ def _history(directory: Path) -> list[dict]:
     if len(set(dates)) != len(dates):
         _raise("DUPLICATE_DATE")
     ordered = sorted(records, key=lambda item: item["date"])
-    for index, item in enumerate(ordered, start=1):
-        if item["day_count"] != index:
+    sequence_counts = {"current": 0, "legacy": 0}
+    for item in ordered:
+        sequence = "current" if item["schema_version"] == SCHEMA_VERSION else "legacy"
+        sequence_counts[sequence] += 1
+        if item["day_count"] != sequence_counts[sequence]:
             _raise("INVALID_DAY_SEQUENCE")
     return ordered
 
@@ -1246,16 +1323,19 @@ def build_daily_acceptance(
     if local_now.time() < EARLIEST_ACCEPTANCE_TIME:
         _raise("OBSERVATION_TOO_EARLY")
     history = _history(output_dir)
-    if len(history) >= REQUIRED_TRADING_DAYS:
+    current_history = [
+        item for item in history if item["schema_version"] == SCHEMA_VERSION
+    ]
+    if len(current_history) >= REQUIRED_TRADING_DAYS:
         _raise("WINDOW_COMPLETE")
     if history and observed_date <= history[-1]["date"]:
         _raise("DATE_NOT_INCREASING")
-    day_count = len(history) + 1
+    day_count = len(current_history) + 1
     checkout = _git_snapshot(
         Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
     )
     doctor = _project_doctor(doctor_input)
-    smoke = _project_smoke(Path(smoke_path), observed_date)
+    smoke = _project_smoke(Path(smoke_path), observed_date, current=True)
     downstream = _project_downstream(downstream_input)
     report = {
         "schema": SCHEMA,

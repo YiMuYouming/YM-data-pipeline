@@ -31,7 +31,8 @@ query 含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过�
 `最新价`、`涨幅` 及固定比较/区间语法；数值条件必须带 `非停牌`。不支持北交所，
 也不支持行业、概念、PE、PB、排名、OR 或日期。doctor 仍只报告
 `configured_unverified`，不连接 TCP；线上只能由显式 `./ym-data smoke --live`
-的脱敏结构化 case 验证。
+中经 canonical registry 直接取得 `pytdx_screener` 的脱敏结构化 case 验证。
+该 case 不经过前四源，因此不会被更早成功或合法空集遮蔽；它只记录安全元数据。
 
 ## 完整投研 profile
 

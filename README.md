@@ -54,7 +54,7 @@ scope escalation 或白名单外工具都 fail closed。本轮离线实现没有
 
 ## 五日验收记录
 
-盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。
+盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。当前新窗口使用 acceptance 1.2、smoke schema 2 和 `five-source-structured-v1` baseline，严格要求 11 个固定 case；旧 10-case 历史 receipt 可只读验证但不计入新窗口。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。
 
 ## 统一结果契约
 

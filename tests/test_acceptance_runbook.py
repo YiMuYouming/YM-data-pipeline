@@ -40,6 +40,12 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "zero_secret_scan",
             "shasum -a 256",
             "check-ignore",
+            "acceptance 1.2",
+            "smoke schema 2",
+            "five-source-structured-v1",
+            "11 个固定 case",
+            "canonical registry",
+            "旧 10-case",
         )
         for value in required:
             with self.subTest(value=value):

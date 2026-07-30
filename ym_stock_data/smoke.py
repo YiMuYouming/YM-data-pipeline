@@ -16,6 +16,11 @@ from .api import _provider_for, query
 from .contracts import ATTEMPT_STATUSES, RESULT_STATUSES, TZ_SHANGHAI
 from .doctor import collect_diagnostics
 from .providers.base import ProviderOutcome
+from .smoke_contract import (
+    CURRENT_SMOKE_BASELINE,
+    CURRENT_SMOKE_CASE_IDS,
+    CURRENT_SMOKE_SCHEMA_VERSION,
+)
 
 
 SMOKE_DIR = Path.home() / ".ym-stock-data" / "smoke"
@@ -208,6 +213,13 @@ def run_live_smoke(
         )
         return _summarize_outcome(outcome)
 
+    def pytdx_screener_probe():
+        outcome = provider_loader("pytdx_screener").call(
+            "review_sentiment",
+            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+        )
+        return _summarize_outcome(outcome)
+
     def wind_probe():
         state = _provider_state_payload("wind_mcp", diagnostics_fn)
         if state["status"] not in {"configured_unverified", "ready"}:
@@ -234,15 +246,13 @@ def run_live_smoke(
             "five_source_fallback",
             "review_sentiment",
             {"sample_id": "structured_hs_a", "limit": 3},
-            canonical(
-                "review_sentiment",
-                query="沪深A股 非ST 非停牌 最新价>=1",
-                limit=3,
-            ),
+            pytdx_screener_probe,
         ),
         ("tdx_probe", "owned_oauth", "stock_snapshot", {"codes": ["600519"]}, tdx_probe),
         ("wind_probe", "official_cli", "wind_enrichment", {"capability": "company_profile", "code": "600519"}, wind_probe),
     ]
+    if tuple(case_id for case_id, *_rest in specs) != CURRENT_SMOKE_CASE_IDS:
+        raise RuntimeError("smoke case contract drift")
     cases = []
     for case_id, category, intent, safe_params, callback in specs:
         elapsed = time.monotonic() - started
@@ -293,7 +303,8 @@ def run_live_smoke(
         counts[case["status"]] = counts.get(case["status"], 0) + 1
     completed_at = now_fn()
     report = {
-        "schema_version": "1",
+        "schema_version": CURRENT_SMOKE_SCHEMA_VERSION,
+        "baseline": CURRENT_SMOKE_BASELINE,
         "live": True,
         "started_at": started_at.isoformat(timespec="seconds"),
         "completed_at": completed_at.isoformat(timespec="seconds"),

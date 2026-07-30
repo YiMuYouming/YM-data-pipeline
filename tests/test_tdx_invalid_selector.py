@@ -135,6 +135,11 @@ class InvalidSelectorTests(unittest.TestCase):
     def test_smoke_reports_the_same_expired_state_without_tdx_network(self):
         tdx_network = Mock(side_effect=AssertionError("TDX network must not run"))
 
+        def provider_loader(name: str):
+            if name == "pytdx_screener":
+                return FailedProvider(name)
+            return tdx_network(name)
+
         def diagnostics():
             return collect_diagnostics(
                 provider_names=("tdx_mcp",),
@@ -146,7 +151,7 @@ class InvalidSelectorTests(unittest.TestCase):
                 output_dir=self.root / "smoke",
                 query_fn=lambda intent, **_params: successful_result(intent),
                 diagnostics_fn=diagnostics,
-                provider_loader=tdx_network,
+                provider_loader=provider_loader,
                 now_fn=lambda: datetime(
                     2026, 7, 30, 10, 0, 0, tzinfo=TZ_SHANGHAI
                 ),

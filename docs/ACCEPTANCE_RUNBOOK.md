@@ -2,6 +2,8 @@
 
 本文是五个交易日 daily acceptance 的唯一 Agent 执行入口。严格 JSON key、允许状态和安全门禁由 `ym_stock_data.acceptance` 拥有；不要手写另一份 schema。每天只执行一次，且仅在 `Asia/Shanghai` 16:10 后执行。
 
+当前新窗口使用 acceptance 1.2、smoke schema 2 与 baseline `five-source-structured-v1`，并严格锁定 11 个固定 case（含 `explicit_structured_screener`）。历史 acceptance 1.1/1.0 与旧 10-case receipt 仍可只读验证，但不能计入这个新五日窗口；不允许手工改写旧 receipt 或 day count。
+
 本流程只保存元数据。禁止打印或保存业务 rows、查询正文、credential、stderr、exception、原始 transport/session；禁止调用底层 source、兼容 V2、手工 TDX/Wind 或交易工具；禁止向端口 8088 发 POST，禁止写 Market_Watch/live-dashboard 的 out、data、cache、runtime，禁止部署、push、券商或交易动作。
 
 ## 1. Preflight 与同日去重
@@ -101,7 +103,7 @@ Doctor 只运行一次并直接保存脱敏 JSON：
 chmod 600 "$acceptance_tmp/doctor.json"
 ```
 
-Smoke 只运行一次。其 CLI stdout 只保存 receipt 路径和 summary；业务行不会进入该文件。
+Smoke 只运行一次。其 CLI stdout 只保存 receipt 路径和 summary；业务行不会进入该文件。`explicit_structured_screener` 由 smoke 通过 canonical registry 直接取得 `pytdx_screener` provider 并执行固定只读小探针，所以前四个来源不能遮蔽第五源是否真正被调用；receipt 仍只保存脱敏状态、attempt、行数和耗时，不保存查询正文或业务行。不要在 runbook 外再补一次结构化查询。
 
 ```bash
 ./ym-data smoke --live > "$acceptance_tmp/smoke-cli.json" 2>/dev/null

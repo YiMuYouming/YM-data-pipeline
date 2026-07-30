@@ -1045,6 +1045,8 @@ Review the staged file list first so this command does not capture unrelated dir
 
 > **2026-07-30 provider-scope amendment:** The 新五源范围（五类受管来源）is exactly WenCai OpenAPI, portable pywencai, TDX owned OAuth, the official Wind CLI, and zero-auth PyTDX. The natural-language screener chain remains four sources: `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`. A constrained `pytdx_screener` is now enabled only when a query contains one reviewed沪深 universe, at least one reviewed filter, and is completely consumed by `pytdx-structured-1`; it then becomes the fifth and final route provider. It supports `非ST`, `非停牌`, single-code, `最新价`, and `涨幅` AND filters, fixes `pytdx==1.72`, and does not support北交所 or 行业、概念、PE、PB、排名、OR 或日期. Because this dynamic fifth-source route, the Wind screener route, and the empty/error overwrite guard changed after the earlier observations, the five-trading-day 验收窗口必须重新开始 from the first eligible trading day after this amendment; earlier evidence may be retained as historical context but cannot count toward the restarted five-day graduation gate.
 
+> **2026-07-30 acceptance-contract amendment:** The restarted window is acceptance 1.2 over smoke schema 2, baseline `five-source-structured-v1`, with exactly 11 ordered case IDs. `explicit_structured_screener` is a direct canonical-registry probe of `pytdx_screener`, not another public `query()` that an earlier provider can satisfy. Acceptance 1.1/1.0 and their old 10-case receipts remain read-only compatible history, but their day counts never advance the restarted window.
+
 **Files:**
 - Create outside Git: `~/.ym-stock-data/acceptance/YYYY-MM-DD.json`
 - Create after the observation window: `docs/audit/YYYY-MM-DD-unified-channel-acceptance.md`

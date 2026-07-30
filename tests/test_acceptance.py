@@ -721,6 +721,34 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(before, path.read_bytes())
         self.assertEqual(before_mode, stat.S_IMODE(path.stat().st_mode))
 
+    def test_previous_v11_receipt_remains_read_only_compatible(self) -> None:
+        module = self.require_module()
+        built = self.build()
+        path = Path(built["path"])
+        report = json.loads(path.read_text(encoding="utf-8"))
+        legacy_smoke = self.smoke_report("2026-07-30", current=False)
+        write_json(self.smoke_path, legacy_smoke)
+
+        report["schema_version"] = "1.1"
+        report["smoke_evidence"] = module._project_smoke(
+            self.smoke_path,
+            "2026-07-30",
+            current=False,
+        )
+        report["provider_acceptance"] = module._provider_acceptance(
+            report["doctor"],
+            report["smoke_evidence"],
+            report["downstream_checks"],
+            include_pytdx_screener=False,
+        )
+        report["latency"] = module._latency(report["smoke_evidence"]["cases"])
+        report["integrity"] = module._report_integrity(report)
+        write_json(path, report)
+
+        result = module.validate_daily_acceptance(path)
+        self.assertEqual("valid", result["status"])
+        self.assertEqual("1.1", result["schema_version"])
+
     def test_template_reuses_exact_builder_keys_and_fails_closed(self) -> None:
         module = self.require_module()
         self.assertTrue(
