@@ -634,6 +634,33 @@ class WindProviderTests(unittest.TestCase):
         self.assertEqual("600519最近365天公告", command_params["query"])
         self.assertFalse(any(character.isspace() for character in command_params["query"]))
 
+    def test_filing_fallback_accepts_real_cli_data_items_container(self):
+        """Official Wind announcements CLI returns {data: {items: [...]}}."""
+        payload = {
+            "data": {
+                "items": [
+                    {"title": "分红实施公告", "content": "正文",
+                     "date": "2026-06-09", "doc_type": "announcement"},
+                    {"title": "增资公告", "content": "正文",
+                     "date": "2026-06-30", "doc_type": "announcement"},
+                ]
+            },
+            "error": None,
+        }
+        runner = Mock(
+            return_value=self.completed(
+                {"content": [{"type": "text", "text": json.dumps(payload)}]}
+            )
+        )
+
+        outcome = self.provider(name="wind_documents", runner=runner).call(
+            "filings", {"code": "600519", "days": 90, "max_pages": 1}
+        )
+
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(2, len(outcome.data["filings"]))
+        self.assertEqual("分红实施公告", outcome.data["filings"][0]["title"])
+
     def test_filing_fallback_rejects_missing_wrong_or_generic_containers(self):
         payloads = ({}, {"filings": {}}, {"rows": []}, {"text": "没有公告"})
         for payload in payloads:

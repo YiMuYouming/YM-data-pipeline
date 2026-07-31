@@ -122,6 +122,44 @@ class IWenCaiProviderTests(unittest.TestCase):
         self.assertNotIn("NoneType", repr(outcome))
         self.assertNotIn("今日涨停", repr(outcome))
 
+    def test_pywencai_error_payload_detail_is_propagated_for_diagnosis(self):
+        provider = PyWenCaiProvider(
+            runtime_resolver=lambda: PyWenCaiRuntime(
+                python=Path("/managed/bin/python"),
+                source="managed",
+            ),
+            runner=lambda _python, _query, _limit: {
+                "error": "pywencai execution failed",
+                "error_type": "AttributeError",
+                "detail": (
+                    "Traceback (most recent call last):\n"
+                    "  File wencai.py line 185, in get\n"
+                    "    data = params.get('data')\n"
+                ),
+                "_source": "pywencai",
+            },
+        )
+
+        outcome = provider.call(
+            "review_sentiment",
+            {"query": "今日涨停 非ST", "limit": 20},
+        )
+
+        self.assertEqual("provider_error", outcome.status)
+        self.assertEqual("AttributeError", outcome.error_code)
+        self.assertIsNotNone(outcome.detail)
+        self.assertIn("wencai.py line 185", outcome.detail)
+
+    def test_pywencai_runner_patches_referer_header_for_wencai_antiscrape(self):
+        from ym_stock_data.sources import iwencai as source_iwencai
+
+        runner_source = source_iwencai._PYWENCAI_RUNNER
+
+        self.assertIn("Referer", runner_source)
+        self.assertIn("www.iwencai.com", runner_source)
+        self.assertIn("ph.headers", runner_source)
+        self.assertIn("pw.wencai.headers", runner_source)
+
     def test_pywencai_success_limits_rows_and_names_actual_provider(self):
         rows = [{"股票代码": str(code)} for code in range(5)]
         provider = PyWenCaiProvider(

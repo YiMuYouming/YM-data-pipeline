@@ -351,6 +351,34 @@ class LegacyCompatibilityTests(unittest.TestCase):
         self.assertNotIn(".v2", source)
         self.assertNotIn("ym_stock_data.v2", source)
 
+    def test_local_research_provenance_aliases_reportapi_to_eastmoney_research(self):
+        """eastmoney_reportapi must resolve to the registered eastmoney_research."""
+        payload = {
+            "total": 2,
+            "reports": [
+                {"title": "研报A", "publish_date": "2026-07-01",
+                 "org": "券商", "rating": "买入"},
+                {"title": "研报B", "publish_date": "2026-06-01",
+                 "org": "券商", "rating": "增持"},
+            ],
+            "source": "eastmoney_reportapi",
+        }
+        with patch.object(
+            api,
+            "_provider_for",
+            side_effect=lambda name: LocalProvider(name)
+            if name in {"eastmoney_research", "tdx_report"}
+            else api.UnavailableProvider(name),
+        ), patch(
+            "ym_stock_data.providers.local.research.fetch_reports",
+            return_value=payload,
+        ):
+            result = query("research", code="603290", days=90, max_pages=1)
+
+        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("eastmoney_research", result["_meta"]["provider_used"])
+        self.assertEqual(2, len(result["data"]["reports"]))
+
 
 if __name__ == "__main__":
     unittest.main()

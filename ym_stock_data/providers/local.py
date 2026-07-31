@@ -62,6 +62,9 @@ def _actual_source(provider: str, raw: dict) -> str:
     aliases = {
         "eastmoney_fallback": "eastmoney",
         "eastmoney_index_fallback": "eastmoney",
+        # research.fetch_reports 返回的 source 是 eastmoney_reportapi，
+        # 必须映射到注册的 eastmoney_research，否则被判 INCOMPATIBLE_PROVIDER。
+        "eastmoney_reportapi": "eastmoney_research",
         "tencent_fallback": "tencent",
         "tencent_index_fallback": "tencent",
         "sina_fallback": "sina",

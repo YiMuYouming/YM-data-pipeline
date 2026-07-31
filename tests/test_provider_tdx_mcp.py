@@ -44,50 +44,68 @@ from ym_stock_data.routing import route_for
 
 
 def valid_tool_schemas():
+    # Mirrors the live TDX MCP server schema (2026-07-31).
+    string_or_number = [{"type": "string"}, {"type": "number"}]
     return {
         "tdx_screener": {
             "type": "object",
             "properties": {
-                "query": {"type": "string"},
-                "limit": {"type": "integer"},
+                "message": {"type": "string"},
+                "rang": {"anyOf": string_or_number},
+                "pageNo": {"anyOf": string_or_number},
+                "pageSize": {"anyOf": string_or_number},
             },
-            "required": ["query"],
+            "required": ["message"],
         },
         "tdx_quotes": {
             "type": "object",
             "properties": {
-                "codes": {"type": "array", "items": {"type": "string"}},
+                "code": {"anyOf": string_or_number},
+                "setcode": {"anyOf": string_or_number},
             },
-            "required": ["codes"],
+            "required": ["code", "setcode"],
         },
         "tdx_kline": {
             "type": "object",
             "properties": {
-                "code": {"type": "string"},
-                "period": {"type": "string"},
-                "count": {"type": "integer"},
+                "code": {"anyOf": string_or_number},
+                "setcode": {"anyOf": string_or_number},
+                "period": {"anyOf": string_or_number},
+                "wantNum": {"anyOf": string_or_number},
             },
-            "required": ["code"],
+            "required": ["code", "setcode"],
         },
         "wenda_report_query": {
             "type": "object",
             "properties": {
-                "code": {"type": "string"},
-                "days": {"type": "integer"},
+                "query": {"type": "string"},
+                "symbol": {"anyOf": string_or_number},
+                "name": {"type": "string"},
+                "bdate": {"anyOf": string_or_number},
+                "edate": {"anyOf": string_or_number},
             },
-            "required": ["code"],
+            "required": [],
         },
         "wenda_notice_query": {
             "type": "object",
             "properties": {
-                "code": {"type": "string"},
-                "days": {"type": "integer"},
+                "query": {"type": "string"},
+                "symbol": {"anyOf": string_or_number},
+                "name": {"type": "string"},
+                "bdate": {"anyOf": string_or_number},
+                "edate": {"anyOf": string_or_number},
             },
-            "required": ["code"],
+            "required": [],
         },
         "wenda_news_query": {
             "type": "object",
-            "properties": {"limit": {"type": "integer"}},
+            "properties": {
+                "query": {"type": "string"},
+                "symbol": {"anyOf": string_or_number},
+                "name": {"type": "string"},
+                "bdate": {"anyOf": string_or_number},
+                "edate": {"anyOf": string_or_number},
+            },
             "required": [],
         },
     }
@@ -254,7 +272,7 @@ class OfficialSdkClientTests(unittest.TestCase):
             self.assertFalse(any(forbidden in item.lower() for item in expected))
 
     def test_initialize_list_schema_gate_then_call(self):
-        session = FakeSession(payload={"datas": [{"code": "600519"}]})
+        session = FakeSession(payload={"data": [{"sec_code": "600519"}]})
         authorizations = []
 
         def factory(authorization):
@@ -262,10 +280,12 @@ class OfficialSdkClientTests(unittest.TestCase):
             return SessionContext(session)
 
         result = TdxMcpClient(session_factory=factory).call_tool(
-            "tdx_screener", {"query": "非ST", "limit": 1}, FakeAuth()
+            "tdx_screener",
+            {"message": "非ST", "rang": "AG", "pageNo": "1", "pageSize": "1"},
+            FakeAuth(),
         )
 
-        self.assertEqual({"datas": [{"code": "600519"}]}, result)
+        self.assertEqual({"data": [{"sec_code": "600519"}]}, result)
         self.assertEqual(["Bearer INITIAL"], authorizations)
         self.assertEqual(
             ["initialize", "tools/list", "tools/call"],
@@ -292,13 +312,13 @@ class OfficialSdkClientTests(unittest.TestCase):
         wrong_type = valid_tool_schemas()
         wrong_type["tdx_screener"] = {
             **wrong_type["tdx_screener"],
-            "properties": {"query": {"type": "array"}},
+            "properties": {"message": {"type": "array"}},
         }
         cases.append(wrong_type)
         extra_required = valid_tool_schemas()
         extra_required["tdx_screener"] = {
             **extra_required["tdx_screener"],
-            "required": ["query", "trade_confirmation"],
+            "required": ["message", "trade_confirmation"],
         }
         cases.append(extra_required)
 
@@ -309,7 +329,7 @@ class OfficialSdkClientTests(unittest.TestCase):
                     session_factory=lambda _authorization, value=session: SessionContext(value)
                 )
                 with self.assertRaises(TdxSchemaError):
-                    client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+                    client.call_tool("tdx_screener", {"message": "非ST"}, FakeAuth())
                 self.assertNotIn("tools/call", [name for name, _ in session.calls])
 
     def test_unrelated_missing_or_drifted_tool_does_not_disable_target(self):
@@ -320,22 +340,22 @@ class OfficialSdkClientTests(unittest.TestCase):
         drifted = valid_tool_schemas()
         drifted["tdx_quotes"] = {
             **drifted["tdx_quotes"],
-            "properties": {"codes": {"type": "string"}},
+            "properties": {"code": {"type": "array"}},
         }
         cases.append(drifted)
 
         for schemas in cases:
             with self.subTest(tool_count=len(schemas)):
-                session = FakeSession(schemas=schemas, payload={"datas": []})
+                session = FakeSession(schemas=schemas, payload={"data": []})
                 result = TdxMcpClient(
                     session_factory=lambda _authorization, value=session: SessionContext(value)
-                ).call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+                ).call_tool("tdx_screener", {"message": "非ST"}, FakeAuth())
 
-                self.assertEqual({"datas": []}, result)
+                self.assertEqual({"data": []}, result)
                 self.assertIn("tools/call", [name for name, _ in session.calls])
 
     def test_sync_client_runs_inside_existing_event_loop_without_coroutine_warning(self):
-        session = FakeSession(payload={"datas": []})
+        session = FakeSession(payload={"data": []})
         client = TdxMcpClient(
             session_factory=lambda _authorization: SessionContext(session)
         )
@@ -343,11 +363,9 @@ class OfficialSdkClientTests(unittest.TestCase):
         async def exercise():
             with warnings.catch_warnings():
                 warnings.simplefilter("error", RuntimeWarning)
-                return client.call_tool(
-                    "tdx_screener", {"query": "非ST"}, FakeAuth()
-                )
+                return client.call_tool("tdx_screener", {"message": "非ST"}, FakeAuth())
 
-        self.assertEqual({"datas": []}, asyncio.run(exercise()))
+        self.assertEqual({"data": []}, asyncio.run(exercise()))
 
     def test_explicit_destructive_annotation_fails_schema_gate(self):
         session = FakeSession()
@@ -358,7 +376,7 @@ class OfficialSdkClientTests(unittest.TestCase):
         )
 
         with self.assertRaises(TdxSchemaError):
-            client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+            client.call_tool("tdx_screener", {"message": "非ST"}, FakeAuth())
 
         self.assertNotIn("tools/call", [name for name, _ in session.calls])
 
@@ -376,7 +394,7 @@ class OfficialSdkClientTests(unittest.TestCase):
 
         auth = FakeAuth()
         result = TdxMcpClient(session_factory=factory).call_tool(
-            "tdx_screener", {"query": "无匹配"}, auth
+            "tdx_screener", {"message": "无匹配"}, auth
         )
 
         self.assertEqual({"datas": []}, result)
@@ -399,7 +417,7 @@ class OfficialSdkClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(TdxUnauthorized, "authorization failed") as caught:
             TdxMcpClient(session_factory=factory).call_tool(
-                "tdx_screener", {"query": "非ST"}, auth
+                "tdx_screener", {"message": "非ST"}, auth
             )
 
         self.assertEqual(2, factory.call_count)
@@ -415,7 +433,7 @@ class OfficialSdkClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(TdxForbidden, "permission denied") as caught:
             TdxMcpClient(session_factory=factory).call_tool(
-                "tdx_screener", {"query": "非ST"}, auth
+                "tdx_screener", {"message": "非ST"}, auth
             )
 
         factory.assert_called_once()
@@ -436,7 +454,7 @@ class OfficialSdkClientTests(unittest.TestCase):
                     session_factory=lambda _authorization, value=session: SessionContext(value)
                 )
                 with self.assertRaises(TdxProtocolError):
-                    client.call_tool("tdx_screener", {"query": "非ST"}, FakeAuth())
+                    client.call_tool("tdx_screener", {"message": "非ST"}, FakeAuth())
 
     def test_sdk_runtime_error_is_a_provider_protocol_failure(self):
         session = FakeSession(
@@ -574,7 +592,12 @@ class TdxMcpProviderTests(unittest.TestCase):
         )
 
     def test_success_exposes_sanitized_protocol_evidence(self):
-        session = FakeSession(payload={"items": [{"code": "600519"}]})
+        session = FakeSession(
+            payload={
+                "HQInfo": {"Now": 10.0, "Open": 9.5, "MaxP": 10.2, "MinP": 9.4, "Close": 9.8},
+                "ExtInfo": {},
+            }
+        )
         client = TdxMcpClient(
             session_factory=lambda _authorization: SessionContext(session)
         )
@@ -602,12 +625,36 @@ class TdxMcpProviderTests(unittest.TestCase):
 
     def test_provider_capabilities_map_only_to_compatible_intents(self):
         cases = {
-            "tdx_screener": ("review_sentiment", {"query": "非ST", "limit": 1}, {"datas": [{}]}),
-            "tdx_quotes": ("stock_snapshot", {"codes": ["600519"]}, {"600519": {"price": 1}}),
-            "tdx_kline": ("stock_kline", {"code": "600519", "period": "daily", "count": 1}, {"bars": [{}]}),
-            "tdx_report": ("research", {"code": "600519"}, {"reports": [{}]}),
-            "tdx_notice": ("filings", {"code": "600519"}, {"filings": [{}]}),
-            "tdx_news": ("news", {"limit": 1}, {"items": [{}]}),
+            "tdx_screener": (
+                "review_sentiment",
+                {"query": "非ST", "limit": 1},
+                {"data": [{"sec_code": "600519", "sec_name": "贵州茅台"}]},
+            ),
+            "tdx_quotes": (
+                "stock_snapshot",
+                {"codes": ["600519"]},
+                {"HQInfo": {"Now": 10.0, "Open": 9.5, "MaxP": 10.2, "MinP": 9.4, "Close": 9.8}, "ExtInfo": {}},
+            ),
+            "tdx_kline": (
+                "stock_kline",
+                {"code": "600519", "period": "daily", "count": 1},
+                {"Rows": [{"Data": "20260731", "Open": 1, "High": 2, "Low": 1, "Close": 1.5}], "AttachInfo": {"Name": "贵州茅台"}},
+            ),
+            "tdx_report": (
+                "research",
+                {"code": "600519"},
+                {"data": [["标题", "时间"], ["研报", "2026-07-01"]]},
+            ),
+            "tdx_notice": (
+                "filings",
+                {"code": "600519"},
+                {"data": [["标题", "时间"], ["公告", "2026-07-01"]]},
+            ),
+            "tdx_news": (
+                "news",
+                {"limit": 1},
+                {"data": [["标题", "时间"], ["新闻", "2026-07-01"]]},
+            ),
         }
         for name, (intent, params, payload) in cases.items():
             with self.subTest(name=name):
@@ -622,12 +669,11 @@ class TdxMcpProviderTests(unittest.TestCase):
 
     def test_only_explicit_empty_expected_container_becomes_empty(self):
         cases = (
-            ("tdx_screener", "review_sentiment", {"query": "none"}, {"datas": []}),
-            ("tdx_quotes", "stock_snapshot", {"codes": ["600519"]}, {"items": []}),
-            ("tdx_kline", "stock_kline", {"code": "600519"}, {"bars": []}),
-            ("tdx_report", "research", {"code": "600519"}, {"reports": []}),
-            ("tdx_notice", "filings", {"code": "600519"}, {"filings": []}),
-            ("tdx_news", "news", {"limit": 1}, {"items": []}),
+            ("tdx_screener", "review_sentiment", {"query": "none"}, {"data": []}),
+            ("tdx_kline", "stock_kline", {"code": "600519"}, {"Rows": [], "AttachInfo": {}}),
+            ("tdx_report", "research", {"code": "600519"}, {"data": []}),
+            ("tdx_notice", "filings", {"code": "600519"}, {"data": []}),
+            ("tdx_news", "news", {"limit": 1}, {"data": []}),
         )
         for name, intent, params, payload in cases:
             outcome = TdxMcpProvider(

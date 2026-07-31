@@ -22,6 +22,7 @@ from .base import ProviderOutcome
 COMPILER_VERSION = "pytdx-structured-1"
 DIRECTORY_PAGE_SIZE = 1000
 QUOTE_BATCH_SIZE = 80
+QUOTE_RETRY_ATTEMPTS = 2
 
 
 class _PayloadError(Exception):
@@ -270,10 +271,17 @@ class PytdxScreenerProvider:
         expected_by_code = {code: (market, code) for market, code in keys}
         for start in range(0, len(keys), QUOTE_BATCH_SIZE):
             batch = keys[start : start + QUOTE_BATCH_SIZE]
-            try:
-                rows = api.get_security_quotes(batch)
-            except Exception as error:
-                raise _PayloadError("PYTDX_QUOTE_INCOMPLETE") from error
+            rows = None
+            for _attempt in range(QUOTE_RETRY_ATTEMPTS):
+                try:
+                    rows = api.get_security_quotes(batch)
+                except Exception:
+                    rows = None
+                if isinstance(rows, list) and rows:
+                    break  # 有效响应交给后续长度/内容校验
+                rows = None  # 公共服务器突发拒绝: 有界重试后再 fail closed
+            if not isinstance(rows, list) or not rows:
+                raise _PayloadError("PYTDX_QUOTE_INCOMPLETE")
             if not isinstance(rows, list):
                 raise _PayloadError("PYTDX_QUOTE_INCOMPLETE")
             if len(rows) < len(batch):

@@ -363,7 +363,8 @@ class PyWenCaiProvider:
                 error_code=_safe_error_code(
                     limited.get("error_type"), "PYWENCAI_ERROR"
                 ),
-                detail="pywencai execution failed",
+                # runner 注入 traceback 到 detail，失败时可远程定位（见 sources/iwencai.py）。
+                detail=limited.get("detail") or "pywencai execution failed",
                 latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
                 auth={"required": False, "status": "not_required"},
             )

@@ -215,6 +215,11 @@ def _tabular_rows(
 
 def _filing_rows(payload: dict) -> list:
     rows = payload.get("filings")
+    if rows is None:
+        # Official Wind announcements CLI returns {data: {items: [...]}}.
+        container = payload.get("data")
+        if isinstance(container, dict):
+            rows = container.get("items")
     if not isinstance(rows, list):
         raise ValueError("INVALID_RESPONSE")
     return rows

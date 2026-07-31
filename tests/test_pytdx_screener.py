@@ -336,6 +336,31 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual([[(1, "600519")]], fake.quote_batches)
         self.assertEqual([(0, 0), (1, 0)], fake.list_calls)
 
+    def test_quotes_batch_retries_burst_rejection_before_fail_closed(self):
+        class FlakyQuotesApi(FakeApi):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.quote_calls = 0
+
+            def get_security_quotes(self, batch):
+                self.quote_calls += 1
+                if self.quote_calls == 1:
+                    return None  # 批次首次请求被公共服务器突发拒绝
+                return super().get_security_quotes(batch)
+
+        directory = {0: [], 1: [{"code": "600519", "name": "贵州茅台"}]}
+        fake = FlakyQuotesApi(
+            directory, {(1, "600519"): quote("600519", 10, 9)}
+        )
+
+        outcome = self.provider(fake).call(
+            "review_sentiment",
+            {"query": "沪市A股 非ST 非停牌 最新价>=10", "limit": 20},
+        )
+
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(2, fake.quote_calls)
+
     def test_complete_data_may_produce_valid_empty(self):
         fake = FakeApi(
             {0: [], 1: [{"code": "600519", "name": "贵州茅台"}]},

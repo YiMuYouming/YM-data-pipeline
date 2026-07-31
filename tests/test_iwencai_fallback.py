@@ -65,6 +65,12 @@ class IwencaiFallbackTests(unittest.TestCase):
         if hasattr(iwencai, "_QUERY_CACHE"):
             iwencai._QUERY_CACHE.clear()
 
+    def test_openapi_headers_match_installed_skill_contract(self):
+        headers = iwencai._iwencai_headers()
+
+        self.assertEqual("hithink-astock-selector", headers["X-Claw-Skill-Id"])
+        self.assertEqual("1.0.0", headers["X-Claw-Skill-Version"])
+
     def test_successful_openapi_query_reuses_result_within_cache_ttl(self):
         response = {
             "datas": [{"股票代码": "600000", "股票简称": "浦发银行"}],

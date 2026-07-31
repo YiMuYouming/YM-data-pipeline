@@ -32,34 +32,64 @@ REQUEST_TIMEOUT_SEC = 90
 TDX_AUTH_PATH = DEFAULT_FILE_PATH
 TdxCredentialStore = FileCredentialStore
 
+# Schemas verified against the live TDX MCP server 2026-07-31.
+# Note: server properties use `anyOf` for numeric-or-string fields; the gate
+# treats the contract type as an acceptable member of that set.
 TOOL_SCHEMA_CONTRACTS = {
     "tdx_screener": {
-        "required": frozenset({"query"}),
-        "properties": {"query": ("string", None), "limit": ("integer", None)},
+        "required": frozenset({"message"}),
+        "properties": {
+            "message": ("string", None),
+            "rang": ("string", None),
+            "pageNo": ("string", None),
+            "pageSize": ("string", None),
+        },
     },
     "tdx_quotes": {
-        "required": frozenset({"codes"}),
-        "properties": {"codes": ("array", "string")},
-    },
-    "tdx_kline": {
-        "required": frozenset({"code"}),
+        "required": frozenset({"code", "setcode"}),
         "properties": {
             "code": ("string", None),
+            "setcode": ("string", None),
+        },
+    },
+    "tdx_kline": {
+        "required": frozenset({"code", "setcode"}),
+        "properties": {
+            "code": ("string", None),
+            "setcode": ("string", None),
             "period": ("string", None),
-            "count": ("integer", None),
+            "wantNum": ("string", None),
         },
     },
     "wenda_report_query": {
-        "required": frozenset({"code"}),
-        "properties": {"code": ("string", None), "days": ("integer", None)},
+        "required": frozenset(),
+        "properties": {
+            "query": ("string", None),
+            "symbol": ("string", None),
+            "name": ("string", None),
+            "bdate": ("string", None),
+            "edate": ("string", None),
+        },
     },
     "wenda_notice_query": {
-        "required": frozenset({"code"}),
-        "properties": {"code": ("string", None), "days": ("integer", None)},
+        "required": frozenset(),
+        "properties": {
+            "query": ("string", None),
+            "symbol": ("string", None),
+            "name": ("string", None),
+            "bdate": ("string", None),
+            "edate": ("string", None),
+        },
     },
     "wenda_news_query": {
         "required": frozenset(),
-        "properties": {"limit": ("integer", None)},
+        "properties": {
+            "query": ("string", None),
+            "symbol": ("string", None),
+            "name": ("string", None),
+            "bdate": ("string", None),
+            "edate": ("string", None),
+        },
     },
 }
 TOOL_ALLOWLIST = frozenset(TOOL_SCHEMA_CONTRACTS)
@@ -95,24 +125,53 @@ class TdxForbidden(RuntimeError):
     """The read-only token lacks permission; scope escalation is forbidden."""
 
 
+def _setcode(code: str) -> str:
+    """Market code required by the TDX MCP server (1=SH, 0=SZ)."""
+    return "1" if str(code).startswith(("6", "68")) else "0"
+
+
 def _arguments(provider_name: str, params: dict) -> dict:
     if provider_name == "tdx_screener":
-        return {"query": params["query"], "limit": params.get("limit", 50)}
-    if provider_name == "tdx_quotes":
-        return {"codes": list(params["codes"])}
-    if provider_name == "tdx_kline":
         return {
-            "code": params["code"],
-            "period": params.get("period", "daily"),
-            "count": params.get("count", 30),
+            "message": params["query"],
+            "rang": "AG",
+            "pageNo": "1",
+            "pageSize": str(params.get("limit", 50)),
+        }
+    if provider_name == "tdx_quotes":
+        # TDX MCP serves one code per call; the router falls back to it only
+        # when other quote sources are unavailable, so the first code is used
+        # and the rest are reported as missing by the router's coverage check.
+        code = str(params["codes"][0])
+        return {"code": code, "setcode": _setcode(code)}
+    if provider_name == "tdx_kline":
+        # TDX MCP encodes periods as numbers: "4"=daily, "5"=weekly,
+        # "6"=monthly, "3"=60m, "1"=15m, "0"=5m; bars are requested via wantNum.
+        period_map = {
+            "daily": "4",
+            "weekly": "5",
+            "monthly": "6",
+            "60m": "3",
+            "30m": "2",
+            "15m": "1",
+            "5m": "0",
+            "1m": "7",
+        }
+        period = period_map.get(str(params.get("period", "daily")), "4")
+        return {
+            "code": str(params["code"]),
+            "setcode": _setcode(str(params["code"])),
+            "period": period,
+            "wantNum": str(params.get("count", 100)),
         }
     if provider_name in {"tdx_report", "tdx_notice"}:
-        result = {"code": params["code"]}
+        result = {"query": f"{params['code']} 公告/研报"}
         if params.get("days") is not None:
-            result["days"] = params["days"]
+            result["bdate"] = "20200101"
+            result["edate"] = "20991231"
         return result
     if provider_name == "tdx_news":
-        return {"limit": params.get("limit", 20)}
+        return {"query": "A股 要闻", "symbol": ""}
     raise ValueError("unsupported TDX provider")
 
 
@@ -131,37 +190,86 @@ def _required_rows(payload: dict, container: str) -> list:
     return payload[container]
 
 
-def _normalize(provider_name: str, payload: dict) -> tuple[dict, int]:
+def _normalize(
+    provider_name: str, payload: dict, *, code: str | None = None
+) -> tuple[dict, int]:
     if _payload_failed(payload):
         raise TdxProtocolError("TDX payload is an explicit failure")
     if provider_name == "tdx_screener":
-        rows = _required_rows(payload, "datas")
-        return {"datas": rows, "row_count": len(rows)}, len(rows)
+        rows = payload.get("data")
+        if not isinstance(rows, list):
+            raise TdxProtocolError("TDX payload is missing its expected container")
+        normalized = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise TdxProtocolError("TDX screener row is invalid")
+            normalized.append(
+                {
+                    "股票代码": str(row.get("sec_code") or row.get("POS") or ""),
+                    "股票简称": str(row.get("sec_name") or ""),
+                    "最新价": row.get("now_price"),
+                    "涨幅": row.get("chg"),
+                }
+            )
+        return {"datas": normalized, "row_count": len(normalized)}, len(normalized)
     if provider_name == "tdx_quotes":
-        if "items" in payload:
-            rows = _required_rows(payload, "items")
-            data = {
-                str(row.get("code") or row.get("股票代码")): row
-                for row in rows
-                if isinstance(row, dict) and (row.get("code") or row.get("股票代码"))
-            }
-        else:
-            data = {
-                str(key): value
-                for key, value in payload.items()
-                if isinstance(value, dict)
-            }
-            if not data:
-                raise TdxProtocolError("TDX payload is missing its expected container")
-        return data, len(data)
+        hq = payload.get("HQInfo")
+        if not isinstance(hq, dict):
+            raise TdxProtocolError("TDX payload is missing its expected container")
+        if not code:
+            raise TdxProtocolError("TDX quotes requires code context")
+        ext = payload.get("ExtInfo") if isinstance(payload.get("ExtInfo"), dict) else {}
+        row = {
+            "code": code,
+            "price": hq.get("Now"),
+            "open": hq.get("Open"),
+            "high": hq.get("MaxP"),
+            "low": hq.get("MinP"),
+            "last_close": hq.get("Close"),
+            "volume": hq.get("Volume"),
+            "amount": hq.get("Amount"),
+            "turnover_rate": hq.get("HSL"),
+            "name": ext.get("Name") or "",
+        }
+        return {str(code): row}, 1
+    if provider_name == "tdx_kline":
+        rows = payload.get("Rows")
+        if not isinstance(rows, list):
+            raise TdxProtocolError("TDX payload is missing its expected container")
+        attach = payload.get("AttachInfo") if isinstance(payload.get("AttachInfo"), dict) else {}
+        bars = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise TdxProtocolError("TDX kline row is invalid")
+            bars.append(
+                {
+                    "time": str(row.get("Data") or row.get("date") or row.get("time") or ""),
+                    "open": row.get("Open"),
+                    "high": row.get("High"),
+                    "low": row.get("Low"),
+                    "close": row.get("Close"),
+                    "volume": row.get("Volume") if row.get("Volume") is not None else row.get("VolInStock"),
+                    "amount": row.get("Amount"),
+                }
+            )
+        return {"bars": bars, "name": attach.get("Name") or ""}, len(bars)
     container = {
-        "tdx_kline": "bars",
         "tdx_report": "reports",
         "tdx_notice": "filings",
         "tdx_news": "items",
     }[provider_name]
-    rows = _required_rows(payload, container)
-    return {container: rows}, len(rows)
+    rows = payload.get("data")
+    if not isinstance(rows, list) or not rows:
+        return {container: []}, 0
+    header = rows[0]
+    if not isinstance(header, list):
+        raise TdxProtocolError("TDX payload is missing its expected container")
+    items = []
+    for row in rows[1:]:
+        if not isinstance(row, list):
+            raise TdxProtocolError("TDX table row is invalid")
+        items.append(dict(zip(header, row)))
+    return {container: items}, len(items)
 
 
 def _walk_exceptions(error: BaseException):
@@ -261,6 +369,27 @@ def _annotation_value(annotations, snake: str, camel: str):
     return getattr(annotations, snake, None)
 
 
+def _property_type_set(definition: object) -> set[str]:
+    """Acceptable JSON-Schema types for one property definition.
+
+    Handles both `{"type": "string"}` and the server's
+    `{"anyOf": [{"type": "string"}, {"type": "number"}]}` form.
+    """
+    if not isinstance(definition, dict):
+        return set()
+    direct = definition.get("type")
+    if isinstance(direct, str):
+        return {direct}
+    anyof = definition.get("anyOf")
+    if isinstance(anyof, list):
+        return {
+            item.get("type")
+            for item in anyof
+            if isinstance(item, dict) and isinstance(item.get("type"), str)
+        }
+    return set()
+
+
 def _validate_tool_schema(tool) -> None:
     name = _tool_value(tool, "name")
     contract = TOOL_SCHEMA_CONTRACTS.get(name)
@@ -281,8 +410,10 @@ def _validate_tool_schema(tool) -> None:
         "properties"
     ].items():
         definition = properties.get(property_name)
-        if not isinstance(definition, dict) or definition.get("type") != expected_type:
-            raise TdxSchemaError("TDX MCP tool schema drifted")
+        allowed = _property_type_set(definition)
+        if not allowed or expected_type not in allowed:
+            if not (expected_type == "integer" and "number" in allowed):
+                raise TdxSchemaError("TDX MCP tool schema drifted")
         if expected_item_type is not None:
             items = definition.get("items")
             if not isinstance(items, dict) or items.get("type") != expected_item_type:
@@ -307,6 +438,7 @@ def _validate_arguments(tool_name: str, arguments: dict) -> None:
         valid = {
             "string": isinstance(value, str),
             "integer": isinstance(value, int) and not isinstance(value, bool),
+            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
             "array": isinstance(value, list),
         }[expected_type]
         if not valid:
@@ -509,7 +641,12 @@ class TdxMcpProvider:
             payload = self.client.call_tool(
                 spec[1], _arguments(self.name, params), self.auth
             )
-            data, count = _normalize(self.name, payload)
+            call_code = None
+            if self.name == "tdx_quotes" and isinstance(params.get("codes"), list):
+                codes = params["codes"]
+                if codes:
+                    call_code = str(codes[0])
+            data, count = _normalize(self.name, payload, code=call_code)
         except TdxAuthMissing:
             return self._failure(started, "auth_error", "AUTH_MISSING", "missing")
         except (TdxAuthExpired, TdxScopeError, TdxUnauthorized):

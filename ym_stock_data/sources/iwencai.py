@@ -103,7 +103,7 @@ def _iwencai_headers() -> dict:
         "User-Agent": "Mozilla/5.0",
         "X-Claw-Call-Type": "normal",
         "X-Claw-Skill-Id": "hithink-astock-selector",
-        "X-Claw-Skill-Version": "2.0.0",
+        "X-Claw-Skill-Version": "1.0.0",
         "X-Claw-Plugin-Id": "none",
         "X-Claw-Plugin-Version": "none",
         "X-Claw-Trace-Id": secrets.token_hex(32),
@@ -210,10 +210,23 @@ def _get_pywencai():
 _PYWENCAI_RUNNER = r"""
 import json
 import sys
+import traceback
 
 import numpy as np
 import pandas as pd
 import pywencai as pw
+import pywencai.headers as ph
+
+
+# 问财反爬要求 Referer 头；pywencai 0.13.1 的 headers 未带，导致
+# get-robot-data 返回 403 Access Denied。这里补齐 Referer。
+_orig_headers = ph.headers
+def _patched_headers(cookie=None, user_agent=None):
+    _headers = _orig_headers(cookie, user_agent)
+    _headers["Referer"] = "https://www.iwencai.com/"
+    return _headers
+ph.headers = _patched_headers
+pw.wencai.headers = _patched_headers
 
 
 def native(value):
@@ -279,6 +292,7 @@ except Exception as error:
     payload = {
         "error": "pywencai execution failed",
         "error_type": type(error).__name__,
+        "detail": traceback.format_exc()[-2000:],
         "_source": "pywencai",
     }
 
