@@ -19,8 +19,8 @@ from ym_stock_data.smoke_contract import CURRENT_SMOKE_CASE_IDS
 
 CURRENT_CASE_IDS = CURRENT_SMOKE_CASE_IDS
 CURRENT_CASE_METADATA = {
-    "explicit_structured_screener": (
-        "five_source_fallback",
+    "optional_pytdx_screener_state": (
+        "experimental_optional",
         "review_sentiment",
         {"sample_id": "structured_hs_a", "limit": 3},
     ),
@@ -88,7 +88,6 @@ class SmokeTests(unittest.TestCase):
                 "pywencai": "pass",
                 "tdx": "pass",
                 "wind": "pass",
-                "pytdx": "pass",
             },
             "chain_status": "pass",
             "gate_status": "pass",
@@ -122,7 +121,6 @@ class SmokeTests(unittest.TestCase):
                 "pywencai": "fail",
                 "tdx": "fail",
                 "wind": "fail",
-                "pytdx": "fail",
             },
             "chain_status": "fail",
             "gate_status": "fail",
@@ -197,7 +195,7 @@ class SmokeTests(unittest.TestCase):
         report = json.loads(path.read_text(encoding="utf-8"))
         serialized = json.dumps(report, ensure_ascii=False)
         self.assertEqual("2", report["schema_version"])
-        self.assertEqual("five-source-capabilities-v1", report["baseline"])
+        self.assertEqual("four-source-capabilities-v1", report["baseline"])
         self.assertEqual(21, len(report["cases"]))
         self.assertEqual(CURRENT_CASE_IDS, tuple(case["case_id"] for case in report["cases"]))
         for case_id, (category, intent, params) in CURRENT_CASE_METADATA.items():
@@ -214,11 +212,11 @@ class SmokeTests(unittest.TestCase):
         self.assertIn("zero_stock_snapshot", {case["case_id"] for case in report["cases"]})
         self.assertIn("wind_probe", {case["case_id"] for case in report["cases"]})
         self.assertIn(
-            "explicit_structured_screener",
+            "optional_pytdx_screener_state",
             {case["case_id"] for case in report["cases"]},
         )
         self.assertEqual(8, len(calls))
-        self.assertEqual(2, providers["pytdx_screener"].call.call_count)
+        self.assertNotIn("pytdx_screener", providers)
         for forbidden in (
             "SECRET_ROW",
             "SECRET_EXCEPTION",

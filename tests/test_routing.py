@@ -12,7 +12,7 @@ class RoutingTests(unittest.TestCase):
         )
         self.assertEqual("continue_until_exhausted", spec.empty_policy)
 
-    def test_structured_screen_adds_no_auth_pytdx_fifth(self):
+    def test_structured_screen_keeps_pytdx_experimental_and_uses_four_sources(self):
         spec = route_for(
             "review_sentiment",
             {"query": "沪深A股 非ST 非停牌 最新价>=10"},
@@ -23,7 +23,6 @@ class RoutingTests(unittest.TestCase):
                 "pywencai",
                 "tdx_screener",
                 "wind_screener",
-                "pytdx_screener",
             ),
             spec.providers,
         )

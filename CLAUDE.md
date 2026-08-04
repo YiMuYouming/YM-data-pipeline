@@ -36,7 +36,7 @@ screen = query(
 `doctor` 只做离线、脱敏的配置和依赖检查，不证明 provider 在线。只有任务明确
 授权联网时才运行 `./ym-data smoke --live`；不得自行拼装 live 探针。
 
-## 五类受管来源
+## 四类正式来源与一个实验性源
 
 五类来源不是每个 intent 都依次调用。registry 只把请求交给语义兼容的 provider，
 并在 `_meta.attempts` 中保留每次真实尝试。
@@ -47,13 +47,12 @@ screen = query(
 | portable pywencai | 本管道可移植 runtime；无 OpenAPI key | WenCai 兼容降级；dependency missing、provider error 和合法空集分别记录 |
 | TDX owned OAuth | 本管道自有只读 OAuth，仅请求 `mcp.read` | 兼容源失败后的选股、报价、K 线、研报、公告和新闻能力 |
 | official Wind CLI | Wind 官方 CLI 自行鉴权 | 自然语言 `wind_screener`、显式 `wind_enrichment` 和严格验证后的 `filings` fallback |
-| zero-auth PyTDX | 无鉴权 TCP 数据源 | 行情、快照、K 线和市场宽度；只处理自身字段足以表达的结构化条件，不冒充任意自然语言筛选 |
+| zero-auth PyTDX | 无鉴权 TCP 数据源；结构化 screener 为实验性显式能力 | 行情、快照、K 线和市场宽度；`pytdx_screener` 不进入自然语言自动降级或正式 live gate |
 
-零鉴权结构化第五源名为 `pytdx_screener`。只有包含唯一沪深 universe 且能被
-`pytdx-structured-1` 完整消费的 AND 查询才会在 Wind 后追加它，例如
-`沪深A股 非ST 非停牌 最新价>=10 涨幅<5%`。数值条件必须带 `非停牌`；不支持北交所，
-也不支持行业、概念、PE、PB、排名、OR 或日期。运行时固定 `pytdx==1.72`，目录、
-quote 或价格未就绪均 fail closed，不调用其它 HTTP fallback。
+显式自然语言主链固定为 OpenAPI → pywencai → TDX screener → Wind screener。
+`pytdx_screener` 只保留为实验性显式 provider；即使查询可被
+`pytdx-structured-1` 完整消费，也不追加到 public `query()` route。运行时固定
+`pytdx==1.72`，目录、quote 或价格未就绪均 fail closed，不调用其它 HTTP fallback。
 
 合法空集、鉴权失败、依赖缺失、provider error 和网络失败不是同一种状态。只有
 当前 intent 定义允许继续的空集才会进入下一兼容源；最终结果必须保留全部 attempts。
@@ -70,6 +69,9 @@ quote 或价格未就绪均 fail closed，不调用其它 HTTP fallback。
 默认凭据保存到 macOS Keychain；只有显式选择 file store 时才使用本管道私有的
 `0700` 目录和 `0600` 文件。命令、日志、doctor、smoke 和 receipts 都不得输出
 token、Key、授权正文或凭据路径。
+
+官方页面若只能完成 WorkBuddy 授权，可在弈沐明确授权下把凭据一次性迁入本管道
+安全存储并记录 `imported_from=workbuddy`；运行时不得扫描或持续同步 WorkBuddy。
 
 TDX 固定只读能力只有六项：`tdx_screener`、`tdx_quotes`、`tdx_kline`、
 `wenda_report_query`、`wenda_notice_query`、`wenda_news_query`。每次连接必须先

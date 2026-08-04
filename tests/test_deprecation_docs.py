@@ -42,7 +42,6 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             "from ym_stock_data import fetch",
             "from ym_stock_data.v2.resolve import resolve",
             "tdx-finance",
-            "WorkBuddy",
             "tdx_lookup_stock",
         ):
             with self.subTest(stale=stale):
@@ -92,7 +91,8 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             "显式 `--store file`",
             "目录 `0700`",
             "文件和锁 `0600`",
-            "不会读取或导入其它应用的凭据",
+            "一次性受控迁入",
+            "不会扫描、读取或持续同步 WorkBuddy",
             "PKCE S256",
             "`mcp.read`",
             "`auth_missing`",
@@ -156,15 +156,10 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
         self.assertNotIn("`ready`", pywencai_row)
         self.assertIn("runtime installed", readme)
         self.assertIn("不证明在线", readme)
-        for relative in (
-            "README.md",
-            "docs/INSTALL.md",
-            "AGENTS.md",
-            "docs/TDX-MCP-备用源验证清单.md",
-        ):
-            with self.subTest(no_external_credential_import=relative):
+        for relative in ("README.md", "docs/INSTALL.md", "AGENTS.md"):
+            with self.subTest(controlled_external_credential_import=relative):
                 text = (ROOT / relative).read_text(encoding="utf-8").lower()
-                self.assertNotIn("workbuddy", text)
+                self.assertIn("workbuddy", text)
                 self.assertNotIn("import-tdx", text)
 
     def test_current_docs_lock_wind_screener_and_restarted_acceptance_scope(self):
@@ -195,10 +190,10 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             if line.startswith("| `stock_event` |")
         )
         self.assertNotIn("wind_mcp", stock_event_row)
-        self.assertIn("新五源范围", plan)
-        self.assertIn("五类受管来源", plan)
+        self.assertIn("four-source simplification amendment (current)", plan)
+        self.assertIn("formal managed source set", plan)
         self.assertIn("acceptance 1.3", plan)
-        self.assertIn("five-source-capabilities-v1", plan)
+        self.assertIn("four-source-capabilities-v1", plan)
         self.assertIn("exactly 21 ordered cases", plan)
         self.assertIn("observation_day_count", plan)
         self.assertIn("pass_day_count", plan)
@@ -209,11 +204,11 @@ class DeprecationAndDocumentationTests(unittest.TestCase):
             "portable pywencai",
             "TDX owned OAuth",
             "official Wind CLI",
-            "zero-auth PyTDX",
         ):
             with self.subTest(source=source):
                 self.assertIn(source, plan)
         self.assertIn("验收窗口必须重新开始", plan)
+        self.assertIn("Zero-auth PyTDX remains an experimental explicit provider", plan)
 
         routing_example = plan.split(
             "### Task 3: Add the provider protocol and canonical route registry", 1

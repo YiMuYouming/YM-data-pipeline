@@ -553,9 +553,7 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     if current:
         projected["baseline"] = CURRENT_SMOKE_BASELINE
         supplied_sources = _mapping(value["source_status"], "INVALID_SMOKE_GATE")
-        expected_source_keys = {
-            "iwencai_openapi", "pywencai", "tdx", "wind", "pytdx"
-        }
+        expected_source_keys = {"iwencai_openapi", "pywencai", "tdx", "wind"}
         _exact_keys(
             supplied_sources,
             required=expected_source_keys,
@@ -635,20 +633,19 @@ def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
                 ("wind_filings_probe", "wind_documents"),
             )
         ) else "fail",
-        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
     }
-    fallback = by_id.get("canonical_five_source_fallback", {})
+    fallback = by_id.get("canonical_tdx_fallback", {})
     attempts = fallback.get("attempts", [])
     chain = "pass" if (
         fallback.get("status") == "degraded"
-        and fallback.get("provider_used") == "pytdx_screener"
+        and fallback.get("provider_used") == "tdx_screener"
         and fallback.get("row_count", 0) > 0
         and [item.get("provider") for item in attempts]
-        == ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"]
+        == ["iwencai_openapi", "pywencai", "tdx_screener"]
         and [item.get("status") for item in attempts]
-        == ["auth_error", "provider_error", "auth_error", "empty", "success"]
+        == ["auth_error", "provider_error", "success"]
         and [item.get("origin") for item in attempts]
-        == ["injected", "injected", "injected", "injected", "live"]
+        == ["injected", "injected", "live"]
     ) else "fail"
     gate = "pass" if chain == "pass" and all(
         value == "pass" for value in source_status.values()
@@ -686,7 +683,13 @@ def _validate_direct_provider(
             return
         if (
             allow_unattempted_provider_state
-            and case["status"] in _DIRECT_SHORT_CIRCUIT_STATES
+            and (
+                case["status"] in _DIRECT_SHORT_CIRCUIT_STATES
+                or (
+                    expected_provider == "pytdx_screener"
+                    and case["status"] in _PROVIDER_STATES
+                )
+            )
         ):
             return
         _raise("INVALID_DIRECT_PROVIDER")
@@ -1145,7 +1148,7 @@ def _provider_acceptance(
         },
     }
     if include_pytdx_screener:
-        pytdx_case = _case(cases, "explicit_structured_screener")
+        pytdx_case = _case(cases, "optional_pytdx_screener_state")
         pytdx_state = providers.get("pytdx_screener", {})
         result["pytdx_screener"] = {
             "doctor_status": pytdx_state.get("status", "unavailable"),
@@ -1158,7 +1161,7 @@ def _provider_acceptance(
             "latency_ms": pytdx_case.get("latency_ms", 0),
             "error_code": pytdx_case.get("error_code"),
         }
-        controlled = _case(cases, "canonical_five_source_fallback")
+        controlled = _case(cases, "canonical_tdx_fallback")
         controlled_attempts = controlled.get("attempts", [])
         result["controlled_fallback"] = {
             "case_status": controlled.get("status", "unavailable"),

@@ -1,5 +1,21 @@
 # 统一路由入口 审计 + 修复报告（2026-07-31）
 
+## 2026-08-01 用户决策与正式契约更新
+
+本节覆盖下文 2026-07-31 时点的五源建议；旧内容保留为审计历史，不再代表当前路由。
+
+- WenCai OpenAPI 使用已验证可用的账户级 Key，保存在管道专用 macOS Keychain；不写 shell profile、仓库、argv、日志或 receipt。
+- 显式自然语言主链固定为 `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener`，前源失败或合法空集才继续，所有 attempts 保留。
+- `pytdx_screener` 的全市场路径暂不作为正式兜底：provider 代码与显式诊断能力保留，但不进入 public route、不做 formal smoke live 调用、不进入 source gate。
+- TDX 接受弈沐已明确授权、标注 `imported_from=workbuddy` 的一次性迁入副本；canonical 运行时只使用本管道安全存储，不扫描或持续同步 WorkBuddy。
+- 正式验收基线改为 acceptance 1.3 / smoke schema 2 / `four-source-capabilities-v1` / 21 cases；四类正式来源为 OpenAPI、pywencai、TDX、Wind，受控链要求前两源 injected failure 后 TDX live success。基线变化使五个正式交易日窗口从下一次合格交易日重新计数。
+
+## 2026-08-04 最终闭环裁决
+
+- 弈沐明确取消连续五日定时验收，automation `a` 已删除；acceptance 1.3 和唯一 runbook 仅作为以后明确授权时的手工工具保留。
+- 当前 Goal 的终止条件改为：整体 diff 审核、完整测试与编译、安全扫描、本地 commit、提交后 clean worktree；不改写或抬升任何历史 acceptance receipt。
+- 本轮提交不部署、不 push、不运行交易/券商调用，也不对真实 8088 发 POST。
+
 > 审计对象：`codex/unified-a-share-data-channel-canonical`（HEAD 88e3e4d），ym_stock_data v2.0.0
 > 审计方式：源码通读 + `doctor --json` + 官方 `query()` 全 intent 实测 + `smoke --live` 21-case 全渠道探针 + 全量测试 + 根因级诊断脚本（TDD 逐项修复）
 > 结论先行：**架构正确，修复后 5/7 渠道可用；TDX 与 pywencai 受外部限制无法在本环境激活。**

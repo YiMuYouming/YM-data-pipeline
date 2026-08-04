@@ -115,9 +115,11 @@ class CapabilityManifestTests(unittest.TestCase):
 
         self.assertTrue(provider["registered"])
         self.assertEqual("registered_optional", provider["status"])
-        self.assertEqual(["review_sentiment"], provider["routes"])
+        self.assertEqual([], provider["routes"])
+        self.assertEqual([], provider["automatic_fallback_intents"])
+        self.assertEqual(["review_sentiment"], provider["explicit_intents"])
         self.assertEqual("no_auth", provider["auth_ownership"])
-        self.assertEqual("structured_queries_only", provider["automatic_fallback_scope"])
+        self.assertEqual("explicit_only", provider["automatic_fallback_scope"])
         self.assertEqual("pytdx-structured-1", provider["compiler_version"])
 
     def test_manifest_returns_an_isolated_copy(self):

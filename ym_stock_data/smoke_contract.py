@@ -21,7 +21,7 @@ class SmokeCaseSpec:
         }
 
 CURRENT_SMOKE_SCHEMA_VERSION = "2"
-CURRENT_SMOKE_BASELINE = "five-source-capabilities-v1"
+CURRENT_SMOKE_BASELINE = "four-source-capabilities-v1"
 CASE_SPECS = (
     SmokeCaseSpec("zero_realtime_market", "zero_auth", "realtime_market", (), capability="realtime_market"),
     SmokeCaseSpec(
@@ -70,13 +70,14 @@ CASE_SPECS = (
         capability="canonical_screener",
     ),
     SmokeCaseSpec(
-        "explicit_structured_screener",
-        "five_source_fallback",
+        "optional_pytdx_screener_state",
+        "experimental_optional",
         "review_sentiment",
         (("sample_id", "structured_hs_a"), ("limit", 3)),
         direct_provider="pytdx_screener",
-        evidence_kind="direct_provider_result",
-        capability="structured_screener",
+        allow_unattempted_provider_state=True,
+        evidence_kind="provider_state",
+        capability="optional_structured_screener",
     ),
     SmokeCaseSpec(
         "tdx_probe",
@@ -152,9 +153,9 @@ CASE_SPECS = (
         evidence_kind="direct_provider_result", capability="filings",
     ),
     SmokeCaseSpec(
-        "canonical_five_source_fallback", "five_source_fallback", "review_sentiment",
+        "canonical_tdx_fallback", "four_source_fallback", "review_sentiment",
         (("sample_id", "structured_hs_a"), ("limit", 3)),
-        evidence_kind="controlled_canonical_route", capability="five_source_fallback",
+        evidence_kind="controlled_canonical_route", capability="tdx_fallback",
     ),
 )
 CURRENT_SMOKE_CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)

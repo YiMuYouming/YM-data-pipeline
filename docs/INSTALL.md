@@ -25,14 +25,14 @@ uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选�
 
 零鉴权不代表在线可用；以 query 返回的 `provider_used`、`attempts`、`quality` 与 freshness 为准。
 
-结构化选股第五源使用固定 `pytdx==1.72`，provider id 为 `pytdx_screener`。它只在
-query 含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过的 AND filter，且
-被编译器完整消费时追加到 Wind 之后。支持 `非ST`、`非停牌`、单一股票代码、
+实验性结构化选股 provider 使用固定 `pytdx==1.72`，id 为 `pytdx_screener`。它只接受
+含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过的 AND filter，且
+被编译器完整消费的请求。支持 `非ST`、`非停牌`、单一股票代码、
 `最新价`、`涨幅` 及固定比较/区间语法；数值条件必须带 `非停牌`。不支持北交所，
 也不支持行业、概念、PE、PB、排名、OR 或日期。doctor 仍只报告
-`configured_unverified`，不连接 TCP；线上只能由显式 `./ym-data smoke --live`
-中经 canonical registry 直接取得 `pytdx_screener` 的脱敏结构化 case 验证。
-该 case 不经过前四源，因此不会被更早成功或合法空集遮蔽；它只记录安全元数据。
+`configured_unverified`，不连接 TCP。当前 public `query()` 不会自动调用它，正式
+`./ym-data smoke --live` 也只记录其离线 provider 状态，不做全市场 TCP 调用，
+不把它纳入四类正式来源 gate。
 
 ## 完整投研 profile
 
@@ -44,7 +44,7 @@ query 含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过�
 ./ym-data doctor --json
 ```
 
-`setup pywencai` 是显式写入命令，会先打印目标目录，再用 `uv venv --python 3.12` 创建隔离环境，并通过 `uv pip install --python <runtime-python> pywencai==0.13.1 pandas numpy` 安装固定兼容链。两个子进程均使用参数列表和 `shell=False`，失败输出只报告脱敏状态。问财 OpenAPI Key 应由进程环境或密钥管理器注入；不把编辑 shell rc 文件作为主要配置方式，也不要把 Key 写入仓库。
+`setup pywencai` 是显式写入命令，会先打印目标目录，再用 `uv venv --python 3.12` 创建隔离环境，并通过 `uv pip install --python <runtime-python> pywencai==0.13.1 pandas numpy` 安装固定兼容链。两个子进程均使用参数列表和 `shell=False`，失败输出只报告脱敏状态。问财 OpenAPI Key 的读取优先级是当前进程环境、管道专用 macOS Keychain、旧 shell profile 兼容读取；不把编辑 shell rc 文件作为主要配置方式，也不要把 Key 写入仓库、argv 或日志。
 
 ## TDX profile
 
@@ -75,8 +75,10 @@ canonical query、doctor、smoke 与无 override 的 status 共用该选择；se
 记录可能包含 custom path，但 CLI、doctor 和 smoke receipt 只输出 store 类型，
 不会输出路径。失败、取消、超时或 selector 写入失败均不切换当前选择。
 
-管道不会读取或导入其它应用的凭据，也不会扫描外部 credential 目录。缺少
-owned credential 时，doctor 报告 `auth_missing`；过期且不可 refresh 时报告
+官方授权页若只能唤起 WorkBuddy，可在弈沐明确授权后做一次性受控迁入，将凭据
+写入本管道自己的 secure store 并记录 `imported_from=workbuddy`。这不是运行时
+fallback：canonical query、doctor、smoke 不会扫描、读取或持续同步 WorkBuddy
+credential 目录。缺少可用 credential 时，doctor 报告 `auth_missing`；过期且不可 refresh 时报告
 `auth_expired`。doctor 和 `status-tdx` 都离线，只输出脱敏状态。401 只强制
 refresh 一次并重建 MCP session，最多重试一次；403 是 permission failure，
 不会扩 scope 或伪装 expired。
@@ -87,11 +89,11 @@ SDK HTTP client 固定为 `httpx2==2.9.1`，Keychain adapter 固定为
 `keyring==25.7.0`。
 每次只读调用都必须先通过 `initialize`、`tools/list` 和本次请求 capability 的
 allowlist schema gate；其它 capability 的缺失或 schema drift 不会连带禁用本次
-能力，完整六项健康只能由 acceptance 1.3 / `five-source-capabilities-v1` 的 21-case smoke 分项验收；每项 receipt 只保留 initialize、tools/list、schema、read-only、tool-call 的 pass/fail 与页/session/refresh/call 计数，不保存 schema、content、endpoint 或 session 标识。任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
+能力，完整六项健康只能由 acceptance 1.3 / `four-source-capabilities-v1` 的 21-case smoke 分项验收；每项 receipt 只保留 initialize、tools/list、schema、read-only、tool-call 的 pass/fail 与页/session/refresh/call 计数，不保存 schema、content、endpoint 或 session 标识。任意额外、交易、写入工具会在 transport 前被拒绝。只有根线程后续取得
 明确授权并完成真实 `tools/list` 与一个白名单只读小调用，才能称为在线。本轮
 离线实现没有执行真实 DCR、没有打开浏览器，也不称为在线接通。
 
-正式 live smoke 会在单次矩阵中继续执行所有 case，不因前项失败遮蔽后项；doctor diagnostics 与每个 case 都受同一总时限约束，即使 diagnostics 挂起也会落下完整 21-case 失败 receipt。只有 OpenAPI、pywencai、TDX 六项、Wind 三项和 PyTDX direct 都返回非空 success，且 canonical 受控五源顺序与 injected/live origin 完全匹配，`gate_status` 才为 `pass`。受控链只允许前四源 injected、末源 PyTDX live，route 漂移在加载额外 live provider 前失败。Direct `degraded` 或合法 empty 都不算通。CLI 会脱敏回显 `source_status`、`chain_status`、`gate_status`；gate fail 返回非零但保留 receipt。TDX report/notice 和 Wind filings 固定查询 365 天，Wind 保持单页，从而不增加调用次数并降低静默期假阴性。一次 smoke 不授权首次 OAuth 登录，也不会自动安排五个交易日。
+正式 live smoke 会在单次矩阵中继续执行所有 case，不因前项失败遮蔽后项；doctor diagnostics 与每个 case 都受同一总时限约束，即使 diagnostics 挂起也会落下完整 21-case 失败 receipt。只有 OpenAPI、pywencai、TDX 六项、Wind 三项都返回非空 success，且 canonical 受控链严格记录 OpenAPI/pywencai injected failure 后 TDX screener live success，`gate_status` 才为 `pass`。PyTDX case 只记录离线状态，不联网且不进 gate；route 漂移在加载额外 live provider 前失败。Direct `degraded` 或合法 empty 都不算通。CLI 会脱敏回显 `source_status`、`chain_status`、`gate_status`；gate fail 返回非零但保留 receipt。TDX report/notice 和 Wind filings 固定查询 365 天，Wind 保持单页，从而不增加调用次数并降低静默期假阴性。一次 smoke 不授权首次 OAuth 登录，也不会自动安排五个交易日。
 
 ## Wind profile
 

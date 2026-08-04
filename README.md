@@ -52,9 +52,9 @@ S256、state 校验和 refresh rotation。首次授权命令是
 scope escalation 或白名单外工具都 fail closed。本轮离线实现没有执行真实登录，
 也没有证明线上 TDX 已接通。
 
-## 五日验收记录
+## 手工五日验收工具
 
-盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始。当前正式窗口使用 acceptance 1.3、smoke schema 2 和 `five-source-capabilities-v1` baseline，严格要求 21 个固定 case：保留原 10 个核心 case 和 PyTDX direct case，并分别直测 OpenAPI、pywencai、TDX 六项、Wind 三项与 canonical 五源受控降级。只有五类 `source_status` 全 pass、`chain_status=pass` 且 `gate_status=pass` 才写 acceptance；empty、doctor configured、TCP 可达都不算能力已通。`smoke --live` 总会在成功写入脱敏 receipt 后回显三层 gate；gate fail 返回非零，但不会删除失败证据。正式 provider 指标只统计 `origin=live`，受控链的 injected/live attempts 单独保存。旧 acceptance 1.0/1.1 可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 只有在 acceptance 与 smoke 文件权限、日期、哈希和完整性全部通过时才会作为不计数历史忽略，畸形旧文件会阻断而不是静默跳过。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。一次 live smoke 不授权 TDX 登录，也不会自动启动后续五日测试。
+该工具只在弈沐再次明确授权手工验收时使用，不再由 automation 定时运行，也不作为当前统一数据通道 Goal 的闭环门槛。盘后从离线 `./ym-data acceptance template --date YYYY-MM-DD` 开始；当前契约使用 acceptance 1.3、smoke schema 2 和 `four-source-capabilities-v1` baseline，严格要求 21 个固定 case：保留原 10 个核心位置，将 PyTDX case 改为不联网的可选 provider 状态，并分别直测 OpenAPI、pywencai、TDX 六项、Wind 三项与 canonical TDX 受控降级。只有 OpenAPI、pywencai、TDX、Wind 四类 `source_status` 全 pass、`chain_status=pass` 且 `gate_status=pass` 才写 acceptance；可选 PyTDX 状态不进入 gate，empty、doctor configured、TCP 可达都不算正式能力已通。`smoke --live` 总会在成功写入脱敏 receipt 后回显三层 gate；gate fail 返回非零，但不会删除失败证据。provider 指标只统计 `origin=live`，受控链的 injected/live attempts 单独保存。旧 acceptance 1.0/1.1 可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 只有在 acceptance 与 smoke 文件权限、日期、哈希和完整性全部通过时才会作为不计数历史忽略，畸形旧文件会阻断而不是静默跳过。唯一字段契约、同日去重、一次性 live 命令、下游安全探针、build/validate 和自检步骤见 [`docs/ACCEPTANCE_RUNBOOK.md`](docs/ACCEPTANCE_RUNBOOK.md)；不要复制 schema 或自行补字段。一次 live smoke 不授权 TDX 登录，也不会自动启动后续五日测试。
 
 Direct 能力只有非空 `success` 才算 pass；即使 attempt 中存在 live success，case 为 `degraded` 仍不能通过 source gate。TDX report/notice 与 Wind filings 使用固定 365 天只读窗口（Wind 仍为 `max_pages=1`），在不增加调用次数的前提下降低公告静默期假阴性；语义合法 empty 仍只表示可达空集，不表示该能力已通。
 
@@ -76,9 +76,9 @@ Direct 能力只有非空 `success` 才算 pass；即使 attempt 中存在 live 
 }
 ```
 
-合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它会先按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的既定顺序穷尽语义兼容来源。若且仅若 query 能被 `pytdx-structured-1` 完整消费，route 才在末尾追加 `pytdx_screener`，形成 `iwencai_openapi` → `pywencai` → `tdx_screener` → `wind_screener` → `pytdx_screener`；不可编译时仍是四源且不会制造第五个 attempt。只有当次 route 的所有 attempt 都是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被末源 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。
+合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它固定按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的顺序穷尽四个语义兼容来源。`pytdx_screener` 不再追加到 public route，只保留为实验性显式 provider。只有当次四源 route 的所有 attempt 都是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被后续 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。
 
-`pytdx_screener` 只接受唯一的 `沪深A股`、`沪市A股` / `上交所A股`、`深市A股` / `深交所A股` universe，并要求至少一个 `非ST`、`非停牌`、单一 `股票代码为/是/=六位代码`、`最新价` 或 `涨幅` AND 条件；数值条件还必须同时带 `非停牌`。比较符和 `到` / `至` / `~` 区间以固定语法完整消费。不支持北交所，也不支持行业、概念、PE、PB、排名、OR 或日期；这类请求继续由前四个自然语言源处理。它使用固定 `pytdx==1.72` 直接读取沪深完整目录与 quotes，每批最多 80 个，不调用既有 `fetch_quotes` 或腾讯、东财、Sina fallback。目录或 quote 不完整、全部价格未就绪时只能报稳定错误，不能伪装合法空集。
+实验性 `pytdx_screener` 只接受唯一的 `沪深A股`、`沪市A股` / `上交所A股`、`深市A股` / `深交所A股` universe，并要求至少一个 `非ST`、`非停牌`、单一 `股票代码为/是/=六位代码`、`最新价` 或 `涨幅` AND 条件；数值条件还必须同时带 `非停牌`。比较符和 `到` / `至` / `~` 区间以固定语法完整消费。不支持北交所，也不支持行业、概念、PE、PB、排名、OR 或日期。它使用固定 `pytdx==1.72` 直接读取沪深完整目录与 quotes，每批最多 80 个，不调用既有 `fetch_quotes` 或腾讯、东财、Sina fallback。目录或 quote 不完整、全部价格未就绪时只能报稳定错误，不能伪装合法空集；当前不参与自动 fallback 或正式 live gate。
 
 Wind 只通过专用 `wind_screener` 进入自然语言链，严格读取已验证 tabular envelope 的精确 `Wind代码` 列，不复用泛化 `wind_mcp` enrichment。它只接受沪市 `600/601/603/605/688/689`、深市 `000/001/002/003/300/301` 与北交所自 2025-10 全面启用的 `920` 股票族，并校验交易所 suffix；指数、ETF、旧北交所代码族和交易所错配均 fail closed。穷尽不保证一定有结果。无效空响应、畸形 payload、鉴权失败或 route 外 provenance 会形成可审计 attempt，再尝试下一个语义兼容源。单元测试通过不等于 provider 在线，在线状态以当次只读 probe 为准。
 
@@ -100,9 +100,9 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `eastmoney_research` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `research` 第一源 | 允许；失败后进入 `tdx_report` |
 | `cninfo` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `filings` 第一源 | 允许；失败后进入 `tdx_notice` |
 | `cls` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `news` 第一源 | 允许；失败后进入 `tdx_news` |
-| `iwencai_openapi` | API key；由既有安全环境提供，不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败或合法空集后进入 `pywencai` |
+| `iwencai_openapi` | API key；优先环境，其次管道 Keychain，再兼容旧 profile；不打印配置值 | `configured_unverified` / `breaker_open` / auth 错误 | 显式 `review_sentiment` 第一源 | 允许；失败或合法空集后进入 `pywencai` |
 | `pywencai` | 可移植 runtime；`./ym-data setup pywencai` | `configured_unverified` / `dependency_missing` / `unavailable` | 显式 `review_sentiment` 第二源 | 允许；仅在 `iwencai_openapi` 失败或合法空集后 |
-| `pytdx_screener` | 零鉴权；固定 `pytdx==1.72`；无 setup | `configured_unverified` 或明确错误 | 仅可完整编译的显式 `review_sentiment` 第五源 | 允许；仅在前四源失败或合法空集后；不可编译时不进入 route |
+| `pytdx_screener` | 实验性零鉴权；固定 `pytdx==1.72`；无 setup | `configured_unverified` 或明确错误 | 仅显式 provider 诊断/开发调用；无 RouteSpec | 否；不进入 public `query()` 自动降级或正式 live gate |
 | `tdx_mcp` | owned OAuth；`./ym-data auth login-tdx`，`./ym-data auth status-tdx` | TDX 总状态 `configured_unverified` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败或合法空集后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 第四源 | 允许；仅在 `pytdx`、`tencent`、`sina` 失败后 |
@@ -114,7 +114,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第三源 | 允许；仅在 `cninfo`、`tdx_notice` 失败后 |
 
-`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。TDX 首次默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback，`--file-path` 可指定自有文件位置。成功登录后才会原子保存非敏感 store selector，后续 canonical query、doctor、smoke 和无 override 的 `auth status-tdx` 共同使用该选择；失败、取消或超时不会切换。selector 与凭据文件都拒绝 symlink、宽权限和非当前用户 ownership，任何输出都不包含自定义路径或凭据。管道不会读取或导入其它应用的凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
+`setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。OpenAPI Key 的优先级为当前进程环境、管道专用 macOS Keychain、旧 profile 兼容读取；不得写入仓库或日志。TDX 首次默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback，`--file-path` 可指定自有文件位置。成功登录或弈沐明确授权的一次性受控迁入后，后续 canonical query、doctor、smoke 和无 override 的 `auth status-tdx` 只使用本管道安全存储；从 WorkBuddy 迁入时必须记录 `imported_from=workbuddy`。运行时代码不会扫描、读取或持续同步 WorkBuddy credential 目录。失败、取消或超时不会切换。selector 与凭据文件都拒绝 symlink、宽权限和非当前用户 ownership，任何输出都不包含自定义路径或凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 
 TDX MCP transport 固定使用官方 `mcp==2.0.0` SDK 的 Streamable HTTP。
 每个 session 必须先通过 `initialize` 和本次请求 capability 的 `tools/list`

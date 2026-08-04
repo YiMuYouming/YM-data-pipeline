@@ -18,11 +18,11 @@ from ym_stock_data.routing import RouteSpec
 EXPECTED_CASE_IDS = (
     "zero_realtime_market", "zero_sector_index", "zero_stock_snapshot",
     "zero_stock_kline", "zero_review_sentiment", "zero_market_limit_state",
-    "zero_stock_event", "explicit_wencai", "explicit_structured_screener",
+    "zero_stock_event", "explicit_wencai", "optional_pytdx_screener_state",
     "tdx_probe", "wind_probe", "direct_openapi_screener",
     "direct_pywencai_screener", "tdx_screener_probe", "tdx_kline_probe",
     "tdx_report_probe", "tdx_notice_probe", "tdx_news_probe",
-    "wind_screener_probe", "wind_filings_probe", "canonical_five_source_fallback",
+    "wind_screener_probe", "wind_filings_probe", "canonical_tdx_fallback",
 )
 
 TDX_PROTOCOL = {
@@ -116,7 +116,7 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         return report, calls
 
     def test_contract_locks_twenty_one_cases_and_sanitized_metadata(self) -> None:
-        self.assertEqual("five-source-capabilities-v1", CURRENT_SMOKE_BASELINE)
+        self.assertEqual("four-source-capabilities-v1", CURRENT_SMOKE_BASELINE)
         self.assertEqual(EXPECTED_CASE_IDS, CURRENT_SMOKE_CASE_IDS)
         self.assertEqual(21, len(CASE_SPECS))
         for spec in CASE_SPECS:
@@ -128,7 +128,7 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
     def test_live_matrix_probes_all_direct_capabilities_and_passes_gate(self) -> None:
         report, calls = self._run()
         self.assertEqual(21, report["summary"]["total"])
-        self.assertEqual({"iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass", "wind": "pass", "pytdx": "pass"}, report["source_status"])
+        self.assertEqual({"iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass", "wind": "pass"}, report["source_status"])
         self.assertEqual("pass", report["chain_status"])
         self.assertEqual("pass", report["gate_status"])
         tdx_ids = {"tdx_probe", "tdx_screener_probe", "tdx_kline_probe", "tdx_report_probe", "tdx_notice_probe", "tdx_news_probe"}
@@ -141,18 +141,18 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         }}
         self.assertEqual(1, counts["iwencai_openapi"])
         self.assertEqual(1, counts["pywencai"])
-        self.assertEqual(1, counts["tdx_screener"])
+        self.assertEqual(2, counts["tdx_screener"])
         self.assertEqual(1, counts["wind_screener"])
-        self.assertEqual(2, counts["pytdx_screener"])
+        self.assertEqual(0, counts["pytdx_screener"])
 
     def test_controlled_fallback_uses_real_router_and_marks_injected_origins(self) -> None:
         report, _calls = self._run()
-        case = next(item for item in report["cases"] if item["case_id"] == "canonical_five_source_fallback")
+        case = next(item for item in report["cases"] if item["case_id"] == "canonical_tdx_fallback")
         self.assertEqual("degraded", case["status"])
-        self.assertEqual("pytdx_screener", case["provider_used"])
-        self.assertEqual(["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"], [a["provider"] for a in case["attempts"]])
-        self.assertEqual(["injected", "injected", "injected", "injected", "live"], [a["origin"] for a in case["attempts"]])
-        self.assertEqual(["auth_error", "provider_error", "auth_error", "empty", "success"], [a["status"] for a in case["attempts"]])
+        self.assertEqual("tdx_screener", case["provider_used"])
+        self.assertEqual(["iwencai_openapi", "pywencai", "tdx_screener"], [a["provider"] for a in case["attempts"]])
+        self.assertEqual(["injected", "injected", "live"], [a["origin"] for a in case["attempts"]])
+        self.assertEqual(["auth_error", "provider_error", "success"], [a["status"] for a in case["attempts"]])
 
     def test_controlled_fallback_route_drift_fails_before_any_extra_live_provider(self) -> None:
         drifted_route = RouteSpec(
@@ -176,11 +176,11 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         controlled = next(
             case
             for case in report["cases"]
-            if case["case_id"] == "canonical_five_source_fallback"
+            if case["case_id"] == "canonical_tdx_fallback"
         )
         called_names = [name for name, _intent, _params in calls]
         self.assertNotIn("unexpected_live_provider", called_names)
-        self.assertEqual(1, called_names.count("pytdx_screener"))
+        self.assertEqual(0, called_names.count("pytdx_screener"))
         self.assertEqual("error", controlled["status"])
         self.assertEqual("CONTROLLED_ROUTE_DRIFT", controlled["error_code"])
         self.assertEqual("fail", report["chain_status"])
@@ -191,7 +191,20 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         self.assertEqual("fail", report["source_status"]["wind"])
         self.assertEqual("fail", report["gate_status"])
         self.assertEqual(21, len(report["cases"]))
-        self.assertTrue(any(name == "pytdx_screener" for name, _intent, _params in calls))
+        self.assertFalse(any(name == "pytdx_screener" for name, _intent, _params in calls))
+
+    def test_optional_pytdx_state_does_not_call_provider_or_block_gate(self) -> None:
+        report, calls = self._run()
+        optional = next(
+            case
+            for case in report["cases"]
+            if case["case_id"] == "optional_pytdx_screener_state"
+        )
+        self.assertEqual("configured_unverified", optional["status"])
+        self.assertFalse(any(name == "pytdx_screener" for name, *_ in calls))
+        self.assertNotIn("pytdx", report["source_status"])
+        self.assertEqual("pass", report["chain_status"])
+        self.assertEqual("pass", report["gate_status"])
 
     def test_receipt_has_no_business_selectors_or_forbidden_payloads(self) -> None:
         report, _calls = self._run()

@@ -71,6 +71,30 @@ class IwencaiFallbackTests(unittest.TestCase):
         self.assertEqual("hithink-astock-selector", headers["X-Claw-Skill-Id"])
         self.assertEqual("1.0.0", headers["X-Claw-Skill-Version"])
 
+    def test_api_key_can_be_loaded_from_pipeline_keychain_without_profile_secret(self):
+        backend = unittest.mock.Mock()
+        backend.get_password.return_value = "keychain-api-key"
+
+        value = iwencai._load_keyring_api_key(backend=backend)
+
+        self.assertEqual("keychain-api-key", value)
+        backend.get_password.assert_called_once_with(
+            "ym-stock-data/iwencai-openapi", "api-key"
+        )
+
+    def test_api_key_loader_uses_keychain_after_env_and_profiles_are_absent(self):
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(iwencai, "_API_KEY", None), \
+             patch("builtins.open", side_effect=FileNotFoundError), \
+             patch.object(
+                 iwencai,
+                 "_load_keyring_api_key",
+                 return_value="keychain-api-key",
+             ):
+            value = iwencai._load_api_key()
+
+        self.assertEqual("keychain-api-key", value)
+
     def test_successful_openapi_query_reuses_result_within_cache_ttl(self):
         response = {
             "datas": [{"股票代码": "600000", "股票简称": "浦发银行"}],

@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IWENCAI_BASE = "https://openapi.iwencai.com"
+IWENCAI_KEYCHAIN_SERVICE = "ym-stock-data/iwencai-openapi"
+IWENCAI_KEYCHAIN_ACCOUNT = "api-key"
 _DEFAULT_FIELDS = ["涨跌幅", "成交额", "主力净流入", "换手率", "收盘价"]
 
 _API_KEY = None
@@ -39,6 +41,21 @@ class _InvalidOpenAPIResponse(ValueError):
 
 class IWenCaiAuthMissing(RuntimeError):
     """The OpenAPI transport has no configured API key."""
+
+
+def _load_keyring_api_key(*, backend=None) -> str | None:
+    try:
+        if backend is None:
+            import keyring
+
+            backend = keyring
+        value = backend.get_password(
+            IWENCAI_KEYCHAIN_SERVICE,
+            IWENCAI_KEYCHAIN_ACCOUNT,
+        )
+    except Exception:
+        return None
+    return value if isinstance(value, str) and value else None
 
 
 def _rows_from_openapi_container(value) -> list[dict] | None:
@@ -80,6 +97,10 @@ def _load_api_key() -> str:
     if _API_KEY:
         return _API_KEY
     key = os.environ.get("IWENCAI_API_KEY")
+    if key:
+        _API_KEY = key
+        return key
+    key = _load_keyring_api_key()
     if key:
         _API_KEY = key
         return key

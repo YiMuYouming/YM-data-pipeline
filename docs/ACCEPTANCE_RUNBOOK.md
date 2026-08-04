@@ -1,8 +1,10 @@
 # Task 14 每日验收唯一 Runbook
 
+> **状态（2026-08-04）：手工保留，定时停用。** 弈沐已取消连续五日 automation，并明确允许当前 Goal 在整体审计、提交和 clean worktree 后闭环。本 runbook 不再自动触发，也不再是当前 Goal 的完成门槛；只有弈沐以后再次明确授权手工验收时，才从本文件第 1 步开始执行。
+
 本文是五个交易日 daily acceptance 的唯一 Agent 执行入口。严格 JSON key、允许状态和安全门禁由 `ym_stock_data.acceptance` 拥有；不要手写另一份 schema。每天只执行一次，且仅在 `Asia/Shanghai` 16:10 后执行。
 
-当前正式窗口使用 acceptance 1.3、smoke schema 2 与 baseline `five-source-capabilities-v1`，并严格锁定 21 个固定 case：原 10 个核心 case 与 PyTDX direct case全部保留，另有 OpenAPI、pywencai、TDX 六项、Wind 三项 direct 能力证据和一个 canonical 五源受控降级 case。历史 acceptance 1.1/1.0 与旧 10-case receipt 仍可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 不计正式窗口。不允许手工改写旧 receipt、`observation_day_count` 或 `pass_day_count`。
+当前正式窗口使用 acceptance 1.3、smoke schema 2 与 baseline `four-source-capabilities-v1`，并严格锁定 21 个固定 case：原 10 个核心位置保留，其中 PyTDX case 改为离线可选 provider 状态；另有 OpenAPI、pywencai、TDX 六项、Wind 三项 direct 能力证据和一个 canonical TDX 受控降级 case。历史 acceptance 1.1/1.0 与旧 10-case receipt 仍可只读验证；未发布的 acceptance 1.2 / `five-source-structured-v1` 不计正式窗口。不允许手工改写旧 receipt、`observation_day_count` 或 `pass_day_count`。
 
 本流程只保存元数据。禁止打印或保存业务 rows、查询正文、credential、stderr、exception、原始 transport/session；禁止调用底层 source、兼容 V2、手工 TDX/Wind 或交易工具；禁止向端口 8088 发 POST，禁止写 Market_Watch/live-dashboard 的 out、data、cache、runtime，禁止部署、push、券商或交易动作。
 
@@ -105,7 +107,7 @@ Doctor 只运行一次并直接保存脱敏 JSON：
 chmod 600 "$acceptance_tmp/doctor.json"
 ```
 
-Smoke 只运行一次且完整执行 21 个 case，单项失败不遮蔽后项。所有 direct case 都经 canonical registry 的 `provider_loader` 调用；TDX 六项各自完成 official SDK 的 initialize、tools/list、schema、read-only、tool-call gate。TDX report/notice 与 Wind filings 使用固定 365 天窗口，Wind 仍限制 `max_pages=1`，不增加调用次数，只降低公告静默期假阴性。受控降级 case 复用真实 canonical router，前四源只使用固定 injected outcome，禁止联网，末源才调用 live PyTDX；attempt 记录 `origin=injected|live`。receipt 仍只保存脱敏状态、行数、耗时和协议计数，不保存查询正文、业务行、schema/content、endpoint 或 session 标识。Direct case 只有非空 `success` 才算通；`degraded`、doctor/configured、TCP 可达和语义合法 empty 都不算能力已通。不要在 runbook 外补探针。
+Smoke 只运行一次且完整执行 21 个 case，单项失败不遮蔽后项。正式 direct case 经 canonical registry 的 `provider_loader` 调用；TDX 六项各自完成 official SDK 的 initialize、tools/list、schema、read-only、tool-call gate。PyTDX 可选 case 只读取 doctor provider 状态，不连接 TCP、不做全市场扫描、不进入 gate。TDX report/notice 与 Wind filings 使用固定 365 天窗口，Wind 仍限制 `max_pages=1`，不增加调用次数，只降低公告静默期假阴性。受控降级 case 复用真实 canonical router，只注入 OpenAPI auth error 与 pywencai provider error，随后调用 live TDX screener；Wind 的 live 能力由独立 direct case 验证。attempt 记录 `origin=injected|live`。receipt 仍只保存脱敏状态、行数、耗时和协议计数，不保存查询正文、业务行、schema/content、endpoint 或 session 标识。正式 direct case 只有非空 `success` 才算通；`degraded`、doctor/configured、TCP 可达和语义合法 empty 都不算能力已通。不要在 runbook 外补探针。
 
 ```bash
 ./ym-data smoke --live > "$acceptance_tmp/smoke-cli.json" 2>/dev/null
@@ -128,7 +130,7 @@ if stat.S_IMODE(receipt.stat().st_mode) != 0o600:
     raise SystemExit("SMOKE_RECEIPT_MODE_INVALID")
 report = json.loads(receipt.read_text(encoding="utf-8"))
 if (
-    report.get("baseline") != "five-source-capabilities-v1"
+    report.get("baseline") != "four-source-capabilities-v1"
     or report.get("summary", {}).get("total") != 21
     or report.get("gate_status") != "pass"
 ):
@@ -144,7 +146,7 @@ smoke_receipt=$(tr -d '\n' < "$acceptance_tmp/smoke-path.txt")
 
 ## 5. 受控降级证据离线映射
 
-不得为 breaker 或降级链再发一次 live 请求。本步骤只从同次 smoke receipt 读取 `canonical_five_source_fallback` 的脱敏 metadata，将 injected OpenAPI 401 映射到历史兼容字段 `breaker_verification`。真实链路 gate 已由 smoke runner 校验；这里不声称远端 breaker 再次命中。
+不得为 breaker 或降级链再发一次 live 请求。本步骤只从同次 smoke receipt 读取 `canonical_tdx_fallback` 的脱敏 metadata，将 injected OpenAPI 401 映射到历史兼容字段 `breaker_verification`。真实链路 gate 已由 smoke runner 校验；这里不声称远端 breaker 再次命中。
 
 ```bash
 UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$smoke_receipt" "$acceptance_tmp/breaker.json" > /dev/null 2>/dev/null <<'PY'
@@ -155,7 +157,7 @@ from pathlib import Path
 
 report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 case = next(
-    (item for item in report.get("cases", []) if item.get("case_id") == "canonical_five_source_fallback"),
+    (item for item in report.get("cases", []) if item.get("case_id") == "canonical_tdx_fallback"),
     None,
 )
 attempt = case.get("attempts", [None])[0] if isinstance(case, dict) else None

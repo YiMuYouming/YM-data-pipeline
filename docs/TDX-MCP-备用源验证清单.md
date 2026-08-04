@@ -9,7 +9,7 @@ TDX MCP 是 canonical `query()` 路由中的受管只读 fallback，只在前置
 
 | 状态 | 离线判据 | 行为 |
 | --- | --- | --- |
-| `auth_missing` | Keychain / 显式 0600 store 没有本管道凭据 | 停止；需弈沐明确执行 `./ym-data auth login-tdx` |
+| `auth_missing` | Keychain / 显式 0600 store 没有本管道凭据 | 停止；优先由弈沐执行 `./ym-data auth login-tdx`；若官方页面只能回到 WorkBuddy，需弈沐明确授权一次性受控迁入并记录 provenance |
 | `configured_unverified` | owned token + `mcp.read` 存在 | 只表示已配置，不证明在线 |
 | `auth_expired` | 缺 scope、过期且不可 refresh、store 无效 | 停止；不继承旧结果 |
 | `AUTH_EXPIRED` | 401 后强刷并重建 session，唯一重试仍失败 | 停止；不继续重试 |
@@ -18,6 +18,8 @@ TDX MCP 是 canonical `query()` 路由中的受管只读 fallback，只在前置
 
 默认 secure store 是 macOS Keychain。文件 fallback 只能显式选择：目录 `0700`，
 凭据文件与 refresh lock `0600`，原子写入；跨线程/跨进程 refresh 只能执行一次。
+一次性 WorkBuddy 迁入只允许在弈沐明确授权下执行；完成后 query、doctor 与 smoke
+只读取本管道 secure store，不扫描或持续同步外部 credential 目录。
 `--file-path` 可指定自有 custom path；既有父目录、文件或锁若是 symlink、权限
 过宽或不属于当前用户必须 fail closed，不得自动 chmod。成功 login 后才切换
 非敏感 store selector；canonical query、doctor、smoke 和无 override 的 status

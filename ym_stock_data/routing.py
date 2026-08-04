@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .pytdx_screener_query import is_pytdx_screener_compatible
-
-
 EMPTY_POLICY_STOP = "stop"
 EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED = "continue_until_exhausted"
 
@@ -132,16 +129,6 @@ def route_for(intent: str, params: dict) -> RouteSpec:
         raise TypeError("params must be a dict")
     if intent == "review_sentiment":
         if "query" in params and params["query"] not in (None, "", []):
-            if is_pytdx_screener_compatible(params):
-                return RouteSpec(
-                    intent=_REVIEW_SENTIMENT_QUERY.intent,
-                    providers=_REVIEW_SENTIMENT_QUERY.providers
-                    + ("pytdx_screener",),
-                    data_scope=_REVIEW_SENTIMENT_QUERY.data_scope,
-                    trade_usage=_REVIEW_SENTIMENT_QUERY.trade_usage,
-                    max_age_sec=_REVIEW_SENTIMENT_QUERY.max_age_sec,
-                    empty_policy=_REVIEW_SENTIMENT_QUERY.empty_policy,
-                )
             return _REVIEW_SENTIMENT_QUERY
         return _REVIEW_SENTIMENT_DEFAULT
     if intent == "stock_kline":

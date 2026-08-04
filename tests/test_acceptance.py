@@ -166,6 +166,13 @@ class AcceptanceTests(unittest.TestCase):
                 )
             cases.append(case)
         by_id = {case["case_id"]: case for case in cases}
+        if current:
+            by_id["optional_pytdx_screener_state"].update(
+                status="configured_unverified",
+                provider_used=None,
+                attempts=[],
+                row_count=0,
+            )
         by_id["explicit_wencai"].update(
             {
                 "category": "api_key",
@@ -193,17 +200,15 @@ class AcceptanceTests(unittest.TestCase):
             }
         )
         if current:
-            by_id["canonical_five_source_fallback"].update(
+            by_id["canonical_tdx_fallback"].update(
                 status="degraded",
-                provider_used="pytdx_screener",
+                provider_used="tdx_screener",
                 attempts=[
                     {"provider": provider, "status": status, "error_code": error_code, "latency_ms": 1, "origin": origin}
                     for provider, status, error_code, origin in (
                         ("iwencai_openapi", "auth_error", "HTTP_401", "injected"),
                         ("pywencai", "provider_error", "PYWENCAI_PROVIDER_ERROR", "injected"),
-                        ("tdx_screener", "auth_error", "AUTH_EXPIRED", "injected"),
-                        ("wind_screener", "empty", None, "injected"),
-                        ("pytdx_screener", "success", None, "live"),
+                        ("tdx_screener", "success", None, "live"),
                     )
                 ],
             )
@@ -220,10 +225,10 @@ class AcceptanceTests(unittest.TestCase):
         }
         if current:
             report.update(
-                baseline="five-source-capabilities-v1",
+                baseline="four-source-capabilities-v1",
                 source_status={
                     "iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass",
-                    "wind": "pass", "pytdx": "pass",
+                    "wind": "pass",
                 },
                 chain_status="pass",
                 gate_status="pass",
@@ -525,12 +530,12 @@ class AcceptanceTests(unittest.TestCase):
         self.assertTrue(report["canonical_checkout"]["tracked_clean"])
         self.assertTrue(report["canonical_checkout"]["staged_clean"])
         self.assertEqual(sha256(self.smoke_path), report["smoke_evidence"]["sha256"])
-        self.assertEqual("five-source-capabilities-v1", report["smoke_evidence"]["baseline"])
+        self.assertEqual("four-source-capabilities-v1", report["smoke_evidence"]["baseline"])
         self.assertEqual(21, report["smoke_evidence"]["total_cases"])
         self.assertEqual(11, report["latency"]["p50"])
         self.assertEqual(20, report["latency"]["p95"])
         self.assertEqual(
-            "success",
+            "configured_unverified",
             report["provider_acceptance"]["pytdx_screener"]["live_status"],
         )
         self.assertEqual("nearest-rank", report["latency"]["method"])
@@ -551,11 +556,11 @@ class AcceptanceTests(unittest.TestCase):
         controlled = provider_acceptance["controlled_fallback"]
         self.assertEqual("pass", controlled["chain_status"])
         self.assertEqual(
-            ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"],
+            ["iwencai_openapi", "pywencai"],
             [item["provider"] for item in controlled["injected_attempts"]],
         )
         self.assertEqual(
-            ["pytdx_screener"],
+            ["tdx_screener"],
             [item["provider"] for item in controlled["live_attempts"]],
         )
 
@@ -593,10 +598,11 @@ class AcceptanceTests(unittest.TestCase):
         )
         wind_case["attempts"][0]["status"] = "empty"
         smoke["summary"]["status_counts"] = {
+            "configured_unverified": 1,
             "degraded": 1,
             "empty": 1,
             "error": 1,
-            "success": 18,
+            "success": 17,
         }
         smoke["source_status"]["wind"] = "fail"
         smoke["gate_status"] = "fail"
@@ -791,20 +797,20 @@ class AcceptanceTests(unittest.TestCase):
             (
                 "provider",
                 lambda value: (
-                    value["cases"][8].update(provider_used="wind_screener"),
-                    value["cases"][8]["attempts"][0].update(
+                    value["cases"][9].update(provider_used="wind_screener"),
+                    value["cases"][9]["attempts"][0].update(
                         provider="wind_screener"
                     ),
                 ),
                 "INVALID_DIRECT_PROVIDER",
             ),
             (
-                "unattempted_provider_spoof",
-                lambda value: value["cases"][8].update(
-                    status="auth_missing",
+                "unattempted_error_spoof",
+                lambda value: value["cases"][9].update(
+                    status="provider_error",
                     provider_used=None,
                     attempts=[],
-                    error_code=None,
+                    error_code="TDX_PROVIDER_ERROR",
                 ),
                 "INVALID_DIRECT_PROVIDER",
             ),
@@ -848,27 +854,27 @@ class AcceptanceTests(unittest.TestCase):
             (
                 "success_without_success_attempt",
                 lambda value: (
-                    value["cases"][8].update(
+                    value["cases"][9].update(
                         status="success",
-                        provider_used="pytdx_screener",
+                        provider_used="tdx_quotes",
                     ),
-                    value["cases"][8]["attempts"][0].update(
+                    value["cases"][9]["attempts"][0].update(
                         status="provider_error",
-                        error_code="PYTDX_PROVIDER_ERROR",
+                        error_code="TDX_PROVIDER_ERROR",
                     ),
                 ),
                 "INVALID_DIRECT_PROVIDER",
             ),
             (
                 "empty_without_empty_attempt",
-                lambda value: value["cases"][8].update(status="empty"),
+                lambda value: value["cases"][9].update(status="empty"),
                 "INVALID_DIRECT_PROVIDER",
             ),
             (
                 "failure_with_provider_used",
-                lambda value: value["cases"][8].update(
+                lambda value: value["cases"][9].update(
                     status="provider_error",
-                    provider_used="pytdx_screener",
+                    provider_used="tdx_quotes",
                 ),
                 "INVALID_DIRECT_PROVIDER",
             ),
@@ -1170,7 +1176,7 @@ class AcceptanceTests(unittest.TestCase):
         downstream = template["downstream"]
         self.assertEqual("2", template["template_meta"]["smoke_schema_version"])
         self.assertEqual(
-            "five-source-capabilities-v1",
+            "four-source-capabilities-v1",
             template["template_meta"]["smoke_baseline"],
         )
         self.assertEqual(

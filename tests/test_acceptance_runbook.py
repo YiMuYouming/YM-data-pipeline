@@ -20,6 +20,8 @@ class AcceptanceRunbookTests(unittest.TestCase):
     def test_runbook_is_single_complete_fresh_agent_entry(self) -> None:
         text = self.read_runbook()
         required = (
+            "手工保留，定时停用",
+            "不再是当前 Goal 的完成门槛",
             "umask 077",
             "chmod 700",
             "同日去重",
@@ -42,7 +44,7 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "check-ignore",
             "acceptance 1.3",
             "smoke schema 2",
-            "five-source-capabilities-v1",
+            "four-source-capabilities-v1",
             "21 个固定 case",
             "canonical registry",
             "旧 10-case",
@@ -180,7 +182,7 @@ class AcceptanceRunbookTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn("docs/ACCEPTANCE_RUNBOOK.md", text)
         self.assertNotIn("--downstream", documents["AGENTS.md"])
-        readme_section = documents["README.md"].split("## 五日验收记录", 1)[1].split("\n## ", 1)[0]
+        readme_section = documents["README.md"].split("## 手工五日验收工具", 1)[1].split("\n## ", 1)[0]
         task_section = documents["Task14"].split("### Task 14:", 1)[1].split("\n---", 1)[0]
         self.assertNotIn("--downstream", readme_section)
         self.assertNotIn("--downstream", task_section)

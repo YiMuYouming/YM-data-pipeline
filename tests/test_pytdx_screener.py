@@ -723,7 +723,7 @@ class RoutingAndContractTests(unittest.TestCase):
         self.state_patch.start()
         self.addCleanup(self.state_patch.stop)
 
-    def test_dynamic_route_adds_fifth_source_only_for_compilable_params(self):
+    def test_canonical_route_keeps_pytdx_screener_explicit_only(self):
         compatible = route_for(
             "review_sentiment",
             {"query": "沪深A股 非ST 非停牌 最新价>=10", "limit": 20},
@@ -734,7 +734,6 @@ class RoutingAndContractTests(unittest.TestCase):
                 "pywencai",
                 "tdx_screener",
                 "wind_screener",
-                "pytdx_screener",
             ),
             compatible.providers,
         )
@@ -781,7 +780,7 @@ class RoutingAndContractTests(unittest.TestCase):
         )
         providers["pytdx_screener"].call.assert_not_called()
 
-    def test_mixed_error_and_final_pytdx_empty_remains_error(self):
+    def test_mixed_error_route_does_not_call_optional_pytdx(self):
         statuses = {
             "iwencai_openapi": ("auth_error", None, "HTTP_401"),
             "pywencai": ("empty", {"datas": [], "row_count": 0}, None),
@@ -809,8 +808,9 @@ class RoutingAndContractTests(unittest.TestCase):
 
         self.assertEqual("error", result["_meta"]["status"])
         self.assertIsNone(result["_meta"]["provider_used"])
-        self.assertEqual(5, len(result["_meta"]["attempts"]))
+        self.assertEqual(4, len(result["_meta"]["attempts"]))
         self.assertEqual("missing", result["_meta"]["auth"]["status"])
+        providers["pytdx_screener"].call.assert_not_called()
 
 
 class RuntimeAndGovernanceTests(unittest.TestCase):
@@ -873,21 +873,23 @@ class RuntimeAndGovernanceTests(unittest.TestCase):
             )
         self.assertEqual(0, completed.returncode, completed.stderr)
 
-    def test_registry_doctor_and_capability_project_fifth_source(self):
+    def test_registry_doctor_and_capability_keep_optional_experimental_source(self):
         self.assertIs(api.PROVIDER_REGISTRY["pytdx_screener"], PytdxScreenerProvider)
         report = api._provider_for("pytdx_screener").probe()
         self.assertEqual("configured_unverified", report["status"])
 
         capability = capability_manifest()["providers"]["pytdx_screener"]
         self.assertTrue(capability["registered"])
-        self.assertEqual(["review_sentiment"], capability["routes"])
+        self.assertEqual([], capability["routes"])
+        self.assertEqual([], capability["automatic_fallback_intents"])
+        self.assertEqual(["review_sentiment"], capability["explicit_intents"])
         self.assertEqual("no_auth", capability["auth_ownership"])
         self.assertEqual("pytdx-structured-1", capability["compiler_version"])
         self.assertEqual(
-            "structured_queries_only", capability["automatic_fallback_scope"]
+            "explicit_only", capability["automatic_fallback_scope"]
         )
 
-    def test_governance_docs_describe_conditional_fifth_source_and_boundaries(self):
+    def test_governance_docs_describe_optional_pytdx_boundaries(self):
         combined = "\n".join(
             (ROOT / relative).read_text(encoding="utf-8")
             for relative in (

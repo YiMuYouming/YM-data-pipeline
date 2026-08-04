@@ -32,7 +32,6 @@ _CONTROLLED_FALLBACK_ROUTE = (
     "pywencai",
     "tdx_screener",
     "wind_screener",
-    "pytdx_screener",
 )
 
 
@@ -239,7 +238,7 @@ class _InjectedProvider:
 
 
 def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
-    """Recompute the five source and controlled-chain gates from case metadata."""
+    """Recompute the four managed sources and TDX fallback gate."""
 
     by_id = {case["case_id"]: case for case in cases}
 
@@ -289,20 +288,19 @@ def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
                 ("wind_filings_probe", "wind_documents"),
             )
         ) else "fail",
-        "pytdx": "pass" if passed("explicit_structured_screener", "pytdx_screener") else "fail",
     }
-    fallback = by_id["canonical_five_source_fallback"]
+    fallback = by_id["canonical_tdx_fallback"]
     attempts = fallback["attempts"]
     chain_status = "pass" if (
         fallback["status"] == "degraded"
-        and fallback["provider_used"] == "pytdx_screener"
+        and fallback["provider_used"] == "tdx_screener"
         and fallback["row_count"] > 0
         and [item["provider"] for item in attempts]
-        == ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener"]
+        == ["iwencai_openapi", "pywencai", "tdx_screener"]
         and [item["status"] for item in attempts]
-        == ["auth_error", "provider_error", "auth_error", "empty", "success"]
+        == ["auth_error", "provider_error", "success"]
         and [item["origin"] for item in attempts]
-        == ["injected", "injected", "injected", "injected", "live"]
+        == ["injected", "injected", "live"]
     ) else "fail"
     gate_status = "pass" if (
         chain_status == "pass"
@@ -377,16 +375,12 @@ def run_live_smoke(
         outcome = provider_loader(provider_name).call(intent, dict(params))
         return _summarize_outcome(outcome)
 
-    def pytdx_screener_probe():
-        return direct_probe(
-            "pytdx_screener",
-            "review_sentiment",
-            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
-        )
-
     def controlled_fallback():
         from . import api as api_module
 
+        tdx_state = _provider_state_payload("tdx_mcp", lambda: diagnostics)
+        if tdx_state["status"] not in {"configured_unverified", "ready"}:
+            return tdx_state
         params = {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3}
         spec = api_module.route_for("review_sentiment", dict(params))
         if tuple(spec.providers) != _CONTROLLED_FALLBACK_ROUTE:
@@ -405,14 +399,6 @@ def run_live_smoke(
             ),
             "pywencai": ProviderOutcome(
                 "pywencai", "provider_error", error_code="PYWENCAI_PROVIDER_ERROR"
-            ),
-            "tdx_screener": ProviderOutcome(
-                "tdx_screener", "auth_error", error_code="AUTH_EXPIRED",
-                auth={"required": True, "status": "expired"},
-            ),
-            "wind_screener": ProviderOutcome(
-                "wind_screener", "empty", data={"datas": [], "row_count": 0},
-                quality={"returned_count": 0},
             ),
         }
         controlled_origins = set(injected)
@@ -439,9 +425,7 @@ def run_live_smoke(
             next_provider += 1
             if name in injected:
                 return _InjectedProvider(injected[name])
-            if name == "pytdx_screener" and next_provider == len(
-                _CONTROLLED_FALLBACK_ROUTE
-            ):
+            if name == "tdx_screener":
                 return provider_loader(name)
             route_drifted = True
             controlled_origins.add(name)
@@ -480,7 +464,9 @@ def run_live_smoke(
         "explicit_wencai": canonical(
             "review_sentiment", query="A股 非ST 涨停", limit=3
         ),
-        "explicit_structured_screener": pytdx_screener_probe,
+        "optional_pytdx_screener_state": lambda: _provider_state_payload(
+            "pytdx_screener", lambda: diagnostics
+        ),
         "tdx_probe": lambda: direct_probe(
             "tdx_quotes", "stock_snapshot", {"codes": ["600519"]},
             diagnostic_name="tdx_mcp",
@@ -529,7 +515,7 @@ def run_live_smoke(
             {"code": "600519", "days": 365, "max_pages": 1},
             diagnostic_name="wind_mcp",
         ),
-        "canonical_five_source_fallback": controlled_fallback,
+        "canonical_tdx_fallback": controlled_fallback,
     }
     if set(callbacks) != {spec.case_id for spec in CASE_SPECS}:
         raise RuntimeError("smoke case contract drift")
