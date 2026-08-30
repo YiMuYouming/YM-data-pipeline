@@ -45,13 +45,13 @@ def _load_tdx_hq_api():
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            message=r'"is not" with \'str\' literal\. Did you mean "!="\?',
+            message=r'"is not" with (?:\'str\' |a )?literal\. Did you mean "!="\?',
             category=SyntaxWarning,
             lineno=117,
         )
         warnings.filterwarnings(
             "ignore",
-            message=r'"is not" with \'str\' literal\. Did you mean "!="\?',
+            message=r'"is not" with (?:\'str\' |a )?literal\. Did you mean "!="\?',
             category=SyntaxWarning,
             lineno=128,
         )
