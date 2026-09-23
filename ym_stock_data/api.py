@@ -160,7 +160,7 @@ PROVIDER_REGISTRY: dict[str, object] = {
 }
 _STATE: ProviderState | None = None
 _COMPARE_BUDGET_SECONDS = 14.0
-_COMPARE_PROVIDER_SECONDS = (6.0, 5.0, 3.0)
+_COMPARE_PROVIDER_SECONDS = (3.0, 7.0, 4.0)
 _COMPARE_BREAKER_SECONDS = 60
 _compare_failures: dict[str, int] = {}
 _compare_lock = threading.Lock()
