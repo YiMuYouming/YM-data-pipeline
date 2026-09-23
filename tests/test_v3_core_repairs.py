@@ -108,7 +108,7 @@ class CoreRepairTests(unittest.TestCase):
             ):
                 return query(intent, **params)
 
-    def test_realtime_poll_profile_prefers_pytdx_without_exposing_provider_source(self):
+    def test_realtime_poll_profile_prefers_tencent_for_stocks_without_exposing_provider_source(self):
         self.assertEqual(
             ("stocktoday", "tencent", "pytdx", "eastmoney"),
             route_for("realtime_market", {}).providers,
@@ -118,7 +118,7 @@ class CoreRepairTests(unittest.TestCase):
             route_for("realtime_market", {"use_case": "realtime_poll"}).providers,
         )
         self.assertEqual(
-            ("pytdx", "tencent", "tdx_quotes"),
+            ("tencent", "pytdx", "tdx_quotes"),
             route_for(
                 "stock_snapshot",
                 {"codes": ["600519"], "use_case": "realtime_poll"},
@@ -128,7 +128,7 @@ class CoreRepairTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             query("stock_snapshot", codes=["600519"], source="pytdx")
 
-    def test_realtime_poll_uses_fast_pytdx_only_and_keeps_fallback_clean(self):
+    def test_realtime_poll_uses_fast_pytdx_only_on_fallback(self):
         pytdx_provider = _FakeProvider("pytdx", [_outcome("pytdx", "timeout")])
         tencent_provider = _FakeProvider("tencent", [_outcome("tencent", "empty", {})])
         tdx_provider = _FakeProvider("tdx_quotes", [_outcome("tdx_quotes", "empty", {})])
@@ -146,6 +146,22 @@ class CoreRepairTests(unittest.TestCase):
                 "stock_snapshot", {"codes": ["600519"], "_fast_quote": True}
             )
             fetch.assert_called_once_with(["600519"], fast=True)
+
+    def test_realtime_poll_tencent_success_does_not_call_pytdx(self):
+        now = datetime(2026, 9, 23, 10, 0, tzinfo=api.TZ_SHANGHAI)
+        fresh = _full_snapshot("600519")
+        fresh["600519"]["quote_time"] = now.isoformat(timespec="seconds")
+        tencent_provider = _FakeProvider("tencent", [_outcome("tencent", "success", fresh)])
+        pytdx_provider = _FakeProvider("pytdx", [_outcome("pytdx", "success", fresh)])
+        with patch.object(api, "_now_shanghai", return_value=now):
+            result = self._run_with_fakes(
+                "stock_snapshot",
+                {"tencent": tencent_provider, "pytdx": pytdx_provider},
+                codes=["600519"], use_case="realtime_poll",
+            )
+        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual([], pytdx_provider.calls)
 
     def test_long_tail_capabilities_have_stocktoday_first_canonical_routes(self):
         self.assertEqual(
@@ -826,7 +842,7 @@ class CoreRepairTests(unittest.TestCase):
             r"^20\d{2}-\d{2}-\d{2}T09:14:27\.588\+08:00$",
         )
 
-    def test_stale_pytdx_snapshot_falls_through_to_tencent_canonical_snapshot(self):
+    def test_stale_tencent_snapshot_falls_through_to_pytdx_canonical_snapshot(self):
         now = datetime(2026, 9, 23, 10, 0, tzinfo=api.TZ_SHANGHAI)
         stale = _full_snapshot("600519", "000001")
         stale_time = (now - timedelta(minutes=13)).isoformat(timespec="seconds")
@@ -836,8 +852,8 @@ class CoreRepairTests(unittest.TestCase):
         for row in fresh.values():
             row["quote_time"] = now.isoformat(timespec="seconds")
 
-        with patch.object(pytdx, "fetch_quotes", return_value=stale), patch.object(
-            tencent, "fetch_quotes", return_value=fresh
+        with patch.object(pytdx, "fetch_quotes", return_value=fresh), patch.object(
+            tencent, "fetch_quotes", return_value=stale
         ), patch.object(
             api, "_now_shanghai", return_value=now
         ), patch(
@@ -853,7 +869,7 @@ class CoreRepairTests(unittest.TestCase):
                 use_case="realtime_poll",
             )
 
-        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual("pytdx", result["_meta"]["provider_used"])
         self.assertEqual("quality_failure", result["_meta"]["attempts"][0]["status"])
         self.assertEqual("QUALITY_SNAPSHOT_STALE", result["_meta"]["attempts"][0]["error_code"])
         self.assertEqual("success", result["_meta"]["attempts"][1]["status"])
