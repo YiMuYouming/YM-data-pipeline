@@ -459,7 +459,9 @@ class LocalProvider:
             ("pytdx", "realtime_market"): pytdx.fetch_index,
             ("eastmoney", "realtime_market"): pytdx._fallback_index,
             ("tencent", "realtime_market"): pytdx._fallback_index_tencent,
-            ("pytdx", "stock_snapshot"): lambda: pytdx.fetch_quotes(params["codes"]),
+            ("pytdx", "stock_snapshot"): lambda: pytdx.fetch_quotes(
+                params["codes"], fast=bool(params.get("_fast_quote"))
+            ),
             ("tencent", "stock_snapshot"): lambda: tencent.fetch_quotes(params["codes"]),
             ("pytdx", "stock_kline"): lambda: self._pytdx_kline(params),
             ("tencent", "stock_kline"): lambda: self._http_kline(

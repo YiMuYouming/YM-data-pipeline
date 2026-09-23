@@ -128,6 +128,25 @@ class CoreRepairTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             query("stock_snapshot", codes=["600519"], source="pytdx")
 
+    def test_realtime_poll_uses_fast_pytdx_only_and_keeps_fallback_clean(self):
+        pytdx_provider = _FakeProvider("pytdx", [_outcome("pytdx", "timeout")])
+        tencent_provider = _FakeProvider("tencent", [_outcome("tencent", "empty", {})])
+        tdx_provider = _FakeProvider("tdx_quotes", [_outcome("tdx_quotes", "empty", {})])
+        self._run_with_fakes(
+            "stock_snapshot",
+            {"pytdx": pytdx_provider, "tencent": tencent_provider,
+             "tdx_quotes": tdx_provider},
+            codes=["600519"], use_case="realtime_poll",
+        )
+        self.assertEqual(True, pytdx_provider.calls[0][1]["_fast_quote"])
+        self.assertNotIn("_fast_quote", tencent_provider.calls[0][1])
+        self.assertNotIn("use_case", tencent_provider.calls[0][1])
+        with patch.object(pytdx, "fetch_quotes", return_value={}) as fetch:
+            LocalProvider("pytdx")._dispatch(
+                "stock_snapshot", {"codes": ["600519"], "_fast_quote": True}
+            )
+            fetch.assert_called_once_with(["600519"], fast=True)
+
     def test_long_tail_capabilities_have_stocktoday_first_canonical_routes(self):
         self.assertEqual(
             ("stocktoday", "ths_industry"),

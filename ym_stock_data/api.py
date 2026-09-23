@@ -879,6 +879,12 @@ def _query_with(
             # The use-case is a pipeline-owned routing profile, not a
             # provider selector.  Do not leak it into adapter payloads.
             provider_params.pop("use_case", None)
+            if (
+                provider_name == "pytdx"
+                and intent == "stock_snapshot"
+                and call_params.get("use_case") == "realtime_poll"
+            ):
+                provider_params["_fast_quote"] = True
             if intent in {
                 "industry_flow",
                 "northbound_flow",
