@@ -1,0 +1,96 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*) launcher_dir=${0%/*} ;;
+    *) launcher_dir=. ;;
+esac
+
+project_root=$(
+    CDPATH= cd -P -- "$launcher_dir" 2>/dev/null
+    pwd -P
+)
+
+uv_is_runnable() {
+    [ -f "$1" ] && [ -x "$1" ] && "$1" --version >/dev/null 2>&1
+}
+
+if [ "${YM_DATA_UV_BIN+x}" = x ]; then
+    if ! uv_is_runnable "$YM_DATA_UV_BIN"; then
+        printf '%s\n' 'ym-data: YM_DATA_UV_BIN is not runnable' >&2
+        exit 126
+    fi
+    uv_executable=$YM_DATA_UV_BIN
+else
+    uv_executable=
+    seen_candidates=:
+    original_ifs=$IFS
+    IFS=:
+    for uv_directory in ${PATH-}; do
+        [ -n "$uv_directory" ] || uv_directory=.
+        uv_candidate=${uv_directory%/}/uv
+        case "$seen_candidates" in
+            *:"$uv_candidate":*) continue ;;
+        esac
+        seen_candidates=${seen_candidates}${uv_candidate}:
+        if uv_is_runnable "$uv_candidate"; then
+            uv_executable=$uv_candidate
+            break
+        fi
+    done
+    IFS=$original_ifs
+
+    if [ -z "$uv_executable" ]; then
+        for uv_candidate in /opt/homebrew/bin/uv /usr/local/bin/uv; do
+            case "$seen_candidates" in
+                *:"$uv_candidate":*) continue ;;
+            esac
+            seen_candidates=${seen_candidates}${uv_candidate}:
+            if uv_is_runnable "$uv_candidate"; then
+                uv_executable=$uv_candidate
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$uv_executable" ]; then
+        printf '%s\n' 'ym-data: no runnable uv executable found' >&2
+        exit 127
+    fi
+fi
+
+if [ "${UV_PROJECT_ENVIRONMENT+x}" != x ]; then
+    uv_cache_dir=$("$uv_executable" cache dir 2>/dev/null) || {
+        printf '%s\n' 'ym-data: unable to resolve uv cache directory' >&2
+        exit 69
+    }
+    case "$uv_cache_dir" in
+        /*) ;;
+        *)
+            printf '%s\n' 'ym-data: uv cache directory must be absolute' >&2
+            exit 69
+            ;;
+    esac
+    case "$uv_cache_dir" in
+        "$project_root"|"$project_root"/*)
+            printf '%s\n' 'ym-data: uv cache directory must be outside the project root' >&2
+            exit 69
+            ;;
+    esac
+
+    project_hash_output=$(printf '%s' "$project_root" | shasum -a 256 2>/dev/null) || {
+        printf '%s\n' 'ym-data: unable to hash the project root' >&2
+        exit 69
+    }
+    project_hash=${project_hash_output%% *}
+    if [ -z "$project_hash" ]; then
+        printf '%s\n' 'ym-data: unable to hash the project root' >&2
+        exit 69
+    fi
+
+    UV_PROJECT_ENVIRONMENT="${uv_cache_dir%/}/ym-stock-data-project-envs/$project_hash"
+    export UV_PROJECT_ENVIRONMENT
+fi
+
+exec "$uv_executable" --project "$project_root" run ym-data "$@"

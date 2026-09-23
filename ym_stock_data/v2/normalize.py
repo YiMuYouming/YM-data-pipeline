@@ -57,7 +57,7 @@ def normalize_result(
     if error:
         confidence = "error"
         warn = "数据源返回错误"
-    elif raw_meta.get("degraded"):
+    elif raw_meta.get("degraded") or raw_meta.get("status") == "degraded":
         confidence = "degraded"
         warn = "主数据源不可用，当前使用降级数据源"
     elif fetched_dt is None:
@@ -81,6 +81,20 @@ def normalize_result(
         "confidence": confidence,
         "error": error,
     }
+    for key in (
+        "contract_version",
+        "status",
+        "provider_used",
+        "attempts",
+        "auth",
+        "freshness",
+    ):
+        if key in raw_meta:
+            meta[key] = raw_meta[key]
+    if isinstance(raw_meta.get("source_chain"), list):
+        meta["source_chain"] = list(raw_meta["source_chain"])
+    if raw_meta.get("source"):
+        meta["source"] = raw_meta["source"]
     if isinstance(query, list):
         meta["queries"] = query
     elif query is not None:

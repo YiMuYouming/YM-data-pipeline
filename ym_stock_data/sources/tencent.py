@@ -6,8 +6,22 @@
 风险: 低 (HTTP不限频)
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import urllib.request
+
+
+_SHANGHAI = timezone(timedelta(hours=8))
+
+
+def _quote_time(value: str) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(str(value), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=_SHANGHAI).isoformat(timespec="seconds")
 
 
 def get_market_prefix(code: str) -> str:
@@ -68,6 +82,11 @@ def fetch_quotes(codes: list[str]) -> dict:
             "change_amt": float(vals[31]) if vals[31] else 0,
             "high": float(vals[33]) if vals[33] else 0,
             "low": float(vals[34]) if vals[34] else 0,
+            # Verified Tencent quote positions: vals[6]=volume in lots,
+            # vals[30]=YYYYMMDDHHMMSS, vals[37]=amount in ten-thousand CNY.
+            "volume": float(vals[6]) * 100 if vals[6] else 0,
+            "amount": float(vals[37]) * 10000 if vals[37] else 0,
+            "quote_time": _quote_time(vals[30]),
             "amount_wan": float(vals[37]) if vals[37] else 0,
             "turnover_pct": float(vals[38]) if vals[38] else 0,
             "pe_ttm": float(vals[39]) if vals[39] else 0,

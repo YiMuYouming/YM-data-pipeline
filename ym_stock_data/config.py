@@ -5,8 +5,15 @@ from pathlib import Path
 # 缓存目录
 CACHE_DIR = Path.home() / ".ym-stock-data" / "cache"
 
+# 跨进程 provider 健康与 breaker 状态
+PROVIDER_STATE_PATH = Path.home() / ".ym-stock-data" / "state" / "providers.sqlite3"
+
 # PyTDX 服务器列表 (IP, port)
 PYTDX_SERVERS = [
+    # 2026-09-23 新协议 bootstrap 实测：quotes=2、bars=2。
+    ("124.71.187.122", 7709),
+    ("122.51.120.217", 7709),
+    ("110.41.2.72", 7709),
     # 2026-07-13 业务探针验证：报价与日线均非空。全部为 PyTDX 公共零鉴权节点。
     ("123.125.108.14", 7709),
     ("115.238.56.198", 7709),
@@ -27,11 +34,16 @@ PYTDX_MAX_FAIL = 3
 # HTTP 请求超时
 HTTP_TIMEOUT = 15
 
+# 东方财富 HTTP 请求治理
+EASTMONEY_MIN_INTERVAL = 1.0
+EASTMONEY_JITTER_MIN = 0.1
+EASTMONEY_JITTER_MAX = 0.5
+EASTMONEY_BREAKER_SECONDS = 60
+EASTMONEY_RATE_BREAKER_SECONDS = 300
+
 # 问财 API KEY 路径
 IWENCAI_API_KEY_PATH = Path.home() / ".zshrc"
 
-# pywencai venv（OpenAPI 额度耗尽时自动降级）
-PYWENCAI_VENV = str(Path.home() / ".workbuddy/binaries/python/envs/default/lib/python3.13/site-packages")
-
-# pywencai + pytdx 降级 Python 路径（data-venv python3.12，已装 pywencai）
-PYWENCAI_PYTHON = str(Path.home() / "WorkBuddy/Tools/data-venv/bin/python3")
+# 项目托管的 pywencai 运行时；也可用 YM_PYWENCAI_PYTHON 显式覆盖。
+PYWENCAI_RUNTIME_DIR = Path.home() / ".ym-stock-data" / "runtimes" / "pywencai"
+PYWENCAI_MANAGED_PYTHON = PYWENCAI_RUNTIME_DIR / "bin" / "python"

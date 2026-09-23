@@ -3,10 +3,15 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
+
+from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_state import ProviderState
+import ym_stock_data.api as api
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -14,133 +19,219 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TZ_SH = timezone(timedelta(hours=8))
 
 
+def iwencai_outcome(raw):
+    rows = raw.get("datas", []) if isinstance(raw, dict) else []
+    return ProviderOutcome(
+        provider="iwencai_openapi",
+        status="success" if rows else "empty",
+        data=raw,
+        fetched_at=(raw.get("_meta", {}) or {}).get("fetched_at"),
+        latency_ms=1,
+    )
+
+
 def ts(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(TZ_SH)
 
 
+def fresh_timestamp() -> str:
+    return datetime.now(TZ_SH).isoformat(timespec="seconds")
+
+
+def canonical_result(
+    intent,
+    data,
+    *,
+    provider="stocktoday",
+    source_chain=None,
+    status="success",
+    fetched_at=None,
+    attempts=None,
+    quality_status=None,
+):
+    chain = list(source_chain or [provider])
+    if attempts is None:
+        attempts = [
+            {
+                "provider": name,
+                "status": "success" if name == provider else "provider_error",
+                "error_code": None if name == provider else "UPSTREAM",
+                "latency_ms": 1,
+            }
+            for name in chain
+        ]
+    meta = {
+        "contract_version": "1.0",
+        "intent": intent,
+        "status": status,
+        "provider_used": provider if status in {"success", "degraded"} else None,
+        "source": provider if status in {"success", "degraded"} else None,
+        "source_chain": chain,
+        "attempts": attempts,
+        "fetched_at": fetched_at or fresh_timestamp(),
+        "quality": {
+            "status": quality_status or ("error" if status == "error" else "normal"),
+            "returned_count": 0 if data is None else 1,
+            "reason_codes": [],
+        },
+    }
+    return {"data": data, "_meta": meta}
+
+
+def canonical_snapshot(*codes):
+    return {
+        code: {
+            "code": code,
+            "price": 31.2,
+            "last_close": 30.2,
+            "open": 30.5,
+            "high": 31.5,
+            "low": 30.0,
+            "volume": 1200,
+            "amount": 37200,
+            "quote_time": fresh_timestamp(),
+        }
+        for code in codes
+    }
+
+
+def canonical_kline(*, datetime_value="2026-06-04 15:00:00", adjustment="none"):
+    return {
+        "code": "002475",
+        "period": "daily",
+        "adjustment": adjustment,
+        "volume_unit": "share",
+        "amount_unit": "CNY",
+        "bars": [{
+            "datetime": datetime_value,
+            "open": 30.0,
+            "high": 32.0,
+            "low": 29.8,
+            "close": 31.2,
+            "volume": 1000,
+            "amount": 31200,
+        }],
+    }
+
+
 class V2MvpTests(unittest.TestCase):
-    def test_pytdx_retry_uses_disconnect_only_for_transient_errors(self):
-        from ym_stock_data.v2.adapters import _pytdx_call
+    def setUp(self):
+        self.provider_state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.provider_state_dir.cleanup)
+        state = ProviderState(Path(self.provider_state_dir.name) / "providers.sqlite3")
+        state_patch = patch.object(api, "_STATE", state)
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
 
-        fn = Mock(side_effect=[ConnectionError("tcp reset"), {"ok": True}])
-        with patch("ym_stock_data.v2.adapters.pytdx.disconnect") as disconnect, patch(
-            "ym_stock_data.v2.adapters.time.sleep"
-        ) as sleep:
-            result = _pytdx_call(fn)
-        self.assertEqual({"ok": True}, result)
-        self.assertEqual(2, fn.call_count)
-        disconnect.assert_called_once()
-        sleep.assert_called_once()
+    def test_v2_adapter_delegates_to_canonical_router_exactly_once(self):
+        from ym_stock_data.v2 import adapters
 
-    def test_pytdx_retry_reconnect_failure_does_not_mask_original_path(self):
-        from ym_stock_data.v2.adapters import _pytdx_call
-
-        fn = Mock(side_effect=[TimeoutError("timeout"), {"ok": True}])
-        with patch(
-            "ym_stock_data.v2.adapters.pytdx.disconnect",
-            side_effect=RuntimeError("disconnect failed"),
-        ), patch("ym_stock_data.v2.adapters.time.sleep"):
-            self.assertEqual({"ok": True}, _pytdx_call(fn))
-
-    def test_pytdx_retry_does_not_retry_deterministic_errors(self):
-        from ym_stock_data.v2.adapters import _pytdx_call
-
-        fn = Mock(side_effect=ValueError("bad code"))
-        with patch("ym_stock_data.v2.adapters.pytdx.disconnect") as disconnect, patch(
-            "ym_stock_data.v2.adapters.time.sleep"
-        ):
-            with self.assertRaisesRegex(ValueError, "bad code"):
-                _pytdx_call(fn)
-        self.assertEqual(1, fn.call_count)
-        disconnect.assert_not_called()
-
-    def test_pytdx_retry_raises_last_transient_error(self):
-        from ym_stock_data.v2.adapters import _pytdx_call
-
-        fn = Mock(
-            side_effect=[
-                ConnectionError("first"),
-                TimeoutError("second"),
-                OSError("final"),
-            ]
-        )
-        with patch("ym_stock_data.v2.adapters.pytdx.disconnect"), patch(
-            "ym_stock_data.v2.adapters.time.sleep"
-        ):
-            with self.assertRaisesRegex(OSError, "final"):
-                _pytdx_call(fn)
-        self.assertEqual(3, fn.call_count)
-
-    def test_realtime_market_calls_source_directly_and_adds_meta(self):
-        from ym_stock_data.v2 import resolve
-
-        raw = {
-            "上证指数": {"最新价": 3020.1, "涨跌幅": 0.8},
-            "成交额": 8112.5,
+        canonical = {
+            "data": {"上证指数": 3020.1, "深证指数": 10000.0, "创业指数": 2000.0},
             "_meta": {
-                "data_type": "index",
-                "source": "pytdx",
-                "fetched_at": "2026-06-03T09:30:00+08:00",
+                "contract_version": "1.0",
+                "status": "success",
+                "provider_used": "stocktoday",
+                "source": "stocktoday",
+                "source_chain": ["stocktoday"],
+                "attempts": [{
+                    "provider": "stocktoday",
+                    "status": "success",
+                    "error_code": None,
+                    "latency_ms": 1,
+                }],
             },
         }
+        with patch.object(adapters.public_api, "query", return_value=canonical) as query_call:
+            result = adapters.fetch_index()
 
-        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw) as fetch_index, \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        query_call.assert_called_once_with("realtime_market")
+        self.assertEqual(3020.1, result["上证指数"])
+        self.assertEqual("stocktoday", result["_meta"]["provider_used"])
+
+    def test_v2_adapter_has_no_direct_source_or_retry_owner(self):
+        from ym_stock_data.v2 import adapters
+
+        self.assertFalse(hasattr(adapters, "_pytdx_call"))
+        self.assertFalse(hasattr(adapters, "pytdx"))
+        self.assertFalse(hasattr(adapters, "iwencai"))
+
+    def test_realtime_market_projects_full_canonical_three_index_result(self):
+        from ym_stock_data.v2 import resolve
+
+        result_data = {
+            "上证指数": 3020.1,
+            "深证指数": 10020.5,
+            "创业指数": 2012.7,
+            "成交额": 8112.5,
+        }
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("realtime_market", result_data),
+        ) as query_call:
             result = resolve("realtime_market", _now=ts("2026-06-03T09:30:20+08:00"))
 
-        fetch_index.assert_called_once_with()
-        self.assertEqual(result["data"]["上证指数"]["最新价"], 3020.1)
+        query_call.assert_called_once_with("realtime_market")
+        self.assertEqual(result["data"]["上证指数"], 3020.1)
+        self.assertEqual(result["data"]["深证指数"], 10020.5)
+        self.assertEqual(result["data"]["创业指数"], 2012.7)
         self.assertEqual(result["_meta"]["intent"], "realtime_market")
-        self.assertEqual(result["_meta"]["source"], "pytdx")
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
-        self.assertEqual(result["_meta"]["data_scope"], "PyTDX实时行情口径")
+        self.assertEqual(result["_meta"]["source"], "stocktoday")
+        self.assertEqual(result["_meta"]["source_chain"], ["stocktoday"])
         self.assertEqual(result["_meta"]["confidence"], "normal")
         self.assertFalse(result["_meta"]["error"])
 
     def test_realtime_market_marks_stale_data(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "上证指数": {"最新价": 3020.1},
-            "_meta": {
-                "data_type": "index",
-                "source": "pytdx",
-                "fetched_at": "2026-06-03T09:30:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        attempts = [
+            {
+                "provider": "stocktoday",
+                "status": "quality_failure",
+                "error_code": "QUALITY_STALE",
+                "latency_ms": 1,
+            }
+        ]
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result(
+                "realtime_market",
+                None,
+                status="error",
+                fetched_at="2026-06-03T09:30:00+08:00",
+                attempts=attempts,
+            ),
+        ) as query_call:
             result = resolve("realtime_market", _now=ts("2026-06-03T09:31:10+08:00"))
 
-        self.assertEqual(result["_meta"]["confidence"], "stale")
-        self.assertIn("超过阈值", result["_meta"]["warn"])
-        self.assertGreater(result["_meta"]["age_sec"], result["_meta"]["staleness_sec"])
+        query_call.assert_called_once_with("realtime_market")
+        self.assertEqual("error", result["_meta"]["confidence"])
+        self.assertTrue(result["_meta"]["error"])
+        self.assertEqual("QUALITY_STALE", result["_meta"]["attempts"][0]["error_code"])
 
-    def test_review_sentiment_default_prefers_pytdx_breadth_without_iwencai(self):
+    def test_review_sentiment_default_delegates_to_canonical_breadth_query(self):
         from ym_stock_data.v2 import resolve
 
-        breadth = {
-            "涨停": 72,
-            ">7%": 31,
-            "5~7%": 64,
-            "3~5%": 180,
-            "0~3%": 2600,
-            "-0~-3%": 1800,
-            "-3~-5%": 210,
-            "-5~-7%": 80,
-            "<-7%": 45,
-            "跌停": 12,
-            "_total": 5094,
+        data = {
+            "上涨家数": 2947,
+            "下跌家数": 2147,
+            "涨停家数": 72,
+            "跌停家数": 12,
+            "红盘率": 57.85,
+            "query_count": 1,
         }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_breadth", return_value=breadth) as fetch_breadth, \
-             patch("ym_stock_data.sources.iwencai.query") as query, \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        canonical = canonical_result(
+            "review_sentiment", data,
+            provider="pytdx_breadth", source_chain=["pytdx_breadth"],
+            quality_status="partial",
+        )
+        canonical["_meta"]["data_scope"] = "A股市场宽度与涨跌停聚合口径"
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query", return_value=canonical
+        ) as query_call:
             result = resolve("review_sentiment", _now=ts("2026-06-03T15:15:00+08:00"))
 
-        fetch_breadth.assert_called_once_with()
-        query.assert_not_called()
+        query_call.assert_called_once_with("review_sentiment")
         self.assertEqual(result["data"]["query_count"], 1)
         self.assertEqual(result["data"]["涨停家数"], 72)
         self.assertEqual(result["data"]["跌停家数"], 12)
@@ -148,91 +239,61 @@ class V2MvpTests(unittest.TestCase):
         self.assertEqual(result["data"]["下跌家数"], 2147)
         self.assertAlmostEqual(result["data"]["红盘率"], 57.85)
         self.assertEqual(result["_meta"]["intent"], "review_sentiment")
-        self.assertEqual(result["_meta"]["source"], "pytdx")
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
-        self.assertEqual(result["_meta"]["data_scope"], "PyTDX全市场涨跌分布口径")
-        self.assertEqual(result["_meta"]["queries"], ["全市场涨跌分布"])
+        self.assertEqual(result["_meta"]["source"], "pytdx_breadth")
+        self.assertEqual(result["_meta"]["source_chain"], ["pytdx_breadth"])
         self.assertEqual(result["_meta"]["quality"]["status"], "partial")
-        self.assertEqual(
-            result["_meta"]["quality"]["missing"],
-            ["涨停收益均值", "炸板率", "最高板"],
-        )
 
     def test_review_sentiment_allows_single_query_override(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "datas": [{"股票简称": "测试股份", "涨跌幅": 3.2}],
-            "row_count": 1,
-            "_source": "openapi",
-            "_meta": {
-                "data_type": "iwencai",
-                "source": "iwencai",
-                "fetched_at": "2026-06-03T15:10:00+08:00",
-            },
-        }
+        query_text = "昨日涨停 今日涨跌幅 非st"
+        data = {"queries": [{"query": query_text, "result": {"datas": [{"股票简称": "测试股份", "涨跌幅": 3.2}]}}]}
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("review_sentiment", data),
+        ) as query_call:
+            result = resolve("review_sentiment", query=query_text, _now=ts("2026-06-03T15:15:00+08:00"))
 
-        with patch("ym_stock_data.sources.iwencai.query", return_value=raw) as query, \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
-            result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
+        query_call.assert_called_once_with("review_sentiment", query=query_text)
+        self.assertEqual(result["data"], data)
+        self.assertEqual(result["_meta"]["queries"], [query_text])
 
-        query.assert_called_once_with("昨日涨停 今日涨跌幅 非st", limit=50)
-        self.assertEqual(result["data"]["query_count"], 1)
-        self.assertEqual(result["_meta"]["queries"], ["昨日涨停 今日涨跌幅 非st"])
-
-    def test_review_sentiment_matches_v1_iwencai_signature(self):
+    def test_review_sentiment_batch_calls_canonical_query_once_per_query(self):
         from ym_stock_data.v2 import resolve
 
-        def fake_iwencai_query(query_str, limit=50, page=1):
-            return {
-                "datas": [{"query": query_str, "limit": limit, "page": page}],
-                "row_count": 1,
-                "_source": "openapi",
-            }
+        queries = ["板块涨幅前2", "板块跌幅前2"]
+        def canonical(query_text):
+            return canonical_result(
+                "review_sentiment",
+                {"queries": [{"query": query_text, "result": {"datas": [{"板块名称": query_text}]}}]},
+            )
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            side_effect=lambda _intent, query, **_kwargs: canonical(query),
+        ) as query_call:
+            result = resolve("review_sentiment", query=queries, _now=ts("2026-06-03T15:15:00+08:00"))
 
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_iwencai_query), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
-            result = resolve("review_sentiment", query="昨日涨停 今日涨跌幅 非st", _now=ts("2026-06-03T15:15:00+08:00"))
+        self.assertEqual([call.args for call in query_call.call_args_list], [
+            ("review_sentiment",), ("review_sentiment",),
+        ])
+        self.assertEqual([call.kwargs["query"] for call in query_call.call_args_list], queries)
+        self.assertEqual(queries, result["_meta"]["queries"])
+        self.assertEqual(2, result["data"]["query_count"])
 
-        first = result["data"]["queries"][0]["result"]
-        self.assertNotIn("error", first)
-        self.assertEqual(first["datas"][0]["query"], "昨日涨停 今日涨跌幅 非st")
-        for key in ("涨停收益均值", "红盘率", "炸板率", "最高板"):
-            self.assertIn(key, result["data"])
-
-    def test_stock_snapshot_calls_source_directly_and_adds_meta(self):
+    def test_stock_snapshot_projects_canonical_complete_quote(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "002475": {
-                "最新价": 31.2,
-                "涨幅": "+3.18%",
-                "量比": "1.42",
-                "换手": "2.10",
-                "MA5_d": 30.1,
-                "MA10_d": 29.8,
-                "MA20_d": 28.6,
-                "MA10_60m": 30.4,
-                "MA10_60m_dir": "向上",
-                "is_strong": True,
-            },
-            "_meta": {
-                "data_type": "quotes",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T09:45:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw) as fetch_quotes, \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("stock_snapshot", canonical_snapshot("002475")),
+        ) as query_call:
             result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T09:45:20+08:00"))
 
-        fetch_quotes.assert_called_once_with(["002475"])
-        self.assertEqual(result["data"]["002475"]["最新价"], 31.2)
+        query_call.assert_called_once_with("stock_snapshot", codes=["002475"])
+        self.assertEqual(result["data"]["002475"]["price"], 31.2)
         self.assertEqual(result["_meta"]["intent"], "stock_snapshot")
-        self.assertEqual(result["_meta"]["source"], "pytdx")
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
-        self.assertEqual(result["_meta"]["data_scope"], "PyTDX个股实时行情口径")
+        self.assertEqual(result["_meta"]["source"], "stocktoday")
+        self.assertEqual(result["_meta"]["source_chain"], ["stocktoday"])
         self.assertEqual(result["_meta"]["confidence"], "normal")
         self.assertFalse(result["_meta"]["error"])
 
@@ -245,58 +306,59 @@ class V2MvpTests(unittest.TestCase):
     def test_stock_snapshot_marks_stale_quotes(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "002475": {"最新价": 31.2},
-            "_meta": {
-                "data_type": "quotes",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T09:45:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        rejected = canonical_result(
+            "stock_snapshot",
+            None,
+            status="error",
+            fetched_at="2026-06-04T09:45:00+08:00",
+            attempts=[{
+                "provider": "stocktoday",
+                "status": "quality_failure",
+                "error_code": "QUALITY_SNAPSHOT_STALE",
+                "latency_ms": 1,
+            }],
+        )
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query", return_value=rejected
+        ) as query_call:
             result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T09:46:10+08:00"))
 
-        self.assertEqual(result["_meta"]["confidence"], "stale")
-        self.assertIn("超过阈值", result["_meta"]["warn"])
+        query_call.assert_called_once_with("stock_snapshot", codes=["002475"])
+        self.assertEqual(result["_meta"]["confidence"], "error")
+        self.assertTrue(result["_meta"]["error"])
+        self.assertEqual("QUALITY_SNAPSHOT_STALE", result["_meta"]["attempts"][0]["error_code"])
 
-    def test_adapter_flattens_wrapped_quote_payloads(self):
+    def test_canonical_snapshot_rejection_is_not_flattened_by_v2(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "data": {
-                "002475": {"最新价": 31.2, "涨幅": "+1.20%"},
-            },
-            "_source": "tencent_fallback",
-            "_meta": {
-                "data_type": "quotes",
-                "source": "pytdx",
-                "fallback_from": "pytdx",
-                "fallback_to": "tencent",
-                "fetched_at": "2026-06-04T10:00:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw):
+        rejected = canonical_result(
+            "stock_snapshot", None, status="error",
+            attempts=[{
+                "provider": "tencent",
+                "status": "quality_failure",
+                "error_code": "QUALITY_SNAPSHOT_FIELDS",
+                "latency_ms": 1,
+            }],
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=rejected):
             result = resolve("stock_snapshot", codes=["002475"], _now=ts("2026-06-04T10:00:20+08:00"))
 
-        self.assertEqual(result["data"]["002475"]["最新价"], 31.2)
-        self.assertNotIn("data", result["data"])
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "tencent", "tencent_fallback"])
+        self.assertIsNone(result["data"])
+        self.assertTrue(result["_meta"]["error"])
+        self.assertEqual("QUALITY_SNAPSHOT_FIELDS", result["_meta"]["attempts"][0]["error_code"])
 
     def test_stock_snapshot_promotes_row_level_fallback_provenance(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "002475": {
-                "最新价": 31.2,
-                "涨幅": "+1.20%",
-                "_source": "tencent_fallback",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_quotes", return_value=raw):
+        fallback = canonical_result(
+            "stock_snapshot",
+            canonical_snapshot("002475"),
+            provider="tencent",
+            source_chain=["stocktoday", "tencent"],
+            status="degraded",
+            quality_status="partial",
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=fallback):
             result = resolve(
                 "stock_snapshot",
                 codes=["002475"],
@@ -304,9 +366,10 @@ class V2MvpTests(unittest.TestCase):
             )
 
         self.assertEqual(result["_meta"]["source"], "tencent")
+        self.assertEqual(result["_meta"]["confidence"], "degraded")
         self.assertEqual(
             result["_meta"]["source_chain"],
-            ["pytdx", "tencent", "tencent_fallback"],
+            ["stocktoday", "tencent"],
         )
 
     def test_sector_index_calls_ths_881_source_by_code(self):
@@ -329,17 +392,19 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.ths_industry.fetch_sector_index", return_value=raw) as fetch_sector_index, \
-             patch("ym_stock_data.sources.pytdx.fetch_sector", side_effect=AssertionError("sector_index must not use TDX sector line")), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        canonical = canonical_result("sector_index", raw, provider="ths_industry")
+        canonical["_meta"]["data_scope"] = "同花顺881行业板块指数"
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query", return_value=canonical
+        ) as query_call:
             result = resolve("sector_index", codes=["881124"], _now=ts("2026-06-04T10:00:20+08:00"))
 
-        fetch_sector_index.assert_called_once_with(codes=["881124"], names=None)
+        query_call.assert_called_once_with("sector_index", codes=["881124"])
         self.assertEqual(result["data"]["items"][0]["code"], "881124")
         self.assertEqual(result["data"]["items"][0]["main_net_inflow_yi"], -14.12)
         self.assertEqual(result["_meta"]["intent"], "sector_index")
         self.assertEqual(result["_meta"]["source"], "ths_industry")
-        self.assertEqual(result["_meta"]["data_scope"], "同花顺881行业板块口径")
+        self.assertEqual(result["_meta"]["data_scope"], "同花顺881行业板块指数")
         self.assertEqual(result["_meta"]["confidence"], "normal")
 
     def test_sector_index_supports_name_lookup(self):
@@ -360,10 +425,13 @@ class V2MvpTests(unittest.TestCase):
             },
         }
 
-        with patch("ym_stock_data.sources.ths_industry.fetch_sector_index", return_value=raw) as fetch_sector_index:
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("sector_index", raw, provider="ths_industry"),
+        ) as query_call:
             result = resolve("sector_index", names=["消费电子", "通信设备"], _now=ts("2026-06-04T10:00:20+08:00"))
 
-        fetch_sector_index.assert_called_once_with(codes=None, names=["消费电子", "通信设备"])
+        query_call.assert_called_once_with("sector_index", names=["消费电子", "通信设备"])
         self.assertEqual([item["code"] for item in result["data"]["items"]], ["881124", "881129"])
 
     def test_sector_index_rejects_non_ths_codes(self):
@@ -372,7 +440,7 @@ class V2MvpTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "881"):
             resolve("sector_index", codes=["931494"])
 
-    def test_stock_kline_calls_source_directly_and_adds_meta(self):
+    def test_stock_kline_projects_complete_canonical_bars(self):
         from ym_stock_data.v2 import resolve
 
         raw = {
@@ -380,35 +448,33 @@ class V2MvpTests(unittest.TestCase):
             "total_bars": 3,
             "last_close": 31.2,
             "mas": {"MA5": 30.4, "MA10": 29.9, "MA20": 28.7},
+            "adjustment": "none",
+            "volume_unit": "share",
+            "amount_unit": "CNY",
             "bars": [
-                {"time": "2026-06-02 15:00", "open": 30.1, "high": 31.0, "low": 29.8, "close": 30.8, "vol": 1000},
-                {"time": "2026-06-03 15:00", "open": 30.8, "high": 31.5, "low": 30.5, "close": 31.0, "vol": 1200},
-                {"time": "2026-06-04 15:00", "open": 31.0, "high": 31.8, "low": 30.9, "close": 31.2, "vol": 1300},
+                {"datetime": "2026-06-02 15:00", "open": 30.1, "high": 31.0, "low": 29.8, "close": 30.8, "volume": 1000, "amount": 30800},
+                {"datetime": "2026-06-03 15:00", "open": 30.8, "high": 31.5, "low": 30.5, "close": 31.0, "volume": 1200, "amount": 37200},
+                {"datetime": "2026-06-04 15:00", "open": 31.0, "high": 31.8, "low": 30.9, "close": 31.2, "volume": 1300, "amount": 40560},
             ],
-            "_meta": {
-                "data_type": "kline",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T15:01:00+08:00",
-            },
         }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw) as fetch_kline, \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("stock_kline", raw),
+        ) as query_call:
             result = resolve("stock_kline", code="002475", period="daily", _now=ts("2026-06-04T15:01:20+08:00"))
 
-        fetch_kline.assert_called_once_with("002475", period="daily")
+        query_call.assert_called_once_with("stock_kline", code="002475", period="daily")
         self.assertEqual(result["data"]["code"], "002475")
-        self.assertEqual(result["data"]["period"], "daily")
+        self.assertNotIn("period", result["data"])
         self.assertEqual(result["data"]["last_close"], 31.2)
         self.assertEqual(result["data"]["mas"]["MA10"], 29.9)
         self.assertEqual(result["_meta"]["intent"], "stock_kline")
-        self.assertEqual(result["_meta"]["source"], "pytdx")
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx"])
-        self.assertEqual(result["_meta"]["data_scope"], "PyTDX个股K线口径")
+        self.assertEqual(result["_meta"]["source"], "stocktoday")
+        self.assertEqual(result["_meta"]["source_chain"], ["stocktoday"])
         self.assertEqual(result["_meta"]["confidence"], "normal")
         self.assertFalse(result["_meta"]["error"])
 
-    def test_stock_kline_honors_count(self):
+    def test_stock_kline_passes_count_to_canonical_query(self):
         from ym_stock_data.v2 import resolve
 
         raw = {
@@ -416,54 +482,42 @@ class V2MvpTests(unittest.TestCase):
             "total_bars": 3,
             "last_close": 31.2,
             "mas": {},
+            "adjustment": "none",
+            "volume_unit": "share",
+            "amount_unit": "CNY",
             "bars": [
-                {"time": "2026-06-02 15:00", "close": 30.8},
-                {"time": "2026-06-03 15:00", "close": 31.0},
-                {"time": "2026-06-04 15:00", "close": 31.2},
+                {"datetime": "2026-06-03 15:00", "open": 30.8, "high": 31.5, "low": 30.5, "close": 31.0, "volume": 1200, "amount": 37200},
+                {"datetime": "2026-06-04 15:00", "open": 31.0, "high": 31.8, "low": 30.9, "close": 31.2, "volume": 1300, "amount": 40560},
             ],
-            "_meta": {
-                "data_type": "kline",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T15:01:00+08:00",
-            },
         }
 
-        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw) as fetch_kline:
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("stock_kline", raw),
+        ) as query_call:
             result = resolve("stock_kline", code="002475", period="15m", count=2, _now=ts("2026-06-04T15:01:20+08:00"))
 
-        fetch_kline.assert_called_once_with("002475", period="15m")
-        self.assertEqual([bar["time"] for bar in result["data"]["bars"]], ["2026-06-03 15:00", "2026-06-04 15:00"])
-        self.assertEqual(result["data"]["requested_count"], 2)
-        self.assertEqual(result["data"]["returned_bars"], 2)
+        query_call.assert_called_once_with("stock_kline", code="002475", period="15m", count=2)
+        self.assertEqual([bar["datetime"] for bar in result["data"]["bars"]], ["2026-06-03 15:00", "2026-06-04 15:00"])
 
-    def test_adapter_flattens_wrapped_kline_payload_before_counting(self):
+    def test_v2_preserves_canonical_kline_quality_rejection(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "data": {
-                "code": "002475",
-                "total_bars": 3,
-                "last_close": 31.2,
-                "bars": [
-                    {"time": "2026-06-02 15:00", "close": 30.8},
-                    {"time": "2026-06-03 15:00", "close": 31.0},
-                    {"time": "2026-06-04 15:00", "close": 31.2},
-                ],
-            },
-            "_meta": {
-                "data_type": "kline",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T15:01:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw):
+        rejected = canonical_result(
+            "stock_kline", None, status="error",
+            attempts=[{
+                "provider": "tencent",
+                "status": "quality_failure",
+                "error_code": "QUALITY_KLINE_FIELDS",
+                "latency_ms": 1,
+            }],
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=rejected):
             result = resolve("stock_kline", code="002475", period="daily", count=2, _now=ts("2026-06-04T15:01:20+08:00"))
 
-        self.assertEqual(result["data"]["code"], "002475")
-        self.assertEqual([bar["time"] for bar in result["data"]["bars"]], ["2026-06-03 15:00", "2026-06-04 15:00"])
-        self.assertEqual(result["data"]["returned_bars"], 2)
-        self.assertNotIn("data", result["data"])
+        self.assertIsNone(result["data"])
+        self.assertEqual("error", result["_meta"]["confidence"])
+        self.assertEqual("QUALITY_KLINE_FIELDS", result["_meta"]["attempts"][0]["error_code"])
 
     def test_stock_kline_requires_code(self):
         from ym_stock_data.v2 import resolve
@@ -475,7 +529,7 @@ class V2MvpTests(unittest.TestCase):
         from ym_stock_data.v2 import resolve
 
         with self.assertRaisesRegex(ValueError, "period"):
-            resolve("stock_kline", code="002475", period="1m")
+            resolve("stock_kline", code="002475", period="2m")
 
     def test_stock_kline_rejects_invalid_count(self):
         from ym_stock_data.v2 import resolve
@@ -486,47 +540,34 @@ class V2MvpTests(unittest.TestCase):
     def test_stock_kline_marks_stale_bars(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "code": "002475",
-            "last_close": 31.2,
-            "bars": [],
-            "_meta": {
-                "data_type": "kline",
-                "source": "pytdx",
-                "fetched_at": "2026-06-04T15:01:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        rejected = canonical_result(
+            "stock_kline", None, status="error",
+            fetched_at="2026-06-04T15:01:00+08:00",
+            attempts=[{
+                "provider": "stocktoday",
+                "status": "quality_failure",
+                "error_code": "QUALITY_STALE",
+                "latency_ms": 1,
+            }],
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=rejected):
             result = resolve("stock_kline", code="002475", period="daily", _now=ts("2026-06-04T15:07:00+08:00"))
 
-        self.assertEqual(result["_meta"]["confidence"], "stale")
-        self.assertIn("超过阈值", result["_meta"]["warn"])
+        self.assertEqual(result["_meta"]["confidence"], "error")
+        self.assertEqual("QUALITY_STALE", result["_meta"]["attempts"][0]["error_code"])
 
     def test_stock_kline_marks_http_fallback_as_degraded_scope(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "code": "002475",
-            "bars": [{
-                "time": "2026-06-04",
-                "open": 30.0,
-                "high": 32.0,
-                "low": 29.8,
-                "close": 31.2,
-                "vol": 1000,
-                "amount": None,
-            }],
-            "_source": "tencent_fallback",
-            "_meta": {
-                "fallback_from": "pytdx",
-                "fallback_to": "tencent",
-                "fetched_at": "2026-06-04T15:01:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_kline", return_value=raw):
+        fallback = canonical_result(
+            "stock_kline",
+            canonical_kline(),
+            provider="tencent",
+            source_chain=["stocktoday", "eastmoney_stock", "tencent"],
+            status="degraded",
+            quality_status="partial",
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=fallback):
             result = resolve(
                 "stock_kline",
                 code="002475",
@@ -537,36 +578,27 @@ class V2MvpTests(unittest.TestCase):
 
         self.assertEqual(result["_meta"]["source"], "tencent")
         self.assertEqual(result["_meta"]["confidence"], "degraded")
-        self.assertEqual(result["_meta"]["data_scope"], "腾讯前复权K线降级口径")
         self.assertEqual(result["_meta"]["quality"]["status"], "partial")
-        self.assertIn("fallback_source", result["_meta"]["quality"]["reason_codes"])
-        self.assertIn("amount", result["_meta"]["quality"]["missing"])
 
     def test_source_chain_captures_fallback_metadata(self):
         from ym_stock_data.v2 import resolve
 
-        raw = {
-            "上证指数": {"最新价": 3020.1},
-            "_source": "eastmoney_fallback",
-            "_meta": {
-                "data_type": "index",
-                "source": "pytdx",
-                "fallback_from": "pytdx",
-                "fallback_to": "eastmoney",
-                "fetched_at": "2026-06-03T09:30:00+08:00",
-            },
-        }
-
-        with patch("ym_stock_data.sources.pytdx.fetch_index", return_value=raw), \
-             patch("ym_stock_data.v2.adapters.fetch_v1", side_effect=AssertionError("v2 must not call v1 fetch route")):
+        fallback = canonical_result(
+            "realtime_market",
+            {"上证指数": 3200.0, "深证指数": 10000.0, "创业指数": 2000.0},
+            provider="eastmoney",
+            source_chain=["stocktoday", "tencent", "pytdx", "eastmoney"],
+            status="degraded",
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=fallback):
             result = resolve("realtime_market", _now=ts("2026-06-03T09:30:20+08:00"))
 
-        self.assertEqual(result["_meta"]["source_chain"], ["pytdx", "eastmoney", "eastmoney_fallback"])
+        self.assertEqual(result["_meta"]["source_chain"], ["stocktoday", "tencent", "pytdx", "eastmoney"])
 
     def test_review_sentiment_adds_top_level_aggregates(self):
         from ym_stock_data.v2 import resolve
 
-        def fake_fetch(query_str, limit=50):
+        def fake_query(query_str):
             if query_str == "昨日涨停 今日涨跌幅 非st":
                 datas = [{"今日涨跌幅": "3.0"}, {"今日涨跌幅": "-1.0"}, {"今日涨跌幅": "2.0"}]
             elif query_str == "昨日炸板 今日涨跌幅 炸板率 非st":
@@ -575,34 +607,111 @@ class V2MvpTests(unittest.TestCase):
                 datas = [{"股票简称": "测试A", "连板数": 3}, {"股票简称": "测试B", "连续涨停天数[20260604]": "5"}]
             else:
                 datas = [{"query": query_str}]
-            return {
-                "datas": datas,
-                "row_count": len(datas),
-                "_source": "openapi",
-                "_meta": {
-                    "data_type": "iwencai",
-                    "source": "iwencai",
-                    "fetched_at": "2026-06-03T15:10:00+08:00",
-                },
-            }
+            return canonical_result(
+                "review_sentiment",
+                {"queries": [{"query": query_str, "result": {"datas": datas}}]},
+            )
 
         queries = [
             "昨日涨停 今日涨跌幅 非st",
             "昨日炸板 今日涨跌幅 炸板率 非st",
             "今日连板 股票简称 连板数 非st",
         ]
-        with patch("ym_stock_data.sources.iwencai.query", side_effect=fake_fetch):
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            side_effect=lambda _intent, query, **_kwargs: fake_query(query),
+        ) as query_call:
             result = resolve(
                 "review_sentiment",
                 query=queries,
                 _now=ts("2026-06-03T15:15:00+08:00"),
             )
 
+        self.assertEqual(3, query_call.call_count)
         self.assertEqual(result["data"]["涨停收益均值"], 1.33)
         self.assertEqual(result["data"]["红盘率"], 66.67)
         self.assertEqual(result["data"]["炸板率"], 25.0)
         self.assertEqual(result["data"]["最高板"], 5)
         self.assertEqual(result["data"]["aggregates"]["limit_up_return_avg"], 1.33)
+
+    def test_market_limit_state_is_projected_from_canonical_query(self):
+        from ym_stock_data.v2 import resolve
+
+        data = {
+            "zt_count": 30,
+            "zb_count": 10,
+            "dt_count": 5,
+            "break_rate": 25.0,
+            "max_board": 4,
+            "pools": {"zt": [{}], "zb": [{}], "dt": [{}]},
+        }
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result(
+                "market_limit_state", data, provider="eastmoney_limit_pool"
+            ),
+        ) as query_call:
+            result = resolve("market_limit_state", date="20260714")
+
+        query_call.assert_called_once_with("market_limit_state", date="20260714")
+        self.assertEqual(30, result["data"]["zt_count"])
+        self.assertEqual("market_limit_state", result["_meta"]["intent"])
+        self.assertEqual(
+            ["eastmoney_limit_pool"], result["_meta"]["source_chain"]
+        )
+        self.assertEqual("normal", result["_meta"]["quality"]["status"])
+
+    def test_market_limit_state_source_error_is_explicit(self):
+        from ym_stock_data.v2 import resolve
+
+        failed = canonical_result(
+            "market_limit_state", None, provider="eastmoney_limit_pool", status="error"
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=failed):
+            result = resolve("market_limit_state", date="20260714")
+
+        self.assertEqual("error", result["_meta"]["quality"]["status"])
+        self.assertEqual("error", result["_meta"]["confidence"])
+
+    def test_stock_event_is_projected_from_canonical_query(self):
+        from ym_stock_data.v2 import resolve
+
+        data = {
+            "event": "lockup",
+            "code": "600519",
+            "total": 1,
+            "items": [{"date": "2026-08-01"}],
+        }
+        with patch(
+            "ym_stock_data.v2.resolve.public_api.query",
+            return_value=canonical_result("stock_event", data, provider="eastmoney_datacenter"),
+        ) as query_call:
+            result = resolve("stock_event", event="lockup", code="600519")
+
+        query_call.assert_called_once_with("stock_event", event="lockup", code="600519")
+        self.assertEqual(1, result["data"]["total"])
+        self.assertEqual("stock_event", result["_meta"]["intent"])
+        self.assertEqual("normal", result["_meta"]["quality"]["status"])
+
+    def test_stock_event_empty_result_preserves_canonical_quality(self):
+        from ym_stock_data.v2 import resolve
+
+        empty = canonical_result(
+            "stock_event", {"event": "lockup", "code": "600519", "total": 0, "items": []},
+            provider="eastmoney_datacenter", status="empty", quality_status="empty",
+        )
+        with patch("ym_stock_data.v2.resolve.public_api.query", return_value=empty):
+            result = resolve("stock_event", event="lockup", code="600519")
+
+        self.assertEqual("empty", result["_meta"]["quality"]["status"])
+
+    def test_stock_event_requires_event_and_code(self):
+        from ym_stock_data.v2 import resolve
+
+        with self.assertRaisesRegex(ValueError, "event"):
+            resolve("stock_event", code="600519")
+        with self.assertRaisesRegex(ValueError, "code"):
+            resolve("stock_event", event="lockup")
 
     def test_fields_policy_covers_critical_fields(self):
         fields_path = Path(__file__).resolve().parents[1] / "ym_stock_data/v2/policies/fields.json"

@@ -1,0 +1,441 @@
+{
+  "schema_version": "provider-smoke-probe.v3",
+  "manifest_version": "2026-09-23",
+  "providers": [
+    {
+      "provider": "cls",
+      "operation": "direct_provider_call",
+      "intent": "news",
+      "capability": "news",
+      "params": {"limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "cninfo",
+      "operation": "direct_provider_call",
+      "intent": "filings",
+      "capability": "filings",
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney",
+      "operation": "direct_provider_call",
+      "intent": "realtime_market",
+      "capability": "realtime_market",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_index",
+      "operation": "direct_provider_call",
+      "intent": "index_kline",
+      "capability": "index_kline_minute",
+      "params": {"index_code": "000001.SH", "period": "5m", "start_date": "20260922", "end_date": "20260922"},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_stock",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_daily",
+      "params": {"code": "600519", "period": "daily", "count": 3, "adjustment": "qfq"},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_breadth",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "market_breadth",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_datacenter",
+      "operation": "direct_provider_call",
+      "intent": "stock_event",
+      "capability": "stock_event",
+      "params": {"event": "lockup", "code": "600519", "page_size": 3},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_limit_pool",
+      "operation": "direct_provider_call",
+      "intent": "market_limit_state",
+      "capability": "market_limit_state",
+      "params": {"date": "${today_shanghai}"},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_limit_pool",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "market_breadth",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_research",
+      "operation": "direct_provider_call",
+      "intent": "research",
+      "capability": "research_reports",
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
+      "read_only": true
+    },
+    {
+      "provider": "iwencai_openapi",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "screener",
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx",
+      "operation": "direct_provider_call",
+      "intent": "stock_snapshot",
+      "capability": "stock_snapshot",
+      "params": {"codes": ["600519"]},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx",
+      "operation": "direct_provider_call",
+      "intent": "realtime_market",
+      "capability": "realtime_market",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_daily",
+      "params": {"code": "600519", "period": "daily", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx_breadth",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "market_breadth",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx_screener",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "structured_screener",
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "pywencai",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "screener",
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "sina",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_60m",
+      "params": {"code": "600519", "period": "60m", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "sina_index",
+      "operation": "direct_provider_call",
+      "intent": "index_kline",
+      "capability": "index_kline_minute",
+      "params": {"index_code": "000001.SH", "period": "5m", "start_date": "20260922", "end_date": "20260922"},
+      "read_only": true
+    },
+    {
+      "provider": "sina_index",
+      "operation": "direct_provider_call",
+      "intent": "index_intraday_compare",
+      "capability": "index_intraday_compare",
+      "params": {"period": "15m", "trade_date": "20260922"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "stocktoday_data",
+      "capability": "stocktoday_rt_k",
+      "params": {
+        "api_name": "rt_k",
+        "params": {"ts_code": "600519.SH"},
+        "fields": ["ts_code", "trade_time", "close", "pre_close", "name", "updated_at"],
+        "max_rows": 1
+      },
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "stock_snapshot",
+      "capability": "stock_snapshot",
+      "params": {"codes": ["600519"], "source": "stocktoday"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_daily",
+      "params": {"code": "600519", "period": "daily", "count": 3, "source": "stocktoday"},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_kline",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_daily",
+      "params": {"code": "600519", "period": "daily", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_mcp",
+      "operation": "direct_provider_probe",
+      "intent": null,
+      "capability": "tdx_mcp_protocol",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_news",
+      "operation": "direct_provider_call",
+      "intent": "news",
+      "capability": "news",
+      "params": {"limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_notice",
+      "operation": "direct_provider_call",
+      "intent": "filings",
+      "capability": "filings",
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_quotes",
+      "operation": "direct_provider_call",
+      "intent": "stock_snapshot",
+      "capability": "stock_snapshot",
+      "params": {"codes": ["600519"]},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_report",
+      "operation": "direct_provider_call",
+      "intent": "research",
+      "capability": "research_reports",
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
+      "read_only": true
+    },
+    {
+      "provider": "tdx_screener",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "structured_screener",
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "tencent",
+      "operation": "direct_provider_call",
+      "intent": "stock_snapshot",
+      "capability": "stock_snapshot",
+      "params": {"codes": ["600519"]},
+      "read_only": true
+    },
+    {
+      "provider": "tencent",
+      "operation": "direct_provider_call",
+      "intent": "realtime_market",
+      "capability": "realtime_market",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "tencent",
+      "operation": "direct_provider_call",
+      "intent": "stock_kline",
+      "capability": "stock_kline_daily",
+      "params": {"code": "600519", "period": "daily", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "ths_industry",
+      "operation": "direct_provider_call",
+      "intent": "sector_index",
+      "capability": "sector_index",
+      "params": {"names": ["半导体"]},
+      "read_only": true
+    },
+    {
+      "provider": "wind_documents",
+      "operation": "direct_provider_call",
+      "intent": "filings",
+      "capability": "filings",
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
+      "read_only": true
+    },
+    {
+      "provider": "wind_mcp",
+      "operation": "direct_provider_call",
+      "intent": "wind_enrichment",
+      "capability": "company_profile",
+      "params": {"capability": "company_profile", "code": "600519"},
+      "read_only": true
+    },
+    {
+      "provider": "wind_screener",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "screener",
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_limit_pool",
+      "operation": "direct_provider_call",
+      "intent": "market_limit_board",
+      "capability": "market_limit_board",
+      "params": {"kind": "up"},
+      "read_only": true
+    },
+    {
+      "provider": "northbound",
+      "operation": "direct_provider_call",
+      "intent": "northbound_flow",
+      "capability": "northbound_flow",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "pytdx_index",
+      "operation": "direct_provider_call",
+      "intent": "index_kline",
+      "capability": "index_kline_daily",
+      "params": {"index_code": "000001.SH", "period": "daily", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "eastmoney_index",
+      "operation": "direct_provider_call",
+      "intent": "index_intraday_compare",
+      "capability": "index_intraday_compare",
+      "params": {"period": "15m", "trade_date": "20260922"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "fund_flow",
+      "capability": "fund_flow",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "index_intraday_compare",
+      "capability": "index_intraday_compare",
+      "params": {"period": "5m", "trade_date": "20260922"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "index_kline",
+      "capability": "index_kline_daily",
+      "params": {"index_code": "000001.SH", "period": "daily", "count": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "industry_flow",
+      "capability": "industry_flow",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "legacy_hot_rank",
+      "capability": "legacy_hot_rank",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "market_hot_rank",
+      "capability": "market_hot_rank",
+      "params": {"source": "ths", "trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "market_limit_board",
+      "capability": "market_limit_board",
+      "params": {"kind": "up"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "northbound_flow",
+      "capability": "northbound_flow",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "realtime_market",
+      "capability": "realtime_market",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "ths_hot",
+      "operation": "direct_provider_call",
+      "intent": "legacy_hot_rank",
+      "capability": "legacy_hot_rank",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    },
+    {
+      "provider": "ths_industry",
+      "operation": "direct_provider_call",
+      "intent": "industry_flow",
+      "capability": "industry_flow",
+      "params": {"trade_date": "20260922", "limit": 3},
+      "read_only": true
+    }
+  ],
+  "external_pending": [
+    {
+      "provider": "workbuddy_tencent_stock_mcp",
+      "status": "external_pending",
+      "reason": "external WorkBuddy Tencent stock MCP is outside the local provider registry",
+      "counts_as_provider": false
+    },
+    {
+      "provider": "external_tdx_channel",
+      "status": "external_pending",
+      "reason": "external TongdaXin channel is outside the local provider registry",
+      "counts_as_provider": false
+    }
+  ]
+}

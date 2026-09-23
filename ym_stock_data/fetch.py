@@ -25,6 +25,8 @@
 from datetime import datetime
 from importlib import import_module
 
+from .api import query as canonical_query
+
 
 # 路由表: data_type → (模块名, 函数名, {元数据})
 _ROUTES = {
@@ -51,10 +53,49 @@ _ROUTES = {
     "research":      ("research", "fetch_reports",    {"layer": 4, "desc": "个股研报(东财reportapi)"}),
     "filings":       ("filings", "fetch_filings",     {"layer": 4, "desc": "公司公告(巨潮cninfo)"}),
     "news":          ("news", "fetch_news",           {"layer": 4, "desc": "实时新闻(财联社电报)"}),
+    "limit_state":   ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
+    "market_limit_state": ("limit_state", "fetch_limit_state", {"layer": 3, "desc": "涨停/炸板/跌停/昨涨停与连板情绪"}),
+    "stock_event":   ("stock_events", "fetch_stock_event", {"layer": 4, "desc": "解禁/两融/大宗/股东户数/分红低频事实"}),
+    "iwencai_content": ("iwencai_content", "search_content", {"layer": 4, "desc": "问财研报/公告/新闻自然语言内容搜索"}),
+    "industry_research": ("research", "fetch_industry_reports", {"layer": 4, "desc": "行业名/股票代码行业研报(东财qType=1)"}),
 }
 
 
 _SOURCE_CACHE = {}
+
+
+# Only semantically equivalent V1 routes may enter the canonical router.
+# In particular, V1 sector_index is PyTDX 880 while the canonical intent is
+# THS 881, so it stays explicit legacy_direct until Task 13 adds an equivalent
+# canonical intent or removes the consumer.
+CANONICAL_ROUTES = {
+    "quotes": "stock_snapshot",
+    "index": "realtime_market",
+    "breadth": "review_sentiment",
+    "kline": "stock_kline",
+    "iwencai": "review_sentiment",
+    "research": "research",
+    "filings": "filings",
+    "news": "news",
+    "limit_state": "market_limit_state",
+    "market_limit_state": "market_limit_state",
+    "stock_event": "stock_event",
+    "sector_inflow": "industry_flow",
+    "northbound": "northbound_flow",
+    "ths_hot": "legacy_hot_rank",
+    "kline_15m": "index_intraday_compare",
+}
+LEGACY_DIRECT_ROUTES = {
+    key: _ROUTES[key]
+    for key in (
+        "sector_index",
+        "tencent",
+        "dragon_tiger",
+        "iwencai_content",
+        "industry_research",
+    )
+}
+TASK13_LEGACY_DIRECT = tuple(LEGACY_DIRECT_ROUTES)
 
 
 def _load_source(name: str):
@@ -86,6 +127,66 @@ def fetch(data_type: str, **kwargs) -> dict:
 
     module_name, func_name, meta = _ROUTES[data_type]
 
+    if data_type in CANONICAL_ROUTES:
+        intent = CANONICAL_ROUTES[data_type]
+        canonical_kwargs = dict(kwargs)
+        if data_type == "sector_inflow" and "top_n" in canonical_kwargs:
+            canonical_kwargs["limit"] = canonical_kwargs.pop("top_n")
+        if data_type == "ths_hot" and "date_str" in canonical_kwargs:
+            date_value = canonical_kwargs.pop("date_str")
+            if isinstance(date_value, str) and len(date_value) == 10:
+                date_value = date_value.replace("-", "")
+            canonical_kwargs["trade_date"] = date_value
+        if data_type in {"sector_inflow", "northbound", "ths_hot", "kline_15m"}:
+            canonical_kwargs.setdefault("use_case", "realtime_poll")
+        result = canonical_query(intent, **canonical_kwargs)
+        data = result.get("data")
+        if isinstance(data, dict):
+            if data_type == "sector_inflow":
+                rows = list(data.get("items") or [])
+                limit = canonical_kwargs.get("limit", 20)
+                data = {
+                    **data,
+                    "total": len(rows),
+                    "top": rows[:limit],
+                    "bottom": rows[-limit:] if rows else [],
+                }
+            elif data_type == "northbound":
+                rows = list(data.get("items") or [])
+                data = {
+                    **data,
+                    "date": data.get("trade_date"),
+                    "minutes": rows,
+                    "minute_count": len(rows),
+                    "source": "northbound_hsgt",
+                }
+            elif data_type == "ths_hot":
+                rows = list(data.get("items") or [])
+                data = {
+                    **data,
+                    "stocks": rows,
+                    "total": len(rows),
+                    "source": "ths_hot",
+                }
+        if data_type == "breadth" and isinstance(data, dict):
+            aggregates = data.get("aggregates")
+            breadth = aggregates.get("breadth") if isinstance(aggregates, dict) else None
+            if isinstance(breadth, dict):
+                data = breadth
+        projected = dict(data) if isinstance(data, dict) else {"data": data}
+        canonical_meta = dict(result.get("_meta", {}))
+        canonical_meta.setdefault("data_type", data_type)
+        canonical_meta.setdefault("layer", meta["layer"])
+        canonical_meta["compatibility_route"] = "canonical"
+        canonical_meta["canonical_intent"] = intent
+        projected["_meta"] = canonical_meta
+        if canonical_meta.get("status") == "error":
+            attempts = canonical_meta.get("attempts", [])
+            last_code = attempts[-1].get("error_code") if attempts else None
+            projected.setdefault("error", last_code or "QUERY_FAILED")
+            projected.setdefault("error_type", "ProviderError")
+        return projected
+
     try:
         source = _load_source(module_name)
         func = getattr(source, func_name)
@@ -94,12 +195,23 @@ def fetch(data_type: str, **kwargs) -> dict:
         if not isinstance(result, dict):
             result = {"data": result}
 
-        result["_meta"] = {
-            "data_type": data_type,
-            "source": module_name,
-            "layer": meta["layer"],
-            "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-        }
+        result_meta = dict(result.get("_meta", {}))
+        marker = result.get("_source")
+        if isinstance(marker, str) and marker:
+            aliases = {
+                "tencent_fallback": "tencent",
+                "sina_fallback": "sina",
+                "eastmoney_fallback": "eastmoney",
+            }
+            result_meta.setdefault("source", aliases.get(marker, marker))
+        result_meta.setdefault("data_type", data_type)
+        result_meta.setdefault("source", module_name)
+        result_meta.setdefault("layer", meta["layer"])
+        result_meta.setdefault(
+            "fetched_at", datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        )
+        result_meta["compatibility_route"] = "legacy_direct"
+        result["_meta"] = result_meta
         return result
 
     except Exception as e:
@@ -112,6 +224,7 @@ def fetch(data_type: str, **kwargs) -> dict:
                 "layer": meta["layer"],
                 "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
                 "error": True,
+                "compatibility_route": "legacy_direct",
             },
         }
 

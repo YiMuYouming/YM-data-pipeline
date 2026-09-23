@@ -71,6 +71,11 @@ def fetch_realtime() -> dict:
         "sgt_current_yi": sgt_current if sgt_current is not None else 0,
         "hgt_trend": "净流入" if (hgt_current or 0) > 0 else "净流出",
         "sgt_trend": "净流入" if (sgt_current or 0) > 0 else "净流出",
+        "hgt_reliability": "intraday_reference",
+        "sgt_reliability": "reference_only",
+        "authoritative_source": "hkex_daily",
+        "data_scope": "intraday_reference",
+        "trade_usage": "辅助，不单独触发交易",
         "minutes": minutes_data,
         "source": "northbound_hsgt",
     }
