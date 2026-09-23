@@ -26,7 +26,7 @@ print(query("review_sentiment", query="沪深A股 非ST 非停牌 最新价>=10 
 PY
 ```
 
-### 每日涨跌停事实与短线派生指标（本地试用）
+### 每日涨跌停事实与短线派生指标
 
 `./ym-data market-facts` 把涨停、跌停、炸板名单和全市场未复权日线写入独立的
 `data/market-facts.sqlite3`。只写入校验通过的整日结果；间歇错误会按日期列入
@@ -44,14 +44,16 @@ PY
 部分旧版 `limit_list_d` 历史行字段错位；同日 `limit_step` 板数只作待核参考，
 错误价格不入库，分层晋级和昨日连板收益在板数未核实时留空。榜单与日线逐股冲突
 也会阻断相关派生值。连板股三日风险和一年中位数尚未产出。
-此库尚未接入生产消费者。
+Hermes 看板经公共 `market_facts` intent 读取同一环境的独立事实库，
+每天 16:15 和 17:15（上海时间）触发管道 `refresh`；只展示已完成双日校验的
+晋级率，并标注实际交易日。采集失败时保留明确缺口，不把前一日写成当天。
 
 已有公共只读意图 `query("market_facts", trade_date="20260923")`（或
 `./ym-data query market_facts 'trade_date="20260923"'`），从当前运行环境的
 `data/market-facts.sqlite3` 读同一份报告；缺库/缺日期返回带 error code 的失败，
 历史查询不被当作实时行情。每项仍须核对 `trade_date`、`source_gaps` 和证据时间。
 
-逐项试用时只运行 `report`；它以 SQLite 只读模式打开现有本机库，库不存在会明确报错，
+逐项检查时可运行 `report`；它以 SQLite 只读模式打开当前环境的库，库不存在会明确报错，
 不会在查询时建库。建议按下面顺序检查 `source_gaps`、`return_evidence`、
 `limit_daily_quality` 和各指标是否为 `null`：
 
@@ -61,7 +63,7 @@ PY
 ./ym-data market-facts report --date 20260428  # 涨停榜与日线冲突，晋级率阻断
 ```
 
-这是历史数据快照的本机验证，不代表今日实时行情或生产消费端已接入。
+历史数据快照不代表盘中实时行情；查询时以返回的 `trade_date` 与证据时间为准。
 
 主要 intent：
 
