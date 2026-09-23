@@ -25,6 +25,16 @@ class TransientSourceRetryTests(unittest.TestCase):
         self.assertEqual("AUTH_DENIED", outcome.error_code)
         request.assert_called_once()
 
+    def test_fund_flow_retries_invalid_response_once(self):
+        provider = StockTodayProvider(token_loader=lambda: None)
+        bad = ProviderOutcome("stocktoday", "provider_error", error_code="INVALID_RESPONSE")
+        good = ProviderOutcome("stocktoday", "success", data={"items": [{"trade_date": "20260922", "net_amount": 1.0}], "_stocktoday": {}})
+        with patch.object(provider, "_request_table", side_effect=[bad, good]) as request:
+            outcome = provider.call("fund_flow", {"trade_date": "20260922"})
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(2, request.call_count)
+        self.assertEqual(1, len(outcome.data["items"]))
+
     def test_failed_quote_read_invalidates_socket_for_next_poll(self):
         class Broken:
             def __init__(self):
