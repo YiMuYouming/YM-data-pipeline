@@ -82,7 +82,7 @@
 - 本次只完成高频个股路由重排，不改变上一节列出的指数分钟、资金流、问财及交易日历限制。回滚时在 Hermes 核对工作树和当前 HEAD 后切到上述 tag，重启看板服务并回读来源；生产 `data/`、缓存和账户 DB 保持原状。
 ## 2026-09-23 夜间增量：market-facts 正式接入
 
-- Hermes 管道 `/home/agentuser/YM-data-pipeline` 从 `1275298` 快进到 `cfd2e6c`；看板 `/home/agentuser/YiMu-Capital` 从 `214d024` 快进到 `71b9c17`，均为各自原生产分支。`yimu-live-dashboard.service` 已重启。Agent 使用公共 `query("market_facts", trade_date="YYYYMMDD")`；看板 `/api/live/market-facts`、`/api/live/quotes.market_facts` 和 W04 晋级率卡片消费同一结果。无日期查询按最近已完成交易日，盘中不得把上一交易日标为今日。
+- Hermes 管道 `/home/agentuser/YM-data-pipeline` 从 `1275298` 快进至功能提交 `5c36a58`（其后仅补发布文档）；看板 `/home/agentuser/YiMu-Capital` 从 `214d024` 快进到 `71b9c17`，均为各自原生产分支。`yimu-live-dashboard.service` 已重启。Agent 使用公共 `query("market_facts", trade_date="YYYYMMDD")`；精确短语 `查晋级率`、`晋级率` 也映射到此 intent。看板 `/api/live/market-facts`、`/api/live/quotes.market_facts` 和 W04 晋级率卡片消费同一结果。无日期查询按最近已完成交易日，盘中不得把上一交易日标为今日。
 - Hermes 原无 `market-facts.sqlite3`。只在确认目标不存在后，以 SQLite backup 从本机已验证的历史事实建立**新的独立库**，校验 `integrity_check=ok`、最新榜单与日线日期 `20260923`、SHA-256 `841817ec078e03453e126c8c694595db2a76735a97d316ab9e9a0d13ad4e3568`，然后原子命名。没有覆盖 Hermes 既有生产数据库、缓存或账户事实；事实库不入 Git。
 - 每交易日 16:15、17:15（Asia/Shanghai）由看板调用管道 `market-facts refresh`，不是消费者自行选源。Hermes 已有 `/etc/yimu/stocktoday.env` 与本机 Keychain 为同一 token；本次没有保留第二份凭据。使用看板同一 venv，在隔离临时库对 `20260923` 实际刷新：东财涨/跌/炸板 `51/13/26`，StockToday 日线 `5556` 行，回执 `gaps=[]`。系统 Python 缺少 `httpx2`，因此采集必须用看板 venv；定时器使用 `sys.executable`。隔离临时库已清理。
 - 重启后真实 GET `/api/live/market-facts` 与 `/api/live/quotes` 均回读 `trade_date=20260923`、`provider_used=market_facts`、晋级 `12/63=19.047619%`；当日和前一日榜单/日线逐股校验均 `checked=true`、无缺股及非正涨幅。保留事实采集时间 `2026-09-23T17:02:21+08:00`。整体状态为 `degraded`，仅因同花顺情绪全上市分母未核实、连板断板风险定义与复权历史缺失；这两项不由晋级率卡片冒充完成。
