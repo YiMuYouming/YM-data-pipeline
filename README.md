@@ -23,6 +23,38 @@ print(query("review_sentiment", query="沪深A股 非ST 非停牌 最新价>=10 
 PY
 ```
 
+### 每日涨跌停事实与短线派生指标（本地试用）
+
+`./ym-data market-facts` 把涨停、跌停、炸板名单和全市场未复权日线写入独立的
+`data/market-facts.sqlite3`。只写入校验通过的整日结果；间歇错误会按日期列入
+回填回执，不会把失败榜单当成零。运行数据库不入 Git。
+
+```sh
+./ym-data market-facts backfill-history --start 20260901 --end 20260923 --max-days 25
+./ym-data market-facts backfill-daily --start 20260901 --end 20260923 --max-days 25
+./ym-data market-facts report --date 20260923
+```
+
+`report` 给出昨日涨停、昨日二板及以上、昨日炸板三个固定名单的今日平均涨跌幅，
+并保留来源、交易日、样本数和缺口。弈沐上涨占比当前以有交易日线的股票为分母；
+日线不含停牌股票，不能标为同花顺“上涨家数 / 全部上市股票”的精确同口径值。
+部分旧版 `limit_list_d` 历史行字段错位；同日 `limit_step` 板数只作待核参考，
+错误价格不入库，分层晋级和昨日连板收益在板数未核实时留空。榜单与日线逐股冲突
+也会阻断相关派生值。连板股三日风险和一年中位数尚未产出。
+此库尚未接入生产消费者。
+
+逐项试用时只运行 `report`；它以 SQLite 只读模式打开现有本机库，库不存在会明确报错，
+不会在查询时建库。建议按下面顺序检查 `source_gaps`、`return_evidence`、
+`limit_daily_quality` 和各指标是否为 `null`：
+
+```sh
+./ym-data market-facts report --date 20260923  # 正常盘后样本
+./ym-data market-facts report --date 20260107  # 缺股时只保留完整的炸板收益
+./ym-data market-facts report --date 20260428  # 涨停榜与日线冲突，晋级率阻断
+```
+
+这是历史数据快照的本机验证，不代表今日实时行情或生产消费端已接入。
+
 主要 intent：
 
 | intent | 用途 | 关键参数 |
