@@ -6,6 +6,7 @@ import argparse
 import json
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from .acceptance import (
@@ -129,6 +130,18 @@ def _parser() -> argparse.ArgumentParser:
     stocktoday_audit.add_argument("--output", type=Path, required=True)
     stocktoday_status = stocktoday_commands.add_parser("audit-status")
     stocktoday_status.add_argument("receipt", type=Path)
+    facts_parser = commands.add_parser("market-facts", help="dated limit facts and derived short-term indicators")
+    facts_commands = facts_parser.add_subparsers(dest="facts_command", required=True)
+    for name in ("collect-limits", "collect-history", "collect-daily", "collect-returns", "report"):
+        action = facts_commands.add_parser(name)
+        action.add_argument("--date", required=name != "report", help="exchange trade date YYYYMMDD")
+        action.add_argument("--db", type=Path, help="separate market-facts SQLite path")
+    for name in ("backfill-history", "backfill-daily"):
+        backfill = facts_commands.add_parser(name)
+        backfill.add_argument("--start", required=True, help="first exchange date YYYYMMDD")
+        backfill.add_argument("--end", required=True, help="last exchange date YYYYMMDD")
+        backfill.add_argument("--max-days", type=int, default=25)
+        backfill.add_argument("--db", type=Path, help="separate market-facts SQLite path")
     commands.add_parser("list", help="list canonical and compatibility routes")
     return parser
 
@@ -159,6 +172,31 @@ def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+def _collect_history(store, trade_date: str, normalize):
+    responses = {}
+    for kind in ("U", "D", "Z", "STEP"):
+        for _ in range(2):
+            result = (canonical_query("stocktoday_data", api_name="limit_step",
+                                      params={"trade_date": trade_date})
+                      if kind == "STEP" else
+                      canonical_query("stocktoday_data", api_name="limit_list_d",
+                                      params={"trade_date": trade_date, "limit_type": kind}))
+            if (result.get("_meta") or {}).get("status") in {"success", "empty"}:
+                break
+        responses[kind] = result
+    return store.ingest_limits(trade_date, normalize(trade_date, responses))
+
+
+def _collect_daily(store, trade_date: str):
+    result = None
+    for _ in range(2):
+        result = canonical_query("stocktoday_data", api_name="daily",
+                                 params={"trade_date": trade_date}, max_rows=6000)
+        if (result.get("_meta") or {}).get("status") == "success":
+            break
+    return store.ingest_daily(trade_date, result)
+
+
 def create_tdx_auth(
     *,
     mode: str | None = None,
@@ -186,6 +224,91 @@ def _credential_store_mode(auth: TdxOwnedAuth, explicit: str | None) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command == "market-facts":
+        from datetime import datetime
+        from .contracts import TZ_SHANGHAI
+        from .market_facts import DEFAULT_DB, MarketFactStore, normalize_stocktoday_limits
+        from .trading_calendar import is_trading_day, latest_completed_trade_date
+
+        try:
+            store = MarketFactStore(args.db or DEFAULT_DB, read_only=args.facts_command == "report")
+            if args.facts_command in {"backfill-history", "backfill-daily"}:
+                from datetime import datetime
+                start = datetime.strptime(args.start, "%Y%m%d").date()
+                end = datetime.strptime(args.end, "%Y%m%d").date()
+                if end < start or args.max_days < 1:
+                    raise ValueError("invalid history range or max-days")
+                days = []
+                day = start
+                while day <= end:
+                    if is_trading_day(day):
+                        days.append(day.strftime("%Y%m%d"))
+                    day += timedelta(days=1)
+                if len(days) > args.max_days:
+                    raise ValueError(f"range has {len(days)} trading days; max-days is {args.max_days}")
+                receipt = {"start": args.start, "end": args.end,
+                           "dataset": "limit_events" if args.facts_command == "backfill-history" else "daily_ohlc",
+                           "collected": [], "already_present": [], "gaps": []}
+                for trade_date in days:
+                    with store._connect() as conn:
+                        daily_present = conn.execute(
+                            "SELECT 1 FROM daily_runs WHERE trade_date=? LIMIT 1", (trade_date,)
+                        ).fetchone() is not None
+                    present = store.latest_limit_run(trade_date) if args.facts_command == "backfill-history" else daily_present
+                    if present:
+                        receipt["already_present"].append(trade_date)
+                        continue
+                    try:
+                        record = (_collect_history(store, trade_date, normalize_stocktoday_limits)
+                                  if args.facts_command == "backfill-history"
+                                  else _collect_daily(store, trade_date))
+                        receipt["collected"].append({"date": trade_date, "run_id": record["run_id"],
+                                                     "row_count": record.get("row_count"),
+                                                     "counts": record.get("counts")})
+                    except (ValueError, OSError) as error:
+                        receipt["gaps"].append({"date": trade_date, "reason": str(error)[:160]})
+                _print_json(receipt)
+                return 0 if not receipt["gaps"] else 2
+            if args.facts_command == "report":
+                trade_date = args.date or latest_completed_trade_date(datetime.now(TZ_SHANGHAI))
+                _print_json(store.report(trade_date))
+                return 0
+            if args.facts_command == "collect-limits":
+                source = canonical_query("market_limit_state", date=args.date)
+                _print_json(store.ingest_limits(args.date, source))
+                return 0
+            if args.facts_command == "collect-history":
+                _print_json(_collect_history(store, args.date, normalize_stocktoday_limits))
+                return 0
+            if args.facts_command == "collect-daily":
+                _print_json(_collect_daily(store, args.date))
+                return 0
+            _, codes = store.prior_cohort_codes(args.date)
+            data, providers, fetched = {}, set(), []
+            for offset in range(0, len(codes), 25):
+                chunk = codes[offset:offset + 25]
+                result = canonical_query("stock_snapshot", codes=chunk)
+                meta = result.get("_meta") or {}
+                if meta.get("status") not in {"success", "degraded"}:
+                    raise ValueError(f"quote batch {offset // 25 + 1} unavailable")
+                provider = str(meta.get("provider_used") or "")
+                if not provider:
+                    raise ValueError("quote batch provider missing")
+                providers.add(provider)
+                fetched.append(meta.get("fetched_at"))
+                batch = result.get("data") or {}
+                for code in chunk:
+                    if not isinstance(batch.get(code), dict):
+                        raise ValueError(f"quote batch {offset // 25 + 1} incomplete")
+                    data[code] = {**batch[code], "source": provider}
+            source = {"data": data, "_meta": {"status": "success", "provider_used": ",".join(sorted(providers)),
+                                                "fetched_at": max(fetched)}}
+            _print_json(store.ingest_quotes(args.date, source))
+            return 0
+        except (ValueError, OSError) as error:
+            _print_json({"status": "unavailable", "error_code": type(error).__name__,
+                         "reason": str(error)[:200]})
+            return 2
     if args.command == "query":
         result = canonical_query(args.intent, **_parse_params(args.params, parser))
         _print_json(result)

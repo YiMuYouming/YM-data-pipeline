@@ -85,7 +85,7 @@ _ALLOWED_PARAMS = {
             "version",
         }
     ),
-    "market_limit_state": frozenset({"date", "limit_type"}),
+    "market_limit_state": frozenset({"date", "limit_type", "previous_date", "include_promotion"}),
     "market_limit_board": frozenset({"kind", "date"}),
     "market_hot_rank": frozenset({"source", "trade_date", "limit"}),
     "industry_flow": frozenset({"trade_date", "limit", "use_case"}),
@@ -377,6 +377,34 @@ def _validate_params(intent: str, params: dict) -> None:
         limit_type = params.get("limit_type")
         if limit_type is not None and limit_type not in {"U", "D"}:
             raise ValueError("market_limit_state limit_type must be U or D")
+        include_promotion = params.pop("include_promotion", False)
+        if type(include_promotion) is not bool:
+            raise ValueError("market_limit_state include_promotion must be boolean")
+        previous_date = params.get("previous_date")
+        if include_promotion and previous_date is None:
+            if date is None:
+                raise ValueError("promotion needs an explicit date")
+            try:
+                previous_date = previous_trading_day(datetime.strptime(date, "%Y%m%d").date()).strftime("%Y%m%d")
+            except TradeCalendarUnavailable as exc:
+                raise ValueError("promotion exchange calendar unavailable") from exc
+            params["previous_date"] = previous_date
+        if previous_date is not None:
+            if (
+                not isinstance(previous_date, str)
+                or not re.fullmatch(r"\d{8}", previous_date)
+                or date is None
+                or limit_type is not None
+            ):
+                raise ValueError("promotion needs date and previous_date, without limit_type")
+            try:
+                current_day = datetime.strptime(date, "%Y%m%d").date()
+                previous_day = datetime.strptime(previous_date, "%Y%m%d").date()
+                expected_previous = previous_trading_day(current_day)
+                if not is_trading_day(current_day) or previous_day != expected_previous:
+                    raise ValueError("previous_date must be the preceding exchange trading day")
+            except TradeCalendarUnavailable as exc:
+                raise ValueError("promotion exchange calendar unavailable") from exc
     elif intent == "market_limit_board":
         if params.get("kind") not in {"up", "down", "broken", "yesterday"}:
             raise ValueError(

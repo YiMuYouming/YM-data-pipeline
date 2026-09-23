@@ -1,6 +1,6 @@
 ---
 name: ym-a-stock-pipeline
-description: 弈沐资本 A 股统一数据入口；把自然语言行情、板块、筛选、K 线、研报、公告和新闻请求映射到 public query() 或仓库根目录 ./ym-data。
+description: 弈沐资本 A 股统一数据入口；把行情、板块、筛选、K 线、研报及盘后每日涨跌停事实和短线派生指标映射到 public query() 或仓库根目录 ./ym-data。
 metadata:
   short-description: A 股统一数据入口
 ---
@@ -38,6 +38,27 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 先将口语请求映射为一个 intent 和最小参数集，不擅自补充筛选条件。复杂研究拆成多个
 独立查询，并分别保留结果、时间和质量信息。
 
+## 本地试用的每日事实与弈沐指标
+
+用户问“今日情绪、昨日涨停/连板/炸板今日收益、实际晋级率”时，可从仓库根执行
+`./ym-data market-facts report`；明确日期用 `--date YYYYMMDD`。无日期按上海时间和
+交易所日历选最近已完成交易日，报告可能因该日尚未采集而返回缺口。此命令只读本机
+`data/market-facts.sqlite3`，**尚未接入生产、也不是 Python `query()` 的新 intent**；
+不能用它声称看板、复盘或远端 Agent 已切换。
+
+| 问法 | 报告字段 | 必须检查 |
+| --- | --- | --- |
+| 昨日涨停今日平均收益 | `yesterday_limit_up_return_pct` | `return_cohort_counts.yesterday_limit_up` 与对应 `return_evidence` |
+| 昨日二板及以上今日平均收益 | `yesterday_consecutive_return_pct` | 历史板数未经核实时值为空 |
+| 昨日炸板今日平均收益 | `yesterday_broken_return_pct` | 昨日炸板完整名单与今日全部报价覆盖 |
+| 次日晋级率 | `promotion_overall_by_code`；分层看 `promotion.rates` | 同源相邻日名单；板数冲突时分层为空 |
+| 市场情绪 | `yimu_emotion` | 分母是当日有日线的股票，**不是**全部上市股票；`ths_emotion_equivalent` 仍为空 |
+| 连板股三日风险 | `consecutive_break_risk` | 当前为空；定义、复权价格和一年窗口尚未完成 |
+
+每项先看 `source_gaps`、`limit_daily_quality` 和原始 `fetched_at`；缺报价、停牌、
+历史榜单与日线冲突时只报告缺口，不补零。精确同花顺热榜仍用
+`market_hot_rank(source=ths)`，不可由这些涨跌幅指标伪造。
+
 ## 公共入口示例
 
 ```bash
@@ -54,7 +75,7 @@ result = query("stock_kline", code="600519", period="daily", count=20)
 print(result["_meta"])
 ```
 
-CLI 与 Python `query()` 是同一公共契约。Agent 只传业务参数；不静默重试、不拼接第二条
+上面 `query` / `intent` CLI 与 Python `query()` 是同一公共契约；`market-facts` 是另列的本地试用读库命令。Agent 只传业务参数；不静默重试、不拼接第二条
 数据链，也不补造缺失数据。
 
 ## K 线与日期

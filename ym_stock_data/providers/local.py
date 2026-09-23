@@ -26,7 +26,7 @@ from ..sources import (
     ths_hot,
     ths_industry,
 )
-from ..sources.limit_state import fetch_limit_state
+from ..sources.limit_state import fetch_limit_promotion, fetch_limit_state
 from .base import ProviderOutcome
 
 
@@ -505,8 +505,10 @@ class LocalProvider:
             ("eastmoney_limit_pool", "review_sentiment"): lambda: fetch_limit_state(
                 date=params.get("date")
             ),
-            ("eastmoney_limit_pool", "market_limit_state"): lambda: fetch_limit_state(
-                date=params.get("date")
+            ("eastmoney_limit_pool", "market_limit_state"): lambda: (
+                fetch_limit_promotion(params["date"], params["previous_date"])
+                if params.get("previous_date")
+                else fetch_limit_state(date=params.get("date"))
             ),
             ("eastmoney_limit_pool", "market_limit_board"): lambda: _project_limit_board(
                 params

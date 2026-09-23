@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 
 from .eastmoney_http import CLIENT
 
@@ -99,3 +100,110 @@ def fetch_limit_state(date: str | None = None) -> dict:
         "pools": pools,
         "source": "eastmoney_limit_pool",
     }
+
+
+def derive_limit_promotion(
+    previous: dict,
+    current: dict,
+    *,
+    previous_date: str | None = None,
+    current_date: str | None = None,
+) -> dict:
+    """Derive actual next-board seals from two complete, dated stock sets.
+
+    Percentages are 0–100.  A green stock that did not seal its next board is
+    never counted as promoted.  The full ladder also includes promotions above
+    board four, even though the published tiered rates stop at 3→4.
+    """
+
+    def stock_set(snapshot: dict, day: str | None) -> tuple[dict[str, int], int]:
+        if not isinstance(snapshot, dict) or snapshot.get("error"):
+            raise ValueError("LIMIT_PROMOTION_SOURCE_UNAVAILABLE")
+        if day and snapshot.get("date") != day:
+            raise ValueError("LIMIT_PROMOTION_DATE_MISMATCH")
+        pools = snapshot.get("pools")
+        rows = pools.get("zt") if isinstance(pools, dict) else None
+        if (
+            not isinstance(rows, list)
+            or not rows
+            or type(snapshot.get("zt_count")) is not int
+            or snapshot["zt_count"] != len(rows)
+        ):
+            raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
+        stocks: dict[str, int] = {}
+        excluded_st = 0
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
+            code = str(row.get("code") or "")
+            board = row.get("limit_days")
+            if not re.fullmatch(r"\d{6}", code) or code in seen or type(board) is not int or board < 1:
+                raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
+            seen.add(code)
+            if "ST" in str(row.get("name") or "").upper():
+                excluded_st += 1
+                continue
+            stocks[code] = board
+        if not stocks:
+            raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
+        return stocks, excluded_st
+
+    previous_stocks, excluded_previous = stock_set(previous, previous_date)
+    current_stocks, excluded_current = stock_set(current, current_date)
+    promoted = {
+        code: (board, current_stocks[code])
+        for code, board in previous_stocks.items()
+        if current_stocks.get(code) == board + 1
+    }
+
+    def rate(previous_board: int | None) -> dict:
+        universe = (
+            previous_stocks
+            if previous_board is None
+            else {code: board for code, board in previous_stocks.items() if board == previous_board}
+        )
+        winners = sorted(code for code in universe if code in promoted)
+        return {
+            "numerator": len(winners),
+            "denominator": len(universe),
+            "pct": round(len(winners) / len(universe) * 100, 6) if universe else None,
+            "promoted_codes": winners,
+        }
+
+    return {
+        "previous_date": previous.get("date"),
+        "current_date": current.get("date"),
+        "previous_non_st_count": len(previous_stocks),
+        "current_non_st_count": len(current_stocks),
+        "current_consecutive_count": sum(board >= 2 for board in current_stocks.values()),
+        "highest_board": max(current_stocks.values()),
+        "excluded_st_previous": excluded_previous,
+        "excluded_st_current": excluded_current,
+        "rates": {
+            "one_to_two": rate(1),
+            "two_to_three": rate(2),
+            "three_to_four": rate(3),
+            "overall": rate(None),
+        },
+        "basis": "previous_complete_non_st_zt_pool_to_current_complete_non_st_zt_pool",
+        "source": "eastmoney_limit_pool",
+    }
+
+
+def fetch_limit_promotion(date: str, previous_date: str) -> dict:
+    """Read both dates from the same source; return no rate on partial data."""
+
+    previous = fetch_limit_state(date=previous_date)
+    if previous.get("error"):
+        return {"error": "previous pool unavailable", "error_type": "LIMIT_PROMOTION_SOURCE_UNAVAILABLE"}
+    current = fetch_limit_state(date=date)
+    if current.get("error"):
+        return {"error": "current pool unavailable", "error_type": "LIMIT_PROMOTION_SOURCE_UNAVAILABLE"}
+    try:
+        promotion = derive_limit_promotion(
+            previous, current, previous_date=previous_date, current_date=date
+        )
+    except ValueError as exc:
+        return {"error": "promotion input invalid", "error_type": str(exc)}
+    return {**current, "promotion": promotion}
