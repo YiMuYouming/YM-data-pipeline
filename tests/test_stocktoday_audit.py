@@ -2107,7 +2107,7 @@ class StockTodayAuditTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    "from ym_stock_data.stocktoday_audit import load_probes; from ym_stock_data.provider_smoke_v3 import load_probe_manifest, RUNNER_VERSION; p=load_probes(); m=load_probe_manifest(); assert len(p['methods']) == 245; assert p['account_diagnostic']['name'] == 'token_info'; assert len(m['providers']) == 52; assert RUNNER_VERSION.startswith('provider-smoke-runner.v3.'); print('wheel-smoke-ok')",
+                    "from ym_stock_data.stocktoday_audit import load_probes; from ym_stock_data.provider_smoke_v3 import load_probe_manifest, RUNNER_VERSION; p=load_probes(); m=load_probe_manifest(); assert len(p['methods']) == 245; assert p['account_diagnostic']['name'] == 'token_info'; assert len(m['providers']) == 53; assert RUNNER_VERSION.startswith('provider-smoke-runner.v3.'); print('wheel-smoke-ok')",
                 ],
                 cwd=outside,
                 env=environment,
