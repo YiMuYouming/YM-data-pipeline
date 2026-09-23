@@ -29,6 +29,7 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 涨停、跌停、炸板、昨日涨停明细 | `market_limit_board` | `kind=up/down/broken/yesterday`；可选日期 |
 | 同花顺/东财热榜 | `market_hot_rank` | `source=ths/dc`；可选日期、`limit` |
 | 涨跌停状态聚合 | `market_limit_state` | 兼容查询；新请求优先使用明细 intent |
+| 已封存交易日的晋级率与短线收益 | `market_facts` | 可选 `trade_date=YYYYMMDD`；逐项检查缺口和来源时间 |
 | 个股低频事件 | `stock_event` | 只传受支持的事件参数 |
 | 热度、问财型筛选 | `review_sentiment` | 把用户原始筛选写入 `query` |
 | 研报、公告、新闻 | `research`、`filings`、`news` | 只传 canonical 参数 |
@@ -38,13 +39,13 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 先将口语请求映射为一个 intent 和最小参数集，不擅自补充筛选条件。复杂研究拆成多个
 独立查询，并分别保留结果、时间和质量信息。
 
-## 本地试用的每日事实与弈沐指标
+## 每日事实与弈沐指标
 
-用户问“今日情绪、昨日涨停/连板/炸板今日收益、实际晋级率”时，可从仓库根执行
-`./ym-data market-facts report`；明确日期用 `--date YYYYMMDD`。无日期按上海时间和
-交易所日历选最近已完成交易日，报告可能因该日尚未采集而返回缺口。此命令只读本机
-`data/market-facts.sqlite3`，**尚未接入生产、也不是 Python `query()` 的新 intent**；
-不能用它声称看板、复盘或远端 Agent 已切换。
+用户问“今日情绪、昨日涨停/连板/炸板今日收益、实际晋级率”时，用
+`query("market_facts", trade_date="YYYYMMDD")`；无日期按上海时间和交易所日历
+选最近已完成交易日。此意图只读运行环境的事实库；该日未采集或缺库时显式失败，
+不得以旧日期结果回答今日问题。`./ym-data market-facts report --date YYYYMMDD`
+仍是等价的本机只读诊断命令。
 
 | 问法 | 报告字段 | 必须检查 |
 | --- | --- | --- |
@@ -75,7 +76,7 @@ result = query("stock_kline", code="600519", period="daily", count=20)
 print(result["_meta"])
 ```
 
-上面 `query` / `intent` CLI 与 Python `query()` 是同一公共契约；`market-facts` 是另列的本地试用读库命令。Agent 只传业务参数；不静默重试、不拼接第二条
+上面 `query` / `intent` CLI 与 Python `query()` 是同一公共契约；`market-facts` 子命令保留为采集和只读诊断。Agent 只传业务参数；不静默重试、不拼接第二条
 数据链，也不补造缺失数据。
 
 ## K 线与日期
