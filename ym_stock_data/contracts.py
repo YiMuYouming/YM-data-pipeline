@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 
@@ -18,11 +19,15 @@ ATTEMPT_STATUSES = frozenset(
         "timeout",
         "network_error",
         "provider_error",
+        "quality_failure",
         "breaker_open",
         "incompatible",
     }
 )
 FRESHNESS_STATUSES = frozenset({"fresh", "stale"})
+SOURCE_TIERS = frozenset({"primary", "fallback", "explicit"})
+POLICY_STATUSES = frozenset({"active", "inactive"})
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 TZ_SHANGHAI = timezone(timedelta(hours=8))
 
 
@@ -67,6 +72,11 @@ def build_result(
     max_age_sec: int,
     fetched_at: str | None = None,
     auth: dict | None = None,
+    pipeline_version: str = "3.0",
+    route_policy_version: str = "3.0",
+    source_tier: str = "primary",
+    policy_evidence_sha256: str | None = None,
+    policy_status: str = "inactive",
 ) -> dict:
     """Build contract 1.0 without leaking provider secrets."""
 
@@ -91,6 +101,19 @@ def build_result(
                 else {"required": False, "status": "not_required"}
             ),
             "trade_usage": trade_usage,
+            "pipeline_version": pipeline_version,
+            "route_policy_version": route_policy_version,
+            "source_tier": source_tier,
+            "policy_evidence_sha256": policy_evidence_sha256,
+            "policy_status": policy_status,
+            "attempt_classification_trace": [
+                {
+                    "provider": attempt.provider,
+                    "status": attempt.status,
+                    "error_code": attempt.error_code,
+                }
+                for attempt in attempts
+            ],
         },
     }
     validate_result(result)
@@ -207,3 +230,43 @@ def validate_result(result: dict) -> None:
         raise ValueError("data_scope must be a non-empty string")
     if not isinstance(meta["trade_usage"], str) or not meta["trade_usage"]:
         raise ValueError("trade_usage must be a non-empty string")
+
+    # V3 policy metadata is additive.  Keep these checks optional so older
+    # compatibility payloads that still validate contract 1.0 remain valid.
+    if "pipeline_version" in meta and (
+        not isinstance(meta["pipeline_version"], str) or not meta["pipeline_version"]
+    ):
+        raise ValueError("pipeline_version must be a non-empty string")
+    if "route_policy_version" in meta and (
+        not isinstance(meta["route_policy_version"], str)
+        or not meta["route_policy_version"]
+    ):
+        raise ValueError("route_policy_version must be a non-empty string")
+    if "source_tier" in meta and meta["source_tier"] not in SOURCE_TIERS:
+        raise ValueError("invalid source_tier")
+    if "policy_status" in meta and meta["policy_status"] not in POLICY_STATUSES:
+        raise ValueError("invalid policy_status")
+    if "policy_evidence_sha256" in meta:
+        evidence_sha = meta["policy_evidence_sha256"]
+        if evidence_sha is not None and (
+            not isinstance(evidence_sha, str) or not SHA256_RE.fullmatch(evidence_sha)
+        ):
+            raise ValueError("policy_evidence_sha256 must be a SHA-256 hash or null")
+    trace = meta.get("attempt_classification_trace")
+    if trace is not None:
+        if not isinstance(trace, list) or len(trace) != len(attempts):
+            raise ValueError("attempt_classification_trace must match attempts")
+        for index, item in enumerate(trace):
+            if not isinstance(item, dict) or set(item) != {
+                "provider",
+                "status",
+                "error_code",
+            }:
+                raise ValueError("invalid attempt_classification_trace item")
+            attempt = attempts[index]
+            if item != {
+                "provider": attempt["provider"],
+                "status": attempt["status"],
+                "error_code": attempt["error_code"],
+            }:
+                raise ValueError("attempt_classification_trace drifted")

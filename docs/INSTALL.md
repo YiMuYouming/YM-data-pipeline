@@ -1,5 +1,28 @@
 # ym-stock-data 安装与 provider 配置
 
+本仓库的 canonical checkout 是 `/Users/yimu/Projects/YM_Capital/YM-data-pipeline`。
+Agent 和新消费端只使用仓库根 `./ym-data` 或 public
+`from ym_stock_data import query`；其它入口属于旧消费者的 compatibility wrapper，
+不是 provider fallback。
+
+## Skill validator（离线 dev 环境）
+
+官方 Skill validator 依赖仓库 dev group 中锁定的 `pyyaml==6.0.3`。首次运行前确认
+`/opt/homebrew/bin/uv` 和本机 uv cache 已存在；使用项目路径哈希生成 checkout 专属
+外置环境，命令不联网、不读取 provider，也不需要临时 `PYTHONPATH`：
+
+```bash
+project_root=/Users/yimu/Projects/YM_Capital/YM-data-pipeline
+project_cache=$(/opt/homebrew/bin/uv cache dir)
+project_hash=$(printf '%s' "$project_root" | shasum -a 256)
+project_hash=${project_hash%% *}
+project_env=${project_cache%/}/ym-stock-data-project-envs/$project_hash
+UV_PROJECT_ENVIRONMENT="$project_env" /opt/homebrew/bin/uv run --offline \
+  --project "$project_root" \
+  python /Users/yimu/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
+  "$project_root/skills/ym-a-stock-pipeline"
+```
+
 ## 基础安装与诊断
 
 ```bash
@@ -24,6 +47,12 @@ uv 选择顺序为：显式绝对路径 `YM_DATA_UV_BIN`、PATH 中逐项候选�
 ```
 
 零鉴权不代表在线可用；以 query 返回的 `provider_used`、`attempts`、`quality` 与 freshness 为准。
+
+每个 V3 结果仍保持 contract 1.0，并在 `_meta` 中保留
+`pipeline_version`、`route_policy_version`、`source_tier`、
+`policy_evidence_sha256`、`provider_used`、完整 `attempts`、`quality` 和
+`fetched_at`。quality 的 reason codes、coverage/missing 与 source gap 必须如实保留；
+没有兼容且已验证的来源时，不能补值或把合法 empty 当作成功。
 
 实验性结构化选股 provider 使用固定 `pytdx==1.72`，id 为 `pytdx_screener`。它只接受
 含唯一 `沪深A股` / 沪市 / 深市 universe、至少一个审核过的 AND filter，且
@@ -110,3 +139,7 @@ result = query("stock_snapshot", codes=["600519"])
 ```
 
 `fetch()` 与 `v2.resolve()` 仅是兼容投影。没有 canonical 等价 intent 的旧 880 板块、15 分钟指数、热点、北向、资金流与部分内容检索仍明确标记为 `legacy_direct`，构成永久兼容边界。它们不推荐新代码使用，不承诺迁移时间，也不会把 880 语义偷换成同花顺 881。
+
+compatibility wrapper 只能由尚未迁移的旧消费端使用；Agent 不得在 query 失败后自行
+选择 provider、拼 fallback、调用私有 SDK 或读取 vendor URL。CLI 是无 Skill 平台的同一
+canonical fallback，不是数据源 fallback。

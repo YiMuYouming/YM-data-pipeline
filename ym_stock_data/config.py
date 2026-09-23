@@ -10,6 +10,10 @@ PROVIDER_STATE_PATH = Path.home() / ".ym-stock-data" / "state" / "providers.sqli
 
 # PyTDX 服务器列表 (IP, port)
 PYTDX_SERVERS = [
+    # 2026-09-23 新协议 bootstrap 实测：quotes=2、bars=2。
+    ("124.71.187.122", 7709),
+    ("122.51.120.217", 7709),
+    ("110.41.2.72", 7709),
     # 2026-07-13 业务探针验证：报价与日线均非空。全部为 PyTDX 公共零鉴权节点。
     ("123.125.108.14", 7709),
     ("115.238.56.198", 7709),

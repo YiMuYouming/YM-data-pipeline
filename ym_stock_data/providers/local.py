@@ -12,7 +12,20 @@ from datetime import datetime
 from typing import Callable
 
 from ..contracts import TZ_SHANGHAI
-from ..sources import filings, news, pytdx, research, stock_events, tencent, ths_industry
+from ..sources import (
+    eastmoney_index,
+    eastmoney_stock,
+    filings,
+    news,
+    northbound,
+    pytdx,
+    research,
+    sina_index,
+    stock_events,
+    tencent,
+    ths_hot,
+    ths_industry,
+)
 from ..sources.limit_state import fetch_limit_state
 from .base import ProviderOutcome
 
@@ -24,9 +37,15 @@ LOCAL_PROVIDER_NAMES = frozenset(
         "tencent",
         "sina",
         "ths_industry",
+        "northbound",
+        "ths_hot",
+        "pytdx_index",
+        "sina_index",
         "pytdx_breadth",
         "eastmoney_breadth",
         "eastmoney_limit_pool",
+        "eastmoney_index",
+        "eastmoney_stock",
         "eastmoney_datacenter",
         "eastmoney_research",
         "cninfo",
@@ -43,6 +62,15 @@ def _now_iso() -> str:
 def _error_code(value: object, default: str = "PROVIDER_ERROR") -> str:
     candidate = str(value or "")
     return candidate if _SAFE_CODE.fullmatch(candidate) else default
+
+
+def _compact_date(value: object) -> str | None:
+    text = str(value or "")[:10]
+    if re.fullmatch(r"\d{8}", text):
+        return text
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text.replace("-", "")
+    return None
 
 
 def _actual_source(provider: str, raw: dict) -> str:
@@ -69,6 +97,7 @@ def _actual_source(provider: str, raw: dict) -> str:
         "tencent_index_fallback": "tencent",
         "sina_fallback": "sina",
         "cls_telegraph": "cls",
+        "northbound_hsgt": "northbound",
     }
     return aliases.get(source, source.removesuffix("_fallback"))
 
@@ -116,6 +145,227 @@ def _row_count(intent: str, raw: dict) -> int:
     if intent == "realtime_market":
         return int(any(key not in {"_meta", "_source"} for key in raw))
     return 0
+
+
+def _project_limit_board(params: dict) -> dict:
+    """Project the existing Eastmoney pool aggregate into board semantics."""
+
+    raw = fetch_limit_state(date=params.get("date"))
+    if raw.get("error"):
+        return raw
+    pool_name = {
+        "up": "zt",
+        "down": "dt",
+        "broken": "zb",
+        "yesterday": "yzt",
+    }[params["kind"]]
+    pools = raw.get("pools") if isinstance(raw.get("pools"), dict) else {}
+    return {
+        "kind": params["kind"],
+        "date": raw.get("date"),
+        "items": list(pools.get(pool_name) or []),
+        "source": "eastmoney_limit_pool",
+    }
+
+
+def _legacy_industry_flow(params: dict) -> dict:
+    raw = ths_industry.fetch_industry_summary(top_n=params.get("limit", 20))
+    if raw.get("error"):
+        return raw
+    raw_date = raw.get("trade_date") or raw.get("date")
+    requested_date = _compact_date(params.get("trade_date"))
+    observed_date = _compact_date(raw_date)
+    current_session = params.get("current_session") is True or params.get("use_case") == "realtime_poll"
+    if not raw_date:
+        if not (
+            current_session
+        ) or "trade_date" in params:
+            return ProviderOutcome(
+                provider="ths_industry",
+                status="incompatible",
+                error_code="DATE_UNVERIFIED",
+            )
+    elif current_session and observed_date != datetime.now(TZ_SHANGHAI).strftime("%Y%m%d"):
+        return ProviderOutcome(
+            provider="ths_industry",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    elif requested_date and observed_date != requested_date:
+        return ProviderOutcome(
+            provider="ths_industry",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    rows = []
+    seen = set()
+    for row in [*(raw.get("top") or []), *(raw.get("bottom") or [])]:
+        code = row.get("code")
+        if code in seen:
+            continue
+        seen.add(code)
+        rows.append(row)
+    return {
+        "trade_date": raw_date,
+        "items": rows,
+        "source": "ths_industry",
+    }
+
+
+def _legacy_northbound(params: dict) -> dict:
+    raw = northbound.fetch_realtime()
+    if raw.get("error"):
+        return raw
+    raw_date = raw.get("date") or raw.get("trade_date")
+    if not raw_date:
+        return ProviderOutcome(
+            provider="northbound",
+            status="incompatible",
+            error_code="DATE_UNVERIFIED",
+        )
+    observed_date = _compact_date(raw_date)
+    requested_date = _compact_date(params.get("trade_date"))
+    current_session = params.get("current_session") is True or params.get("use_case") == "realtime_poll"
+    if current_session and observed_date != datetime.now(TZ_SHANGHAI).strftime("%Y%m%d"):
+        return ProviderOutcome(
+            provider="northbound",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    if requested_date and not current_session and observed_date != requested_date:
+        return ProviderOutcome(
+            provider="northbound",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    return {
+        "trade_date": raw_date,
+        "items": list(raw.get("minutes") or []),
+        "summary": {
+            key: raw.get(key)
+            for key in ("hgt_current_yi", "sgt_current_yi", "hgt_trend", "sgt_trend")
+        },
+        "source": "northbound_hsgt",
+    }
+
+
+def _legacy_hot_rank(params: dict) -> dict:
+    date_value = params.get("trade_date")
+    date_str = (
+        f"{date_value[:4]}-{date_value[4:6]}-{date_value[6:]}"
+        if isinstance(date_value, str) and len(date_value) == 8
+        else None
+    )
+    raw = ths_hot.fetch_hot_with_zt_count(date_str)
+    if raw.get("error"):
+        return raw
+    raw_date = raw.get("date") or raw.get("trade_date")
+    observed_date = _compact_date(raw_date)
+    requested_date = _compact_date(params.get("trade_date"))
+    current_session = params.get("current_session") is True or params.get("use_case") == "realtime_poll"
+    if not raw_date:
+        return ProviderOutcome(
+            provider="ths_hot",
+            status="incompatible",
+            error_code="DATE_UNVERIFIED",
+        )
+    if current_session and observed_date != datetime.now(TZ_SHANGHAI).strftime("%Y%m%d"):
+        return ProviderOutcome(
+            provider="ths_hot",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    if requested_date and not current_session and observed_date != requested_date:
+        return ProviderOutcome(
+            provider="ths_hot",
+            status="incompatible",
+            error_code="DATE_MISMATCH",
+        )
+    rows = list(raw.get("stocks") or [])
+    if params.get("limit") is not None:
+        rows = rows[: params["limit"]]
+    return {
+        "trade_date": raw_date,
+        "items": rows,
+        "reason_stats": raw.get("reason_stats", {}),
+        "zt_count": raw.get("zt_count"),
+        "source": "ths_hot",
+    }
+
+
+def _legacy_index_kline(params: dict, *, provider: str = "pytdx_index") -> dict | ProviderOutcome:
+    codes = params.get("codes") or [params.get("index_code")]
+    if provider == "pytdx_index" and params.get("period", "daily") not in {
+        "daily",
+        "weekly",
+        "monthly",
+    }:
+        return ProviderOutcome(
+            provider=provider,
+            status="incompatible",
+            error_code="INDEX_MINUTE_VOLUME_UNVERIFIED",
+        )
+    fetcher = {
+        "eastmoney_index": eastmoney_index.fetch_index_kline,
+        "sina_index": sina_index.fetch_index_kline,
+        "pytdx_index": pytdx.fetch_index_kline,
+    }[provider]
+    items = []
+    last_error = None
+    for code in codes:
+        result = fetcher(
+            code,
+            period=params.get("period", "daily"),
+            count=params.get("count"),
+            start_date=params.get("start_date"),
+            end_date=params.get("end_date"),
+        )
+        if isinstance(result, dict) and not result.get("error"):
+            items.append(result)
+        elif isinstance(result, dict):
+            last_error = result
+    if len(codes) == 1:
+        return items[0] if items else (last_error or {"error": "index kline unavailable", "error_type": "NO_DATA"})
+    by_code = {
+        item["index_code"]: {"rows": item.get("bars", [])}
+        for item in items
+    }
+    for item in items:
+        by_code[item["index_code"].split(".")[0]] = by_code[item["index_code"]]
+    return {
+        "items": items,
+        "by_code": by_code,
+        **{key.split(".")[0]: value for key, value in by_code.items() if "." in key},
+        "source": provider,
+    }
+
+
+def _legacy_index_intraday_compare(
+    params: dict, *, provider: str = "pytdx_index"
+) -> dict | ProviderOutcome:
+    if provider == "pytdx_index":
+        return ProviderOutcome(
+            provider=provider,
+            status="incompatible",
+            error_code="INDEX_MINUTE_VOLUME_UNVERIFIED",
+        )
+    fetcher = {
+        "eastmoney_index": eastmoney_index.fetch_index_intraday_compare,
+        "sina_index": sina_index.fetch_index_intraday_compare,
+    }.get(provider)
+    if fetcher is None:
+        return ProviderOutcome(
+            provider=provider,
+            status="incompatible",
+            error_code="INCOMPATIBLE_INTENT",
+        )
+    raw = fetcher(
+        period=params.get("period", "15m"),
+        trade_date=params.get("trade_date"),
+    )
+    if not isinstance(raw, dict) or raw.get("error"):
+        return raw
+    return raw
 
 
 class LocalProvider:
@@ -218,8 +468,35 @@ class LocalProvider:
             ("sina", "stock_kline"): lambda: self._http_kline(
                 provider="sina", params=params
             ),
+            ("eastmoney_stock", "stock_kline"): lambda: eastmoney_stock.fetch_kline(
+                params["code"],
+                period=params.get("period", "daily"),
+                count=params.get("count"),
+                start_date=params.get("start_date"),
+                end_date=params.get("end_date"),
+                adjustment=params.get("adjustment", "none"),
+            ),
             ("ths_industry", "sector_index"): lambda: ths_industry.fetch_sector_index(
                 codes=params.get("codes"), names=params.get("names")
+            ),
+            ("ths_industry", "industry_flow"): lambda: _legacy_industry_flow(params),
+            ("northbound", "northbound_flow"): lambda: _legacy_northbound(params),
+            ("ths_hot", "legacy_hot_rank"): lambda: _legacy_hot_rank(params),
+            ("pytdx_index", "index_kline"): lambda: _legacy_index_kline(params),
+            ("eastmoney_index", "index_kline"): lambda: _legacy_index_kline(
+                params, provider="eastmoney_index"
+            ),
+            ("sina_index", "index_kline"): lambda: _legacy_index_kline(
+                params, provider="sina_index"
+            ),
+            ("pytdx_index", "index_intraday_compare"): lambda: _legacy_index_intraday_compare(
+                params
+            ),
+            ("eastmoney_index", "index_intraday_compare"): lambda: _legacy_index_intraday_compare(
+                params, provider="eastmoney_index"
+            ),
+            ("sina_index", "index_intraday_compare"): lambda: _legacy_index_intraday_compare(
+                params, provider="sina_index"
             ),
             ("pytdx_breadth", "review_sentiment"): pytdx.fetch_breadth,
             ("eastmoney_breadth", "review_sentiment"): pytdx._fallback_breadth,
@@ -228,6 +505,9 @@ class LocalProvider:
             ),
             ("eastmoney_limit_pool", "market_limit_state"): lambda: fetch_limit_state(
                 date=params.get("date")
+            ),
+            ("eastmoney_limit_pool", "market_limit_board"): lambda: _project_limit_board(
+                params
             ),
             ("eastmoney_datacenter", "stock_event"): lambda: stock_events.fetch_stock_event(
                 event=params["event"],
@@ -261,9 +541,17 @@ class LocalProvider:
 
     @staticmethod
     def _pytdx_kline(params: dict) -> dict:
-        raw = pytdx.fetch_kline(
-            params["code"], period=params.get("period", "daily")
-        )
+        if params.get("adjustment", "none") != "none":
+            return ProviderOutcome(
+                provider="pytdx",
+                status="incompatible",
+                error_code="ADJUSTMENT_UNSUPPORTED",
+            )
+        fetch_params = {"period": params.get("period", "daily")}
+        for key in ("count", "start_date", "end_date"):
+            if params.get(key) is not None:
+                fetch_params[key] = params[key]
+        raw = pytdx.fetch_kline(params["code"], **fetch_params)
         if not isinstance(raw, dict):
             return raw
         nested_data = raw.get("data")
@@ -273,9 +561,14 @@ class LocalProvider:
             raw = flattened
         result = dict(raw)
         result.setdefault("period", params.get("period", "daily"))
+        period = params.get("period", "daily")
+        volume_multiplier = 100 if period in {"daily", "weekly", "monthly"} else 1
+        result = LocalProvider._canonicalize_kline(
+            result, params, volume_multiplier=volume_multiplier
+        )
         if params.get("count") is None:
             return result
-        bars = raw.get("bars")
+        bars = result.get("bars")
         if isinstance(bars, list):
             count = params["count"]
             result["bars"] = list(bars[-count:])
@@ -287,12 +580,72 @@ class LocalProvider:
     def _http_kline(*, provider: str, params: dict) -> dict:
         period = params.get("period", "daily")
         count = params.get("count") or (30 if period in {"daily", "60m"} else 48)
+        adjustment = params.get("adjustment", "none")
+        if adjustment != "none" and provider != "tencent":
+            return ProviderOutcome(
+                provider=provider,
+                status="incompatible",
+                error_code="ADJUSTMENT_UNSUPPORTED",
+            )
         if provider == "tencent":
-            bars = pytdx._fetch_tencent_kline(params["code"], period=period, count=count)
+            bars = pytdx._fetch_tencent_kline(
+                params["code"],
+                period=period,
+                count=count,
+                adjustment=adjustment,
+            )
         else:
             bars = pytdx._fetch_sina_kline(params["code"], period=period, count=count)
-        return pytdx._build_kline_result(
+        result = pytdx._build_kline_result(
             params["code"],
             bars,
             source=provider,
         )
+        volume_multiplier = (
+            100
+            if provider == "tencent" and period in {"daily", "weekly", "monthly"}
+            else 1
+        )
+        return LocalProvider._canonicalize_kline(
+            result, params, volume_multiplier=volume_multiplier
+        )
+
+    @staticmethod
+    def _canonicalize_kline(
+        raw: dict, params: dict, *, volume_multiplier: float
+    ) -> dict:
+        if not isinstance(raw, dict) or raw.get("error"):
+            return raw
+        normalized = dict(raw)
+        bars = []
+        for row in raw.get("bars", []):
+            if not isinstance(row, dict):
+                continue
+            stamp = row.get("datetime", row.get("time"))
+            volume = row.get("volume", row.get("vol"))
+            amount = row.get("amount")
+            try:
+                volume = float(volume) * volume_multiplier if volume is not None else None
+            except (TypeError, ValueError):
+                volume = None
+            try:
+                amount = float(amount) if amount is not None else None
+            except (TypeError, ValueError):
+                amount = None
+            bars.append(
+                {
+                    "datetime": str(stamp or ""),
+                    "open": row.get("open"),
+                    "high": row.get("high"),
+                    "low": row.get("low"),
+                    "close": row.get("close"),
+                    "volume": volume,
+                    "amount": amount,
+                }
+            )
+        normalized["bars"] = bars
+        normalized["total_bars"] = len(bars)
+        normalized["adjustment"] = params.get("adjustment", "none")
+        normalized["volume_unit"] = "share"
+        normalized["amount_unit"] = "CNY"
+        return normalized

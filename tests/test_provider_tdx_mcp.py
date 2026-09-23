@@ -874,7 +874,7 @@ class TdxRegistryTests(unittest.TestCase):
                 client=FakeProviderClient(payload={"items": []}),
             )
             providers = {
-                name: FailedProvider(name) for name in ("pytdx", "tencent", "sina")
+                name: FailedProvider(name) for name in ("pytdx", "tencent")
             }
             providers["tdx_quotes"] = tdx
             with patch.object(api, "_STATE", state), patch.object(

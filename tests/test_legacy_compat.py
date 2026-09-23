@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import inspect
+from datetime import datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -289,18 +290,63 @@ class LegacyCompatibilityTests(unittest.TestCase):
         validate_result(result)
 
     def test_representative_canonical_fetch_shapes_and_metadata(self):
+        now = datetime.now().astimezone()
+        quote_time = now.isoformat(timespec="seconds")
+        closed_day = (now.date() - timedelta(days=1)).isoformat()
         cases = {
-            "index": ("realtime_market", {}, {"上证指数": {"最新价": 3200}}, "上证指数"),
-            "quotes": ("stock_snapshot", {"codes": ["600519"]}, {"600519": {"price": 1400}}, "600519"),
-            "kline": ("stock_kline", {"code": "600519"}, {"bars": [{"time": "2026-07-29"}]}, "bars"),
+            "index": (
+                "realtime_market",
+                {},
+                {"上证指数": 3200.0, "深证指数": 10000.0, "创业指数": 2000.0},
+                "上证指数",
+            ),
+            "quotes": (
+                "stock_snapshot",
+                {"codes": ["600519"]},
+                {
+                    "600519": {
+                        "code": "600519",
+                        "price": 1400.0,
+                        "last_close": 1390.0,
+                        "open": 1395.0,
+                        "high": 1405.0,
+                        "low": 1388.0,
+                        "volume": 1000.0,
+                        "amount": 1400000.0,
+                        "quote_time": quote_time,
+                    }
+                },
+                "600519",
+            ),
+            "kline": (
+                "stock_kline",
+                {"code": "600519"},
+                {
+                    "bars": [
+                        {
+                            "datetime": f"{closed_day} 15:00:00",
+                            "open": 1395.0,
+                            "high": 1405.0,
+                            "low": 1388.0,
+                            "close": 1400.0,
+                            "volume": 1000.0,
+                            "amount": 1400000.0,
+                        }
+                    ],
+                    "adjustment": "none",
+                    "volume_unit": "share",
+                    "amount_unit": "CNY",
+                },
+                "bars",
+            ),
             "research": ("research", {"code": "600519"}, {"reports": [{"title": "研报"}]}, "reports"),
             "filings": ("filings", {"code": "600519"}, {"filings": [{"title": "公告"}]}, "filings"),
             "news": ("news", {}, {"items": [{"title": "新闻"}]}, "items"),
         }
         first_providers = {
-            "realtime_market": "pytdx",
-            "stock_snapshot": "pytdx",
-            "stock_kline": "pytdx",
+            "realtime_market": "stocktoday",
+            "stock_snapshot": "stocktoday",
+            "stock_kline": "stocktoday",
             "research": "eastmoney_research",
             "filings": "cninfo",
             "news": "cls",
@@ -321,6 +367,7 @@ class LegacyCompatibilityTests(unittest.TestCase):
                 self.assertEqual("canonical", result["_meta"]["compatibility_route"])
                 self.assertEqual(intent, result["_meta"]["canonical_intent"])
                 self.assertEqual(provider_name, result["_meta"]["provider_used"])
+                self.assertEqual(provider_name, result["_meta"]["attempts"][0]["provider"])
 
     def test_resolve_single_string_calls_canonical_exactly_once(self):
         resolve_module = import_module("ym_stock_data.v2.resolve")

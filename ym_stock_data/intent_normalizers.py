@@ -327,11 +327,37 @@ def normalize_success(
             primary=primary,
             missing_fields=missing_fields,
         )
+    elif intent == "index_kline":
+        rows = data.get("items") if isinstance(data.get("items"), list) else data.get("bars", [])
+        quality = assess_quality(
+            rows if isinstance(rows, list) else [], expected_count=params.get("count")
+        )
+        return data, _fallback_quality(
+            quality,
+            provider=provider,
+            primary=primary,
+        )
     elif intent == "market_limit_state":
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         quality = assess_quality([data] if count else [])
+    elif intent in {
+        "market_limit_board",
+        "market_hot_rank",
+        "industry_flow",
+        "fund_flow",
+        "northbound_flow",
+        "legacy_hot_rank",
+    }:
+        rows = data.get("items", [])
+        quality = assess_quality(
+            rows if isinstance(rows, list) else [],
+            expected_count=params.get("limit")
+            if intent in {"market_hot_rank", "legacy_hot_rank"}
+            else None,
+        )
     else:
         container = {
+            "stocktoday_data": "items",
             "stock_event": "items",
             "research": "reports",
             "filings": "filings",
@@ -340,4 +366,7 @@ def normalize_success(
         }.get(intent)
         rows = data.get(container, []) if container else [data]
         quality = assess_quality(rows if isinstance(rows, list) else [])
+    if provider == "stocktoday" and data.get("_stocktoday", {}).get("truncated"):
+        quality["status"] = "partial"
+        quality["truncated"] = True
     return data, _fallback_quality(quality, provider=provider, primary=primary)

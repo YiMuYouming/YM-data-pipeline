@@ -5,9 +5,16 @@
     data = query("stock_snapshot", codes=["688017"])
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 from .api import query
 from .fetch import fetch, list_supported
+from .intent_registry import list_registered_intents, resolve_intent
 
-__all__ = ["fetch", "list_supported", "query"]
+__all__ = [
+    "fetch",
+    "list_registered_intents",
+    "list_supported",
+    "query",
+    "resolve_intent",
+]

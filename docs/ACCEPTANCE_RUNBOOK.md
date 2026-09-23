@@ -17,7 +17,7 @@ set -eu
 umask 077
 acceptance_date=YYYY-MM-DD
 previous_trading_date=YYYY-MM-DD
-pipeline_root=/Users/yimu/Documents/YM_Capital/YM-data-pipeline
+pipeline_root=/Users/yimu/Projects/YM_Capital/YM-data-pipeline
 acceptance_dir=/Users/yimu/.ym-stock-data/acceptance
 smoke_dir=/Users/yimu/.ym-stock-data/smoke
 acceptance_target=${acceptance_dir}/${acceptance_date}.json

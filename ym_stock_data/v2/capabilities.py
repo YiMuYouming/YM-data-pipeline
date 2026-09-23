@@ -5,6 +5,15 @@ from __future__ import annotations
 from .. import api
 from ..providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TOOL_ALLOWLIST
 from ..providers.wind_mcp import WIND_ENRICHMENT_CAPABILITIES, WIND_PROVIDER_NAMES
+from ..providers.stocktoday_catalog import API_PARAMS as STOCKTODAY_APIS
+from ..provider_policy import (
+    PIPELINE_VERSION,
+    POLICY_PATH,
+    POLICY_VERSION,
+    ROUTE_POLICY_VERSION,
+    load_compiled_policy,
+    load_policy,
+)
 from ..routing import all_route_specs
 
 
@@ -41,6 +50,27 @@ def _routes_for(provider_names: set[str]) -> list[str]:
     )
 
 
+def _policy_projection() -> dict:
+    """Expose policy state without making it a second routing authority."""
+
+    try:
+        policy = load_policy()
+        compiled = load_compiled_policy(policy=policy)
+        capabilities = sorted(policy["capabilities"])
+    except Exception:
+        compiled = load_compiled_policy(policy={})
+        capabilities = []
+    return {
+        "policy_version": POLICY_VERSION,
+        "pipeline_version": PIPELINE_VERSION,
+        "route_policy_version": ROUTE_POLICY_VERSION,
+        "policy_status": compiled.policy_status,
+        "policy_evidence_sha256": compiled.policy_evidence_sha256,
+        "path": str(POLICY_PATH),
+        "capabilities": capabilities,
+    }
+
+
 def capability_manifest() -> dict:
     """Derive provider availability from the canonical registry and routes."""
 
@@ -50,6 +80,23 @@ def capability_manifest() -> dict:
     tdx_routes = _routes_for(tdx_names)
     wind_routes = _routes_for(wind_names)
     providers = {
+        "stocktoday": {
+            "status": "registered_experimental",
+            "registered": "stocktoday" in registry_names,
+            "provider_names": ["stocktoday"],
+            "routes": _routes_for({"stocktoday"}),
+            "automatic_fallback_intents": [
+                intent
+                for intent in _routes_for({"stocktoday"})
+                if intent != "stocktoday_data"
+            ],
+            "explicit_intents": ["stocktoday_data", "stock_snapshot", "stock_kline"],
+            "default_route": True,
+            "auth_ownership": "pipeline_owned_api_key",
+            "credential_store_default": "macos_keychain",
+            "transport": "vendor_tushare_compatible_https",
+            "capabilities": sorted(STOCKTODAY_APIS),
+        },
         "tdx_mcp": {
             "status": "registered_optional",
             "registered": tdx_names.issubset(registry_names),
@@ -107,6 +154,7 @@ def capability_manifest() -> dict:
             for route, status in _V1_ROUTE_STATUS.items()
         },
         "providers": providers,
+        "provider_policy": _policy_projection(),
         # Compatibility alias for old manifest consumers. These entries are
         # projections of the derived provider records, not a second inventory.
         "manual_sources": {

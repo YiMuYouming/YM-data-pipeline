@@ -1,0 +1,6831 @@
+{
+  "schema_version": "3.0",
+  "source_url": "https://stocktoday.cn/api/tools/methods",
+  "fetched_at": "2026-09-22T08:31:04+00:00",
+  "payload_sha256": "eed063e91d066e1180c6f15e7355f886e8d33937e31c5333fcf5fcc709693ff1",
+  "methods": [
+    {
+      "name": "adj_factor",
+      "source_order": 76,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "复权因子",
+      "example": {
+        "trade_date": "",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "anns_d",
+      "source_order": 240,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "公告信息",
+      "example": {
+        "ann_date": "20230621"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "bak_basic",
+      "source_order": 28,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "备用基础数据",
+      "example": {
+        "fields": "trade_date,ts_code,name,industry,pe",
+        "trade_date": "20211012"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "bak_daily",
+      "source_order": 82,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "备用每日行情",
+      "example": {
+        "fields": "trade_date,ts_code,name,close,open",
+        "trade_date": "20211012"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "balancesheet",
+      "source_order": 88,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "资产负债表",
+      "example": {
+        "end_date": "20180730",
+        "fields": "ts_code,ann_date,f_ann_date,end_date,report_type,comp_type,cap_rese",
+        "start_date": "20180101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "balancesheet_vip",
+      "source_order": 89,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "资产负债表(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "bc_bestotcqt",
+      "source_order": 172,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "银行间最优报价",
+      "example": {
+        "end_date": "20240329",
+        "fields": "trade_date,ts_code,name,remain_maturity,best_buy_bank,best_buy_yield,best_sell_bank,best_sell_yield",
+        "start_date": "20240325",
+        "ts_code": "200013.BC"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "bc_otcqt",
+      "source_order": 171,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "银行间报价",
+      "example": {
+        "end_date": "20240329",
+        "fields": "trade_date,qt_time,bank,ts_code,name,remain_maturity,buy_yield,sell_yield",
+        "start_date": "20240325",
+        "ts_code": "200013.BC"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "block_trade",
+      "source_order": 13,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "大宗交易",
+      "example": {
+        "trade_date": "20181227"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "bo_cinema",
+      "source_order": 229,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "影院日度票房",
+      "example": {
+        "date": "20181014"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "bo_daily",
+      "source_order": 230,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "电影日度票房",
+      "example": {
+        "date": "20181014"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "bo_monthly",
+      "source_order": 231,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "电影月度票房",
+      "example": {
+        "date": "20180901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "bo_weekly",
+      "source_order": 232,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "电影周度票房",
+      "example": {
+        "date": "20181008"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "bond_blk",
+      "source_order": 173,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "债券大宗交易",
+      "example": {
+        "end_date": "20210930",
+        "start_date": "20210701"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "bond_blk_detail",
+      "source_order": 174,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "债券大宗交易明细",
+      "example": {
+        "end_date": "20210930",
+        "start_date": "20210701"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "broker_recommend",
+      "source_order": 60,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "券商研报推荐",
+      "example": {
+        "month": "202106"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "month"
+        }
+      ]
+    },
+    {
+      "name": "bse_mapping",
+      "source_order": 29,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "北交所新旧代码对照",
+      "example": {
+        "o_code": "838163.BJ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "cashflow",
+      "source_order": 90,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "现金流量表",
+      "example": {
+        "end_date": "20180730",
+        "start_date": "20180101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "f_ann_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cashflow_vip",
+      "source_order": 91,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "现金流量表(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_basic",
+      "source_order": 162,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债基本信息",
+      "example": {
+        "fields": "ts_code,bond_short_name,stk_code,stk_short_name,list_date,delist_date"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "list_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_call",
+      "source_order": 164,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债回售",
+      "example": {
+        "fields": "ts_code,call_type,is_call,ann_date,call_date,call_price"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_daily",
+      "source_order": 166,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债每日行情",
+      "example": {
+        "fields": "ts_code,trade_date, pre_close,open,high,low,close",
+        "trade_date": "20190719"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_factor_pro",
+      "source_order": 169,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债因子(专业版)",
+      "example": {
+        "ts_code": "113632."
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "cb_issue",
+      "source_order": 163,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债发行",
+      "example": {
+        "ann_date": "20190612"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_price_chg",
+      "source_order": 167,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债价格变化",
+      "example": {
+        "fields": "ts_code,bond_short_name,change_date,convert_price_initial,convertprice_bef,convertprice_aft",
+        "ts_code": "113556.SH,128114.SZ,128110.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_rate",
+      "source_order": 165,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债转股溢价率",
+      "example": {
+        "fields": "ts_code,rate_freq,rate_start_date,rate_end_date,coupon_rate",
+        "ts_code": "123046.SZ,127064.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cb_share",
+      "source_order": 168,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债转股",
+      "example": {
+        "fields": "ts_code,end_date,convert_price,convert_val,convert_ratio,acc_convert_ratio",
+        "ts_code": "113001.SH,110027.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ccass_hold",
+      "source_order": 53,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "中央结算持股",
+      "example": {
+        "ts_code": "00960.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "hk_code"
+        }
+      ]
+    },
+    {
+      "name": "ccass_hold_detail",
+      "source_order": 54,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "中央结算持股明细",
+      "example": {
+        "fields": "trade_date,ts_code,col_participant_id,col_participant_name,col_shareholding",
+        "trade_date": "20211101",
+        "ts_code": "00960.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cctv_news",
+      "source_order": 239,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "新闻联播",
+      "example": {
+        "date": "20181211"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "ci_daily",
+      "source_order": 140,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "中证指数日线",
+      "example": {
+        "fields": "ts_code,trade_date,open,low,high,close",
+        "trade_date": "20230705"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ci_index_member",
+      "source_order": 61,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "中信行业成分",
+      "example": {
+        "fields": "l2_code,l1_name,ts_code,name",
+        "l2_code": "CI005835.CI"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "index_code"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "cn_cpi",
+      "source_order": 183,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "中国CPI",
+      "example": {
+        "end_m": "201903",
+        "start_m": "201801"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "m"
+        },
+        {
+          "default": "",
+          "name": "start_m"
+        },
+        {
+          "default": "",
+          "name": "end_m"
+        }
+      ]
+    },
+    {
+      "name": "cn_gdp",
+      "source_order": 182,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "中国GDP",
+      "example": {
+        "end_q": "2019Q3",
+        "start_q": "2018Q1"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "q"
+        },
+        {
+          "default": "",
+          "name": "start_q"
+        },
+        {
+          "default": "",
+          "name": "end_q"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "cn_m",
+      "source_order": 186,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "货币供应量",
+      "example": {
+        "end_m": "202003",
+        "start_m": "201901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "cn_pmi",
+      "source_order": 184,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "采购经理指数PMI",
+      "example": {
+        "end_m": "202003",
+        "fields": "month,pmi010000,pmi010400",
+        "start_m": "201901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "cn_ppi",
+      "source_order": 185,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "中国PPI",
+      "example": {
+        "end_m": "202005",
+        "start_m": "201905"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "m"
+        },
+        {
+          "default": "",
+          "name": "start_m"
+        },
+        {
+          "default": "",
+          "name": "end_m"
+        }
+      ]
+    },
+    {
+      "name": "cyq_chips",
+      "source_order": 51,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "筹码分布",
+      "example": {
+        "end_date": "20220429",
+        "start_date": "20220101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "cyq_perf",
+      "source_order": 50,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "筹码活跃度",
+      "example": {
+        "end_date": "20220429",
+        "start_date": "20220101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "daily",
+      "source_order": 70,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "日线行情",
+      "example": {
+        "end_date": "20180718",
+        "start_date": "20180701",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "daily_basic",
+      "source_order": 77,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "每日指标",
+      "example": {
+        "fields": "ts_code,trade_date,turnover_rate,volume_ratio,pe,pb",
+        "trade_date": "20180726",
+        "ts_code": ""
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "daily_info",
+      "source_order": 137,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "每日信息",
+      "example": {
+        "exchange": "SZ",
+        "trade_date": "20200320"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "dc_concept",
+      "source_order": 63,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "东财概念",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "theme_code"
+        },
+        {
+          "default": "",
+          "name": "name"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "dc_concept_cons",
+      "source_order": 64,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "东财概念成分",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "theme_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "dc_daily",
+      "source_order": 62,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "东财概念和行业指数行情",
+      "example": {
+        "trade_date": "20250513"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "idx_type"
+        }
+      ]
+    },
+    {
+      "name": "dc_hot",
+      "source_order": 48,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "东方财富热点",
+      "example": {
+        "fields": "ts_code,ts_name,rank",
+        "hot_type": "人气榜",
+        "market": "A股市场",
+        "trade_date": "20240415"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "market"
+        },
+        {
+          "default": "",
+          "name": "hot_type"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "is_new"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "dc_index",
+      "source_order": 42,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "东财指数",
+      "example": {
+        "fields": "ts_code,name,turnover_rate,up_num,down_num",
+        "trade_date": "20250103"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "name"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "概念板块",
+          "name": "idx_type"
+        }
+      ]
+    },
+    {
+      "name": "dc_member",
+      "source_order": 43,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "东财成分股",
+      "example": {
+        "trade_date": "20250102",
+        "ts_code": "BK1184.DC"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "con_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "disclosure_date",
+      "source_order": 102,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "披露日期",
+      "example": {
+        "end_date": "20181231"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        }
+      ]
+    },
+    {
+      "name": "dividend",
+      "source_order": 96,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "分红送股",
+      "example": {
+        "fields": "ts_code,div_proc,stk_div,record_date,ex_date",
+        "ts_code": "600848.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "record_date"
+        },
+        {
+          "default": "",
+          "name": "ex_date"
+        },
+        {
+          "default": "",
+          "name": "imp_ann_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "eco_cal",
+      "source_order": 178,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "经济日历",
+      "example": {
+        "date": "20200403"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        },
+        {
+          "default": "",
+          "name": "country"
+        },
+        {
+          "default": "",
+          "name": "event"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "etf_basic",
+      "source_order": 111,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF基本信息",
+      "example": {
+        "fields": "ts_code,extname,index_code,index_name,exchange,mgr_name",
+        "list_status": "L"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "index_code"
+        },
+        {
+          "default": "",
+          "name": "list_date"
+        },
+        {
+          "default": "",
+          "name": "list_status"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "mgr_name"
+        }
+      ]
+    },
+    {
+      "name": "etf_index",
+      "source_order": 112,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF指数跟踪",
+      "example": {
+        "fields": "ts_code,indx_name,pub_date,bp"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "etf_mins",
+      "source_order": 114,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF历史分钟",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "1min",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "etf_share_size",
+      "source_order": 113,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF份额变化",
+      "example": {
+        "end_date": "20251224",
+        "start_date": "20250101",
+        "ts_code": "510330.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "express",
+      "source_order": 94,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "业绩快报",
+      "example": {
+        "end_date": "20180701",
+        "fields": "ts_code,ann_date,end_date,revenue,operate_profit,total_profit,n_income,total_assets",
+        "start_date": "20180101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "express_vip",
+      "source_order": 95,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "业绩快报(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "film_record",
+      "source_order": 233,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "电影备案公示",
+      "example": {
+        "end_date": "20181214",
+        "start_date": "20181014"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fina_audit",
+      "source_order": 99,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "财务审计意见",
+      "example": {
+        "end_date": "20180808",
+        "start_date": "20100101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        }
+      ]
+    },
+    {
+      "name": "fina_indicator",
+      "source_order": 97,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "财务指标",
+      "example": {
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "fina_indicator_vip",
+      "source_order": 98,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "财务指标(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "fina_mainbz",
+      "source_order": 100,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "主营业务",
+      "example": {
+        "ts_code": "000627.SZ",
+        "type": "P"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "type"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fina_mainbz_vip",
+      "source_order": 101,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "主营业务(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "forecast",
+      "source_order": 92,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "业绩预告",
+      "example": {
+        "ann_date": "20190131",
+        "fields": "ts_code,ann_date,end_date,type,p_change_min,p_change_max,net_profit_min"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "forecast_vip",
+      "source_order": 93,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "业绩预告(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ft_limit",
+      "source_order": 160,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货涨跌停",
+      "example": {
+        "trade_date": "20250213"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "cont"
+        }
+      ]
+    },
+    {
+      "name": "ft_mins",
+      "source_order": 154,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货分钟线",
+      "example": {
+        "end_date": "2023-08-25 19:00:00",
+        "freq": "1min",
+        "start_date": "2023-08-25 09:00:00",
+        "ts_code": "CU2310.SHF"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "fund_adj",
+      "source_order": 125,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金复权",
+      "example": {
+        "end_date": "20190926",
+        "start_date": "20190101",
+        "ts_code": "513100.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fund_basic",
+      "source_order": 117,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金基本信息",
+      "example": {
+        "market": "E"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "market"
+        },
+        {
+          "default": "",
+          "name": "status"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "fund_company",
+      "source_order": 118,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金公司",
+      "example": {},
+      "has_example": false,
+      "params": []
+    },
+    {
+      "name": "fund_daily",
+      "source_order": 124,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金日线",
+      "example": {
+        "end_date": "20250618",
+        "fields": "trade_date,open,high,low,close,vol,amount",
+        "start_date": "20250101",
+        "ts_code": "510330.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fund_div",
+      "source_order": 122,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金分红",
+      "example": {
+        "ann_date": "20181018"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        }
+      ]
+    },
+    {
+      "name": "fund_factor_pro",
+      "source_order": 126,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金因子(专业版)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fund_manager",
+      "source_order": 119,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金经理",
+      "example": {
+        "ts_code": "150018.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "fund_nav",
+      "source_order": 121,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金净值",
+      "example": {
+        "ts_code": "165509.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "fund_portfolio",
+      "source_order": 123,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金持仓",
+      "example": {
+        "ts_code": "001753.OF"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "fund_sales_ratio",
+      "source_order": 127,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金销售保有规模占比",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "year"
+        }
+      ]
+    },
+    {
+      "name": "fund_sales_vol",
+      "source_order": 128,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金销售保有规模",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "year"
+        },
+        {
+          "default": "",
+          "name": "quarter"
+        },
+        {
+          "default": "",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "fund_share",
+      "source_order": 120,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "公募基金",
+      "desc": "基金份额",
+      "example": {
+        "ts_code": "150018.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "fut_basic",
+      "source_order": 151,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货基本信息",
+      "example": {
+        "exchange": "DCE",
+        "fields": "ts_code,symbol,name,list_date,delist_date",
+        "fut_type": "1"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "fut_type"
+        },
+        {
+          "default": "",
+          "name": "list_date"
+        },
+        {
+          "default": "",
+          "name": "fut_code"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "fut_daily",
+      "source_order": 152,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货日线",
+      "example": {
+        "end_date": "20181113",
+        "start_date": "20180101",
+        "ts_code": "CU1811.SHF"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "fut_holding",
+      "source_order": 157,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货持仓量",
+      "example": {
+        "exchange": "DCE",
+        "symbol": "C1905",
+        "trade_date": "20181113"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "symbol"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "fut_mapping",
+      "source_order": 158,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货映射",
+      "example": {
+        "ts_code": "TF.CFX"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fut_settle",
+      "source_order": 156,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货结算",
+      "example": {
+        "exchange": "SHFE",
+        "trade_date": "20181114"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "fut_weekly_detail",
+      "source_order": 159,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货每周详情",
+      "example": {
+        "prd": "CU"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "prd"
+        },
+        {
+          "default": "",
+          "name": "start_week"
+        },
+        {
+          "default": "",
+          "name": "end_week"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "fut_weekly_monthly",
+      "source_order": 153,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货周/月线",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "fut_wsr",
+      "source_order": 155,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货持仓",
+      "example": {
+        "symbol": "ZN",
+        "trade_date": "20181113"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "symbol"
+        }
+      ]
+    },
+    {
+      "name": "fx_daily",
+      "source_order": 177,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "外汇数据",
+      "desc": "外汇每日行情",
+      "example": {
+        "end_date": "20190524",
+        "start_date": "20190101",
+        "ts_code": "USDCNH.FXCM"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "fx_obasic",
+      "source_order": 176,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "外汇数据",
+      "desc": "外汇基本信息",
+      "example": {
+        "classify": "INDEX",
+        "exchange": "FXCM",
+        "fields": "ts_code,name,min_unit,max_unit,pip,pip_cost"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "classify"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ggt_daily",
+      "source_order": 208,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股通每日成交统计",
+      "example": {
+        "trade_date": "20190625"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "ggt_monthly",
+      "source_order": 209,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股通每月成交统计",
+      "example": {
+        "trade_date": "201906"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "ggt_top10",
+      "source_order": 81,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "港股通前十成交",
+      "example": {
+        "trade_date": "20180727"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "gz_index",
+      "source_order": 190,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "广州民间借贷利率",
+      "example": {
+        "end_date": "20190401",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hibor",
+      "source_order": 189,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "Hibor利率",
+      "example": {
+        "end_date": "20181130",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_adjfactor",
+      "source_order": 206,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股复权因子",
+      "example": {
+        "end_date": "20251022",
+        "start_date": "20240101",
+        "ts_code": "00001.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_balancesheet",
+      "source_order": 203,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股资产负债表",
+      "example": {
+        "period": "20241231",
+        "ts_code": "00700.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_basic",
+      "source_order": 197,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股基本信息",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "list_status"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_cashflow",
+      "source_order": 204,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股现金流量表",
+      "example": {
+        "period": "20241231",
+        "ts_code": "00700.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_daily",
+      "source_order": 199,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股每日行情",
+      "example": {
+        "end_date": "20190904",
+        "start_date": "20190101",
+        "ts_code": "00001.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_daily_adj",
+      "source_order": 200,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股每日行情(复权)",
+      "example": {
+        "end_date": "20240722",
+        "start_date": "20240101",
+        "ts_code": "00001.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_fina_indicator",
+      "source_order": 205,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股财务指标",
+      "example": {
+        "period": "20241231",
+        "ts_code": "00700.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "period"
+        }
+      ]
+    },
+    {
+      "name": "hk_hold",
+      "source_order": 55,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "港股持股",
+      "example": {
+        "trade_date": "20190625"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "code"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_income",
+      "source_order": 202,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股利润表",
+      "example": {
+        "period": "20241231",
+        "ts_code": "00700.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hk_mins",
+      "source_order": 201,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股分钟线",
+      "example": {
+        "end_date": "2023-03-13 19:00:00",
+        "freq": "1min",
+        "start_date": "2023-03-13 09:00:00",
+        "ts_code": "00001.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "hk_tradecal",
+      "source_order": 198,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股交易日历",
+      "example": {
+        "end_date": "20200708",
+        "start_date": "20200101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "is_open"
+        }
+      ]
+    },
+    {
+      "name": "hm_detail",
+      "source_order": 46,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "活跃股明细",
+      "example": {
+        "trade_date": "20230815"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "hm_name"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "hm_list",
+      "source_order": 45,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "活跃股列表",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "hsgt_top10",
+      "source_order": 80,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "沪深股通前十成交",
+      "example": {
+        "market_type": "1",
+        "trade_date": "20180725"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "market_type"
+        }
+      ]
+    },
+    {
+      "name": "idx_factor_pro",
+      "source_order": 143,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数因子(专业版)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "idx_mins",
+      "source_order": 147,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数历史分钟",
+      "example": {
+        "end_date": "2023-08-25 19:00:00",
+        "freq": "1min",
+        "start_date": "2023-08-25 09:00:00",
+        "ts_code": "000001.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "1min",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "income",
+      "source_order": 86,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "利润表",
+      "example": {
+        "end_date": "20180730",
+        "fields": "ts_code,ann_date,f_ann_date,end_date,report_type,comp_type,basic_eps,diluted_eps",
+        "start_date": "20180101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "f_ann_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "income_vip",
+      "source_order": 87,
+      "category": "股票数据",
+      "subcategory": "财务数据",
+      "desc": "利润表(VIP)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "comp_type"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "index_basic",
+      "source_order": 129,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数基本信息",
+      "example": {
+        "market": "SW"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "market"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "publisher"
+        },
+        {
+          "default": "",
+          "name": "category"
+        },
+        {
+          "default": "",
+          "name": "symbol"
+        },
+        {
+          "default": "",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "index_classify",
+      "source_order": 135,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数分类",
+      "example": {
+        "level": "L1",
+        "src": "SW2021"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "level"
+        },
+        {
+          "default": "",
+          "name": "src"
+        }
+      ]
+    },
+    {
+      "name": "index_daily",
+      "source_order": 130,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数日线",
+      "example": {
+        "ts_code": "399300.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "index_dailybasic",
+      "source_order": 134,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数每日指标",
+      "example": {
+        "fields": "ts_code,trade_date,turnover_rate,pe",
+        "trade_date": "20181018"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "index_global",
+      "source_order": 142,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "全球指数",
+      "example": {
+        "end_date": "20200220",
+        "start_date": "20200201",
+        "ts_code": "XIN9"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "index_member_all",
+      "source_order": 136,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数成分股(全)",
+      "example": {
+        "l3_code": "850531.SI"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "l1_code"
+        },
+        {
+          "default": "",
+          "name": "l2_code"
+        },
+        {
+          "default": "",
+          "name": "l3_code"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "index_monthly",
+      "source_order": 132,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数月线",
+      "example": {
+        "end_date": "20190330",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "start_date": "20180101",
+        "ts_code": "000001.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "index_weekly",
+      "source_order": 131,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数周线",
+      "example": {
+        "end_date": "20190329",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "start_date": "20180101",
+        "ts_code": "000001.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "index_weight",
+      "source_order": 133,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数成分",
+      "example": {
+        "end_date": "20180930",
+        "index_code": "399300.SZ",
+        "start_date": "20180901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "index_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "irm_qa_sh",
+      "source_order": 244,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "上证e互动问答",
+      "example": {
+        "ann_date": "20250212"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "irm_qa_sz",
+      "source_order": 243,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "深证易互动问答",
+      "example": {
+        "ann_date": "20250212"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "kpl_concept",
+      "source_order": 30,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "开盘啦概念",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "kpl_concept_cons",
+      "source_order": 31,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "开盘啦概念成分",
+      "example": {
+        "trade_date": "20241014"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "con_code"
+        }
+      ]
+    },
+    {
+      "name": "kpl_list",
+      "source_order": 32,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "开盘啦列表",
+      "example": {
+        "fields": "ts_code,name,trade_date,tag,theme,status",
+        "tag": "涨停",
+        "trade_date": "20240927"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "tag"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "libor",
+      "source_order": 188,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "Libor利率",
+      "example": {
+        "curr_type": "USD",
+        "end_date": "20181130",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "curr_type"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "limit_cpt_list",
+      "source_order": 38,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "涨停股票池",
+      "example": {
+        "trade_date": "20241127"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "limit_list_d",
+      "source_order": 36,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "涨跌停明细",
+      "example": {
+        "fields": "ts_code,trade_date,industry,name,close,pct_chg,open_times,up_stat,limit_times",
+        "limit_type": "U",
+        "trade_date": "20220615"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "limit_type"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "limit_list_ths",
+      "source_order": 35,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "涨停列表（同花顺）",
+      "example": {
+        "fields": "ts_code,trade_date,tag,status,lu_desc",
+        "limit_type": "涨停池",
+        "trade_date": "20241125"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "limit_type"
+        },
+        {
+          "default": "",
+          "name": "market"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "limit_step",
+      "source_order": 37,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "涨停阶梯",
+      "example": {
+        "trade_date": "20241125"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "nums"
+        }
+      ]
+    },
+    {
+      "name": "major_news",
+      "source_order": 238,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "重要资讯",
+      "example": {
+        "end_date": "2018-11-22 00:00:00",
+        "src": "新浪财经",
+        "start_date": "2018-11-21 00:00:00"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "src"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "margin",
+      "source_order": 0,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融资融券",
+      "example": {
+        "trade_date": "20180802"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "margin_detail",
+      "source_order": 1,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融资融券明细",
+      "example": {
+        "trade_date": "20180802"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "margin_secs",
+      "source_order": 2,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融资融券证券",
+      "example": {
+        "exchange": "SSE",
+        "trade_date": "20240417"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow",
+      "source_order": 103,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "资金流向",
+      "example": {
+        "trade_date": "20190315"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_cnt_ths",
+      "source_order": 105,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "资金流向分类(同花顺)",
+      "example": {
+        "trade_date": "20250320"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_dc",
+      "source_order": 106,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "资金流向(东方财富)",
+      "example": {
+        "trade_date": "20241011"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_hsgt",
+      "source_order": 110,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "沪深港通资金流向",
+      "example": {
+        "end_date": "20180808",
+        "start_date": "20180125"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_ind_dc",
+      "source_order": 108,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "行业资金流向(东方财富)",
+      "example": {
+        "fields": "trade_date,name,pct_change, close, net_amount,net_amount_rate,rank",
+        "trade_date": "20240927"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_ind_ths",
+      "source_order": 107,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "行业资金流向(同花顺)",
+      "example": {
+        "trade_date": "20240927"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_mkt_dc",
+      "source_order": 109,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "市场资金流向(东方财富)",
+      "example": {
+        "end_date": "20240930",
+        "start_date": "20240901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "moneyflow_ths",
+      "source_order": 104,
+      "category": "股票数据",
+      "subcategory": "资金流向",
+      "desc": "资金流向(同花顺)",
+      "example": {
+        "trade_date": "20241011"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "monthly",
+      "source_order": 72,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "月线行情",
+      "example": {
+        "end_date": "20181101",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "start_date": "20180101",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "namechange",
+      "source_order": 22,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "股票名称变更",
+      "example": {
+        "fields": "ts_code,name,start_date,end_date,change_reason",
+        "ts_code": "600848.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "new_share",
+      "source_order": 27,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "新股发行",
+      "example": {
+        "end_date": "20181018",
+        "start_date": "20180901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "news",
+      "source_order": 237,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "资讯",
+      "example": {
+        "end_date": "2018-11-22 10:10:00",
+        "src": "sina",
+        "start_date": "2018-11-21 09:00:00"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "src"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "npr",
+      "source_order": 241,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "政策法规库",
+      "example": {
+        "org": "国务院"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "org"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "ptype"
+        }
+      ]
+    },
+    {
+      "name": "opt_basic",
+      "source_order": 148,
+      "category": "期货 · 期权",
+      "subcategory": "期权数据",
+      "desc": "期权基本信息",
+      "example": {
+        "exchange": "DCE",
+        "fields": "ts_code,name,exercise_type,list_date,delist_date"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "opt_daily",
+      "source_order": 149,
+      "category": "期货 · 期权",
+      "subcategory": "期权数据",
+      "desc": "期权每日行情",
+      "example": {
+        "trade_date": "20181212"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "opt_mins",
+      "source_order": 150,
+      "category": "期货 · 期权",
+      "subcategory": "期权数据",
+      "desc": "期权分钟行情",
+      "example": {
+        "end_date": "2024-09-27 19:00:00",
+        "freq": "1min",
+        "start_date": "2024-09-27 09:00:00",
+        "ts_code": "10007976.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "1min",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "pledge_detail",
+      "source_order": 10,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "股权质押明细",
+      "example": {
+        "ts_code": "000014.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "pledge_stat",
+      "source_order": 9,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "股权质押统计",
+      "example": {
+        "ts_code": "000014.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "pro_bar",
+      "source_order": 75,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "行情数据（复权/分钟）",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "E",
+          "name": "asset"
+        },
+        {
+          "default": "qfq",
+          "name": "adj"
+        },
+        {
+          "default": "D",
+          "name": "freq"
+        },
+        {
+          "default": "",
+          "name": "ma"
+        },
+        {
+          "default": "",
+          "name": "factors"
+        },
+        {
+          "default": "",
+          "name": "adjfactor"
+        }
+      ]
+    },
+    {
+      "name": "realtime_list",
+      "source_order": 224,
+      "category": "其他",
+      "subcategory": "爬虫数据",
+      "desc": "实时排名",
+      "example": {},
+      "has_example": false,
+      "params": []
+    },
+    {
+      "name": "realtime_quote",
+      "source_order": 225,
+      "category": "其他",
+      "subcategory": "爬虫数据",
+      "desc": "实时行情",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "realtime_tick",
+      "source_order": 226,
+      "category": "其他",
+      "subcategory": "爬虫数据",
+      "desc": "实时成交",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "repo_daily",
+      "source_order": 170,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "回购每日行情",
+      "example": {
+        "trade_date": "20200804"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "report_rc",
+      "source_order": 49,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "研报",
+      "example": {
+        "report_date": "20220429",
+        "ts_code": ""
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "report_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "repurchase",
+      "source_order": 11,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "股份回购",
+      "example": {
+        "ann_date": "",
+        "end_date": "20180510",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "research_report",
+      "source_order": 242,
+      "category": "其他",
+      "subcategory": "资讯数据",
+      "desc": "券商研究报告",
+      "example": {
+        "fields": "trade_date,file_name,author,inst_csname",
+        "trade_date": "20260121"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "inst_csname"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        }
+      ]
+    },
+    {
+      "name": "rt_etf_k",
+      "source_order": 115,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF实时日线",
+      "example": {
+        "ts_code": "1*.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "topic"
+        }
+      ]
+    },
+    {
+      "name": "rt_etf_min",
+      "source_order": 116,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "ETF数据",
+      "desc": "ETF实时分钟",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "rt_etf_tick",
+      "source_order": 220,
+      "category": "其他",
+      "subcategory": "Tick数据",
+      "desc": "ETF Tick",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "topic"
+        }
+      ]
+    },
+    {
+      "name": "rt_fut_min",
+      "source_order": 161,
+      "category": "期货 · 期权",
+      "subcategory": "期货数据",
+      "desc": "期货实时分钟",
+      "example": {
+        "freq": "1MIN",
+        "ts_code": "CU2501.SHF"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "rt_hk_k",
+      "source_order": 207,
+      "category": "港美股",
+      "subcategory": "港股数据",
+      "desc": "港股实时日线",
+      "example": {
+        "ts_code": "00001.HK"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_hk_tick",
+      "source_order": 223,
+      "category": "其他",
+      "subcategory": "Tick数据",
+      "desc": "港股Tick",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_idx_k",
+      "source_order": 144,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数实时日线",
+      "example": {
+        "ts_code": "000001.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_idx_min",
+      "source_order": 145,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "指数实时分钟",
+      "example": {
+        "freq": "1MIN",
+        "ts_code": "000001.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "rt_idx_tick",
+      "source_order": 221,
+      "category": "其他",
+      "subcategory": "Tick数据",
+      "desc": "指数Tick",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_k",
+      "source_order": 85,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "股票实时日线",
+      "example": {
+        "ts_code": "3*.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_min",
+      "source_order": 84,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "股票实时分钟",
+      "example": {
+        "freq": "1MIN",
+        "ts_code": "589960.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "rt_sw_k",
+      "source_order": 146,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "申万指数实时行情",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_sw_tick",
+      "source_order": 222,
+      "category": "其他",
+      "subcategory": "Tick数据",
+      "desc": "申万Tick",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "rt_tick",
+      "source_order": 219,
+      "category": "其他",
+      "subcategory": "Tick数据",
+      "desc": "股票Tick",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "sf_month",
+      "source_order": 187,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "上海黄金现货月报",
+      "example": {
+        "end_m": "202307",
+        "start_m": "201901"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "m"
+        },
+        {
+          "default": "",
+          "name": "start_m"
+        },
+        {
+          "default": "",
+          "name": "end_m"
+        }
+      ]
+    },
+    {
+      "name": "sge_basic",
+      "source_order": 227,
+      "category": "其他",
+      "subcategory": "现货数据",
+      "desc": "上海黄金基础信息",
+      "example": {
+        "ts_code": "Au99.95"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "sge_daily",
+      "source_order": 228,
+      "category": "其他",
+      "subcategory": "现货数据",
+      "desc": "上海黄金现货日行情",
+      "example": {
+        "trade_date": "20220311"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "prd"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "share_float",
+      "source_order": 12,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "流通股本",
+      "example": {
+        "ann_date": "20181220"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "float_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "shibor",
+      "source_order": 179,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "Shibor利率",
+      "example": {
+        "end_date": "20181101",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "shibor_lpr",
+      "source_order": 180,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "Shibor/LPR利率",
+      "example": {
+        "end_date": "20181130",
+        "fields": "date,1y",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "shibor_quote",
+      "source_order": 181,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "Shibor报价",
+      "example": {
+        "end_date": "20181101",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "bank"
+        },
+        {
+          "default": "",
+          "name": "date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "slb_len",
+      "source_order": 4,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融资期限",
+      "example": {
+        "end_date": "20240620",
+        "start_date": "20240601"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "slb_len_mm",
+      "source_order": 6,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融资期限明细",
+      "example": {
+        "trade_date": "20240620"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "slb_sec",
+      "source_order": 3,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融券余量",
+      "example": {
+        "trade_date": "20240620"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "slb_sec_detail",
+      "source_order": 5,
+      "category": "股票数据",
+      "subcategory": "两融数据",
+      "desc": "融券余量明细",
+      "example": {
+        "trade_date": "20240620"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        }
+      ]
+    },
+    {
+      "name": "st",
+      "source_order": 21,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "ST风险警示板股票",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "pub_date"
+        },
+        {
+          "default": "",
+          "name": "imp_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_account",
+      "source_order": 68,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "股东账户",
+      "example": {
+        "end_date": "20181231",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_account_old",
+      "source_order": 69,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "股东账户(旧)",
+      "example": {
+        "end_date": "20141231",
+        "start_date": "20140101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_ah_comparison",
+      "source_order": 16,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "AH股比价",
+      "example": {
+        "trade_date": "20250812"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "hk_code"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_auction",
+      "source_order": 44,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "股票集合竞价",
+      "example": {
+        "fields": "ts_code, trade_date,vol,price,amount,turnover_rate,volume_ratio",
+        "trade_date": "20250218"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_auction_c",
+      "source_order": 57,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "盘后定价",
+      "example": {
+        "trade_date": "20241122"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_auction_o",
+      "source_order": 56,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "集合竞价",
+      "example": {
+        "trade_date": "20241122"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_factor_pro",
+      "source_order": 52,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "股票因子(专业版)",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "stk_holdernumber",
+      "source_order": 14,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "股东户数",
+      "example": {
+        "end_date": "20181231",
+        "start_date": "20160101",
+        "ts_code": "300199.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_holdertrade",
+      "source_order": 15,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "股东增减持",
+      "example": {
+        "ann_date": "20190426"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "trade_type"
+        },
+        {
+          "default": "",
+          "name": "holder_type"
+        }
+      ]
+    },
+    {
+      "name": "stk_limit",
+      "source_order": 78,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "涨跌停",
+      "example": {
+        "trade_date": "20190625"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_managers",
+      "source_order": 25,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "公司管理层",
+      "example": {
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_mins",
+      "source_order": 83,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "股票历史分钟",
+      "example": {
+        "end_date": "2025-06-20 19:00:00",
+        "freq": "1min",
+        "start_date": "2025-06-20 09:00:00",
+        "ts_code": "510330.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "1min",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "stk_nineturn",
+      "source_order": 58,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "九转序列",
+      "example": {
+        "fields": "ts_code,trade_date,freq,up_count,down_count,nine_up_turn,nine_down_turn",
+        "freq": "daily",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "freq"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "stk_premarket",
+      "source_order": 19,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "新股上市",
+      "example": {
+        "trade_date": "20240603"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stk_rewards",
+      "source_order": 26,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "高管薪酬",
+      "example": {
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "stk_surv",
+      "source_order": 59,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "舆情监控",
+      "example": {
+        "fields": "ts_code,name,surv_date,fund_visitors,rece_place,rece_mode,rece_org",
+        "trade_date": "20211024",
+        "ts_code": "002223.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "stk_week_month_adj",
+      "source_order": 74,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "周/月线复权行情",
+      "example": {
+        "freq": "week",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "week",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "stk_weekly_monthly",
+      "source_order": 73,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "周/月线行情",
+      "example": {
+        "freq": "week",
+        "trade_date": "20251024"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "week",
+          "name": "freq"
+        }
+      ]
+    },
+    {
+      "name": "stock_basic",
+      "source_order": 17,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "股票基本信息",
+      "example": {
+        "exchange": "",
+        "fields": "ts_code,symbol,name,area,industry,list_date",
+        "list_status": "L"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "L",
+          "name": "list_status"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "market"
+        }
+      ]
+    },
+    {
+      "name": "stock_company",
+      "source_order": 24,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "上市公司信息",
+      "example": {
+        "exchange": "SZSE",
+        "fields": "ts_code,chairman,manager,secretary,reg_capital,setup_date,province"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "stock_hsgt",
+      "source_order": 23,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "沪深股通成分股",
+      "example": {
+        "trade_date": "20250813",
+        "type": "HK_SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "type"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "stock_st",
+      "source_order": 20,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "ST股票列表",
+      "example": {
+        "trade_date": "20250813"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "suspend_d",
+      "source_order": 79,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "停复牌信息",
+      "example": {
+        "suspend_type": "S",
+        "trade_date": "20200312"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "1",
+          "name": "suspend_type"
+        }
+      ]
+    },
+    {
+      "name": "sw_daily",
+      "source_order": 141,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "申万指数日线",
+      "example": {
+        "fields": "ts_code,name,open,close,vol,pe,pb",
+        "trade_date": "20230705"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "sz_daily_info",
+      "source_order": 138,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "深市每日信息",
+      "example": {
+        "trade_date": "20200320"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "tdx_daily",
+      "source_order": 66,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "通达信板块行情",
+      "example": {
+        "trade_date": "20250513"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "tdx_index",
+      "source_order": 65,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "通达信板块信息",
+      "example": {
+        "fields": "ts_code,name,idx_type,idx_count",
+        "trade_date": "20250513"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "idx_type"
+        }
+      ]
+    },
+    {
+      "name": "tdx_member",
+      "source_order": 67,
+      "category": "股票数据",
+      "subcategory": "特色数据",
+      "desc": "通达信板块成分",
+      "example": {
+        "trade_date": "20250513",
+        "ts_code": "880728.TDX"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "con_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "teleplay_record",
+      "source_order": 234,
+      "category": "其他",
+      "subcategory": "票房数据",
+      "desc": "电视剧备案公示",
+      "example": {
+        "report_date": "201905"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "ths_daily",
+      "source_order": 139,
+      "category": "基金 · ETF · 指数",
+      "subcategory": "指数数据",
+      "desc": "同花顺指数日线",
+      "example": {
+        "end_date": "20210101",
+        "fields": "ts_code,trade_date,open,close,high,low,pct_change",
+        "start_date": "20200101",
+        "ts_code": "865001.TI"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ths_hot",
+      "source_order": 47,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "同花顺热点",
+      "example": {
+        "fields": "ts_code,ts_name,hot,concept",
+        "market": "热股",
+        "trade_date": "20240315"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "market"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "Y",
+          "name": "is_new"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "ths_index",
+      "source_order": 39,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "同花顺指数",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "type"
+        },
+        {
+          "default": "",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "ths_member",
+      "source_order": 40,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "同花顺成分股",
+      "example": {
+        "ts_code": "885800.TI"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "con_code"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "is_new"
+        }
+      ]
+    },
+    {
+      "name": "ths_news",
+      "source_order": 41,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "同花顺资讯",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "100",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "tmt_twincome",
+      "source_order": 235,
+      "category": "其他",
+      "subcategory": "行业经济",
+      "desc": "台湾电子产业月营收",
+      "example": {
+        "item": "8"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "tmt_twincomedetail",
+      "source_order": 236,
+      "category": "其他",
+      "subcategory": "行业经济",
+      "desc": "TMT月营收明细",
+      "example": {
+        "item": "8",
+        "symbol": "6156"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "top10_floatholders",
+      "source_order": 8,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "十大流通股东",
+      "example": {
+        "end_date": "20171231",
+        "start_date": "20170101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "top10_holders",
+      "source_order": 7,
+      "category": "股票数据",
+      "subcategory": "参考数据",
+      "desc": "十大股东",
+      "example": {
+        "end_date": "20171231",
+        "start_date": "20170101",
+        "ts_code": "600000.SH"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "ann_date"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "top_inst",
+      "source_order": 34,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "龙虎榜-机构",
+      "example": {},
+      "has_example": false,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "top_list",
+      "source_order": 33,
+      "category": "股票数据",
+      "subcategory": "打板专题",
+      "desc": "龙虎榜-上榜",
+      "example": {
+        "trade_date": "20180928"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "ts_code"
+        }
+      ]
+    },
+    {
+      "name": "trade_cal",
+      "source_order": 18,
+      "category": "股票数据",
+      "subcategory": "基础数据",
+      "desc": "交易日历",
+      "example": {
+        "end_date": "20181231",
+        "exchange": "",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "SSE",
+          "name": "exchange"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "is_open"
+        }
+      ]
+    },
+    {
+      "name": "us_adjfactor",
+      "source_order": 214,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股复权因子",
+      "example": {
+        "end_date": "20251022",
+        "start_date": "20240101",
+        "ts_code": "AAPL"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_balancesheet",
+      "source_order": 216,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股资产负债表",
+      "example": {
+        "report_type": "Q4",
+        "ts_code": "NVDA"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_basic",
+      "source_order": 210,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股基本信息",
+      "example": {},
+      "has_example": false,
+      "params": []
+    },
+    {
+      "name": "us_cashflow",
+      "source_order": 217,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股现金流量表",
+      "example": {
+        "period": "20241231",
+        "ts_code": "NVDA"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_daily",
+      "source_order": 212,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股每日行情",
+      "example": {
+        "end_date": "20190904",
+        "start_date": "20190101",
+        "ts_code": "AAPL"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_daily_adj",
+      "source_order": 213,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股每日行情(复权)",
+      "example": {
+        "end_date": "20240722",
+        "start_date": "20240101",
+        "ts_code": "AAPL"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "exchange"
+        }
+      ]
+    },
+    {
+      "name": "us_fina_indicator",
+      "source_order": 218,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股财务指标",
+      "example": {
+        "period": "20241231",
+        "ts_code": "NVDA"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_income",
+      "source_order": 215,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股利润表",
+      "example": {
+        "period": "20241231",
+        "ts_code": "NVDA"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "period"
+        },
+        {
+          "default": "",
+          "name": "ind_name"
+        },
+        {
+          "default": "",
+          "name": "report_type"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "us_tbr",
+      "source_order": 192,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "短期国债利率",
+      "example": {
+        "end_date": "20200327",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "us_tltr",
+      "source_order": 193,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "国债长期利率",
+      "example": {
+        "end_date": "20200327",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "us_tradecal",
+      "source_order": 211,
+      "category": "港美股",
+      "subcategory": "美股数据",
+      "desc": "美股交易日历",
+      "example": {
+        "end_date": "20200701",
+        "start_date": "20200101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "is_open"
+        }
+      ]
+    },
+    {
+      "name": "us_trltr",
+      "source_order": 196,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "国债实际长期利率平均值",
+      "example": {
+        "end_date": "20200327",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "us_trycr",
+      "source_order": 195,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "国债实际收益率曲线利率",
+      "example": {
+        "end_date": "20200327",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "us_tycr",
+      "source_order": 194,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "国债收益率曲线利率",
+      "example": {
+        "end_date": "20200327",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        },
+        {
+          "default": "",
+          "name": "date"
+        }
+      ]
+    },
+    {
+      "name": "weekly",
+      "source_order": 71,
+      "category": "股票数据",
+      "subcategory": "行情数据",
+      "desc": "周线行情",
+      "example": {
+        "end_date": "20181101",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "start_date": "20180101",
+        "ts_code": "000001.SZ"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        },
+        {
+          "default": "",
+          "name": "fields"
+        }
+      ]
+    },
+    {
+      "name": "wz_index",
+      "source_order": 191,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "宏观经济",
+      "desc": "温州民间借贷利率",
+      "example": {
+        "end_date": "20190401",
+        "start_date": "20180101"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "ts_code"
+        },
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "start_date"
+        },
+        {
+          "default": "",
+          "name": "end_date"
+        }
+      ]
+    },
+    {
+      "name": "yc_cb",
+      "source_order": 175,
+      "category": "债券 · 宏观 · 外汇",
+      "subcategory": "债券数据",
+      "desc": "可转债收益率",
+      "example": {
+        "curve_type": "0",
+        "trade_date": "20200203",
+        "ts_code": "1001.CB"
+      },
+      "has_example": true,
+      "params": [
+        {
+          "default": "",
+          "name": "trade_date"
+        },
+        {
+          "default": "",
+          "name": "curve_type"
+        }
+      ]
+    }
+  ]
+}

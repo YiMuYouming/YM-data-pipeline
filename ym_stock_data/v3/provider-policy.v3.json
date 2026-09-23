@@ -1,0 +1,129 @@
+{
+  "policy_version": "3.0",
+  "pipeline_version": "3.0",
+  "route_policy_version": "3.0",
+  "active": false,
+  "expires_at": "2027-09-22T00:00:00+08:00",
+  "inventory_sha256": null,
+  "probe_manifest_sha256": null,
+  "audit_receipt_sha256": null,
+  "capabilities": {
+    "stocktoday_data": {
+      "provider_order": [
+        "stocktoday"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 60,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_snapshot": {
+      "provider_order": [
+        "stocktoday",
+        "pytdx",
+        "tencent",
+        "tdx_quotes"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 60,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_daily": {
+      "provider_order": [
+        "stocktoday",
+        "pytdx",
+        "tencent",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 86400,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_weekly": {
+      "provider_order": [
+        "pytdx",
+        "tencent",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 86400,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_monthly": {
+      "provider_order": [
+        "pytdx",
+        "tencent",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 86400,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_60m": {
+      "provider_order": [
+        "pytdx",
+        "sina",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_15m": {
+      "provider_order": [
+        "pytdx",
+        "sina",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "stock_kline_5m": {
+      "provider_order": [
+        "pytdx",
+        "sina",
+        "tdx_kline"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "sector_index": {
+      "provider_order": [
+        "ths_industry"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "review_sentiment": {
+      "provider_order": [
+        "pytdx_breadth",
+        "eastmoney_breadth",
+        "eastmoney_limit_pool"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    },
+    "market_limit_state": {
+      "provider_order": [
+        "eastmoney_limit_pool"
+      ],
+      "empty_policy": "stop",
+      "max_age_sec": 300,
+      "minimum_audit_classification": "pass_nonempty",
+      "audit_evidence": []
+    }
+  }
+}

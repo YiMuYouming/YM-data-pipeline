@@ -4,24 +4,35 @@ from __future__ import annotations
 
 import re
 import socket
+import math
+from datetime import datetime, time as datetime_time, timedelta
 from typing import Callable
 
-from .contracts import ProviderAttempt, build_result
+from .contracts import ProviderAttempt, TZ_SHANGHAI, build_result
 from .intent_normalizers import normalize_success
 from .provider_state import ProviderState
 from .providers.base import ProviderOutcome
 from .providers.iwencai import IWenCaiOpenAPIProvider, PyWenCaiProvider
 from .providers.local import LOCAL_PROVIDER_NAMES, LocalProvider
 from .providers.pytdx_screener import PytdxScreenerProvider
-from .providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES, TdxMcpProvider
+from .providers.stocktoday import StockTodayProvider, validate_dataset, validate_source
 from .providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
     WIND_PROVIDER_NAMES,
     WindMcpProvider,
 )
+from .provider_policy import load_compiled_policy
 from .quality import assess_quality
 from .routing import EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED, RouteSpec, route_for
 from .sources.stock_events import EVENTS as STOCK_EVENTS
+from .trading_calendar import (
+    TradeCalendarUnavailable,
+    is_trading_day,
+    latest_completed_trade_date,
+    market_fact_age_seconds,
+    previous_trading_day,
+    session_seconds,
+)
 
 
 _SAFE_CODE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
@@ -43,11 +54,23 @@ _AUTH_STATUS_SEVERITY = {
     "expired": 5,
     "error": 6,
 }
+TDX_DIAGNOSTIC_NAMES = (
+    "tdx_mcp",
+    "tdx_screener",
+    "tdx_quotes",
+    "tdx_kline",
+    "tdx_report",
+    "tdx_notice",
+    "tdx_news",
+)
 _ALLOWED_PARAMS = {
-    "realtime_market": frozenset(),
+    "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
+    "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
-    "stock_snapshot": frozenset({"codes"}),
-    "stock_kline": frozenset({"code", "period", "count"}),
+    "stock_snapshot": frozenset({"codes", "source", "use_case"}),
+    "stock_kline": frozenset(
+        {"code", "period", "count", "source", "adjustment", "use_case", "start_date", "end_date"}
+    ),
     "review_sentiment": frozenset(
         {
             "query",
@@ -59,13 +82,32 @@ _ALLOWED_PARAMS = {
             "version",
         }
     ),
-    "market_limit_state": frozenset({"date"}),
+    "market_limit_state": frozenset({"date", "limit_type"}),
+    "market_limit_board": frozenset({"kind", "date"}),
+    "market_hot_rank": frozenset({"source", "trade_date", "limit"}),
+    "industry_flow": frozenset({"trade_date", "limit", "use_case"}),
+    "fund_flow": frozenset({"trade_date", "limit"}),
+    "northbound_flow": frozenset({"trade_date", "limit", "use_case"}),
+    "legacy_hot_rank": frozenset({"trade_date", "limit", "use_case"}),
+    "index_kline": frozenset(
+        {
+            "index_code",
+            "codes",
+            "period",
+            "count",
+            "start_date",
+            "end_date",
+            "adjustment",
+        }
+    ),
+    "index_intraday_compare": frozenset({"trade_date", "period", "use_case"}),
     "stock_event": frozenset({"event", "code", "page_size"}),
     "research": frozenset({"code", "days", "max_pages"}),
     "filings": frozenset({"code", "days", "max_pages"}),
     "news": frozenset({"limit"}),
     "wind_enrichment": frozenset({"capability", "code", "codes", "fields", "params"}),
 }
+_USE_CASES = frozenset({"realtime_poll", "agent", "research", "history"})
 
 
 class UnavailableProvider:
@@ -89,8 +131,15 @@ def _local_factory(name: str) -> Callable[[], LocalProvider]:
     return lambda: LocalProvider(name)
 
 
-def _tdx_factory(name: str) -> Callable[[], TdxMcpProvider]:
-    return lambda: TdxMcpProvider(name)
+def _tdx_factory(name: str) -> Callable[[], object]:
+    def factory():
+        try:
+            from .providers.tdx_mcp import TdxMcpProvider
+        except ImportError:
+            return UnavailableProvider(name)
+        return TdxMcpProvider(name)
+
+    return factory
 
 
 def _wind_factory(name: str) -> Callable[[], WindMcpProvider]:
@@ -104,6 +153,7 @@ PROVIDER_REGISTRY: dict[str, object] = {
     "iwencai_openapi": IWenCaiOpenAPIProvider,
     "pywencai": PyWenCaiProvider,
     "pytdx_screener": PytdxScreenerProvider,
+    "stocktoday": StockTodayProvider,
 }
 _STATE: ProviderState | None = None
 
@@ -143,10 +193,30 @@ def _more_severe_auth(current: dict | None, candidate: dict | None) -> dict | No
     return dict(candidate) if candidate_score > current_score else current
 
 
+def _latest_completed_trade_date(now: datetime | None = None) -> str:
+    """Return the latest completed exchange session, or fail if unconfirmed."""
+    current = now or datetime.now(TZ_SHANGHAI)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=TZ_SHANGHAI)
+    return latest_completed_trade_date(current.astimezone(TZ_SHANGHAI))
+
+
+def _normalize_ymd(value: str) -> str:
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return value.replace("-", "")
+    return value
+
+
 def _validate_params(intent: str, params: dict) -> None:
     unknown = set(params) - _ALLOWED_PARAMS[intent]
     if unknown:
         raise ValueError(f"unsupported {intent} params: {', '.join(sorted(unknown))}")
+    if "use_case" in params and params["use_case"] not in _USE_CASES:
+        raise ValueError("unsupported use_case")
+    if intent == "stocktoday_data":
+        validate_dataset(params)
+    if intent in {"stock_snapshot", "stock_kline"} and "source" in params:
+        validate_source(intent, params)
     if intent == "stock_snapshot":
         codes = params.get("codes")
         if isinstance(codes, str):
@@ -171,14 +241,32 @@ def _validate_params(intent: str, params: dict) -> None:
         if not str(params.get("code") or "").strip():
             raise ValueError("stock_kline requires code")
         period = str(params.get("period", "daily"))
-        if period not in {"daily", "weekly", "monthly", "60m", "15m", "5m"}:
+        if period not in {"daily", "weekly", "monthly", "60m", "15m", "5m", "1m"}:
             raise ValueError("unsupported stock_kline period")
         params.update({"code": str(params["code"]), "period": period})
+        adjustment = str(params.get("adjustment", "none")).lower()
+        if adjustment not in {"none", "qfq"}:
+            raise ValueError("stock_kline adjustment must be none or qfq")
+        if adjustment == "qfq" and period in {"1m", "5m", "15m", "60m"}:
+            raise ValueError("qfq is only supported for daily, weekly, or monthly K-lines")
+        params["adjustment"] = adjustment
         if params.get("count") is not None:
             count = int(params["count"])
             if count <= 0:
                 raise ValueError("stock_kline count must be positive")
             params["count"] = count
+        for key in ("start_date", "end_date"):
+            value = params.get(key)
+            if value is not None and (
+                not isinstance(value, str)
+                or not re.fullmatch(r"(?:\d{8}|\d{4}-\d{2}-\d{2})", value)
+            ):
+                raise ValueError(f"stock_kline {key} must use YYYYMMDD")
+            if value is not None:
+                params[key] = _normalize_ymd(value)
+        if params.get("start_date") and params.get("end_date"):
+            if params["start_date"] > params["end_date"]:
+                raise ValueError("stock_kline start_date must not exceed end_date")
     elif intent == "review_sentiment":
         value = params.get("query")
         if value is not None and (not isinstance(value, str) or not value.strip()):
@@ -229,6 +317,119 @@ def _validate_params(intent: str, params: dict) -> None:
         if limit <= 0:
             raise ValueError("news limit must be positive")
         params["limit"] = limit
+    elif intent == "market_limit_state":
+        date = params.get("date")
+        if date is not None and (
+            not isinstance(date, str) or not re.fullmatch(r"\d{8}", date)
+        ):
+            raise ValueError("market_limit_state date must use YYYYMMDD")
+        limit_type = params.get("limit_type")
+        if limit_type is not None and limit_type not in {"U", "D"}:
+            raise ValueError("market_limit_state limit_type must be U or D")
+    elif intent == "market_limit_board":
+        if params.get("kind") not in {"up", "down", "broken", "yesterday"}:
+            raise ValueError(
+                "market_limit_board kind must be up, down, broken, or yesterday"
+            )
+        date = params.get("date")
+        if date is not None and (
+            not isinstance(date, str) or not re.fullmatch(r"\d{8}", date)
+        ):
+            raise ValueError("market_limit_board date must use YYYYMMDD")
+    elif intent == "market_hot_rank":
+        if params.get("source") not in {"ths", "dc"}:
+            raise ValueError("market_hot_rank source must be ths or dc")
+        trade_date = params.get("trade_date")
+        if trade_date is not None and (
+            not isinstance(trade_date, str) or not re.fullmatch(r"\d{8}", trade_date)
+        ):
+            raise ValueError("market_hot_rank trade_date must use YYYYMMDD")
+        if trade_date is None:
+            params["trade_date"] = _latest_completed_trade_date()
+        if params.get("limit") is not None:
+            limit = int(params["limit"])
+            if limit <= 0:
+                raise ValueError("market_hot_rank limit must be positive")
+            params["limit"] = limit
+    elif intent in {"industry_flow", "fund_flow", "northbound_flow", "legacy_hot_rank"}:
+        trade_date = params.get("trade_date")
+        if trade_date is not None and (
+            not isinstance(trade_date, str) or not re.fullmatch(r"\d{8}", trade_date)
+        ):
+            raise ValueError(f"{intent} trade_date must use YYYYMMDD")
+        if trade_date is None and not (
+            intent in {"industry_flow", "northbound_flow", "legacy_hot_rank"}
+            and params.get("use_case") == "realtime_poll"
+        ):
+            params["trade_date"] = _latest_completed_trade_date()
+        if params.get("limit") is not None:
+            limit = int(params["limit"])
+            if limit <= 0:
+                raise ValueError(f"{intent} limit must be positive")
+            params["limit"] = limit
+    elif intent == "index_kline":
+        index_code = str(params.get("index_code") or "")
+        codes = params.get("codes")
+        if isinstance(codes, str):
+            codes = [codes]
+        if codes is not None and (
+            not isinstance(codes, (list, tuple)) or not codes
+        ):
+            raise ValueError("index_kline codes must be a non-empty list")
+        if codes is not None and index_code:
+            raise ValueError("index_kline accepts index_code or codes, not both")
+        if codes is None and not index_code:
+            raise ValueError("index_kline requires index_code or codes")
+
+        def normalize_index_code(value):
+            text = str(value).upper()
+            if re.fullmatch(r"\d{6}", text):
+                text = f"{text}.SH" if text == "000001" else f"{text}.SZ"
+            if not re.fullmatch(r"\d{6}\.(?:SH|SZ)", text):
+                raise ValueError("index_kline codes must use 6 digits with SH or SZ")
+            return text
+
+        if codes is not None:
+            params["codes"] = [normalize_index_code(value) for value in codes]
+        else:
+            index_code = normalize_index_code(index_code)
+            params["index_code"] = index_code
+        period = str(params.get("period", "daily")).lower()
+        if period not in {"daily", "weekly", "monthly", "1m", "5m", "15m", "60m"}:
+            raise ValueError("unsupported index_kline period")
+        adjustment = str(params.get("adjustment", "none")).lower()
+        if adjustment != "none":
+            raise ValueError("index_kline supports adjustment=none only")
+        params.update({"index_code": index_code.upper(), "period": period, "adjustment": adjustment})
+        if params.get("count") is not None:
+            count = int(params["count"])
+            if count <= 0:
+                raise ValueError("index_kline count must be positive")
+            params["count"] = count
+        for key in ("start_date", "end_date"):
+            value = params.get(key)
+            if value is not None and (
+                not isinstance(value, str)
+                or not re.fullmatch(r"(?:\d{8}|\d{4}-\d{2}-\d{2})", value)
+            ):
+                raise ValueError(f"index_kline {key} must use YYYYMMDD")
+            if value is not None:
+                params[key] = _normalize_ymd(value)
+        if params.get("start_date") and params.get("end_date") and params["start_date"] > params["end_date"]:
+            raise ValueError("index_kline start_date must not exceed end_date")
+    elif intent == "index_intraday_compare":
+        period = str(params.get("period", "15m"))
+        if period not in {"5m", "15m", "60m"}:
+            raise ValueError("index_intraday_compare period must be 5m, 15m, or 60m")
+        params["period"] = period
+        trade_date = params.get("trade_date")
+        if trade_date is not None and (
+            not isinstance(trade_date, str)
+            or not re.fullmatch(r"(?:\d{8}|\d{4}-\d{2}-\d{2})", trade_date)
+        ):
+            raise ValueError("index_intraday_compare trade_date must use YYYYMMDD")
+        if trade_date is not None:
+            params["trade_date"] = _normalize_ymd(trade_date)
     elif intent == "wind_enrichment":
         capability = params.get("capability")
         if capability not in WIND_ENRICHMENT_CAPABILITIES:
@@ -307,8 +508,11 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
             return True, count == 0, count
         return False, False, 0
     if intent == "realtime_market":
-        count = int(any(key not in {"_meta", "_source"} for key in data))
-        return bool(count), False, count
+        business_keys = {
+            key for key in data if key not in {"_meta", "_source", "_stocktoday"}
+        }
+        count = int(bool(business_keys))
+        return bool(count) or "_stocktoday" in data, not count and "_stocktoday" in data, count
     if intent == "sector_index":
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
@@ -318,22 +522,52 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
             isinstance(data.get(code), dict) and not data[code].get("error")
             for code in params["codes"]
         )
-        return count > 0, False, count
+        is_declared_empty = count == 0 and "_stocktoday" in data
+        return count > 0 or is_declared_empty, is_declared_empty, count
     if intent == "stock_kline":
         rows = data.get("bars")
         count = len(rows) if isinstance(rows, list) else 0
-        return count > 0, False, count
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
     if intent == "market_limit_state":
         required = {"zt_count", "zb_count", "dt_count", "break_rate", "max_board", "pools"}
         if not required.issubset(data):
             return False, False, 0
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         return True, count == 0, count
+    if intent in {
+        "market_limit_board",
+        "market_hot_rank",
+        "industry_flow",
+        "fund_flow",
+        "northbound_flow",
+        "legacy_hot_rank",
+    }:
+        rows = data.get("items")
+        count = len(rows) if isinstance(rows, list) else 0
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "index_kline":
+        if isinstance(data.get("items"), list):
+            count = len(data["items"])
+            return isinstance(data.get("items"), list), not data["items"], count
+        rows = data.get("bars")
+        count = len(rows) if isinstance(rows, list) else 0
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "index_intraday_compare":
+        if isinstance(data.get("items"), list):
+            count = len(data["items"])
+            return True, not data["items"], count
+        count = sum(
+            1
+            for key in ("上证15min", "深证15min", "创业15min")
+            if isinstance(data.get(key), list) and data[key]
+        )
+        return bool(count), not count, count
     if intent == "wind_enrichment":
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
     container = {
+        "stocktoday_data": "items",
         "stock_event": "items",
         "research": "reports",
         "filings": "filings",
@@ -345,6 +579,232 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
     count = int(bool(data))
     return bool(count), False, count
+
+
+def _finite_number(value: object, *, positive: bool = False) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if not math.isfinite(float(value)):
+        return False
+    return float(value) > 0 if positive else True
+
+
+def _parse_fact_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=TZ_SHANGHAI) if parsed.tzinfo is None else parsed.astimezone(TZ_SHANGHAI)
+
+
+def _now_shanghai() -> datetime:
+    return datetime.now(TZ_SHANGHAI)
+
+
+def _market_fact_time_failure(
+    stamp: datetime, now: datetime, max_age_sec: int, stale_code: str
+) -> str | None:
+    """Measure quote age only while A-share trading can update the quote."""
+
+    try:
+        age = market_fact_age_seconds(stamp, now)
+    except TradeCalendarUnavailable:
+        return "QUALITY_TRADE_CALENDAR_UNAVAILABLE"
+    return stale_code if age is None or age > max_age_sec else None
+
+
+def _fetch_time_failure(stamp: datetime, now: datetime, max_age_sec: int) -> str | None:
+    """Fetch time is a receipt; only same-day trading gaps pause its age."""
+
+    if stamp > now + timedelta(minutes=5):
+        return "QUALITY_STALE"
+    age = (now - stamp).total_seconds()
+    if stamp.date() == now.date():
+        try:
+            in_trading_day = is_trading_day(now.date())
+        except TradeCalendarUnavailable:
+            return "QUALITY_TRADE_CALENDAR_UNAVAILABLE"
+        if in_trading_day and stamp.time() >= datetime_time(9, 15):
+            age = session_seconds(now) - session_seconds(stamp)
+    return "QUALITY_STALE" if age > max_age_sec else None
+
+
+def _quality_failure_code(
+    intent: str,
+    params: dict,
+    data: object,
+    outcome: ProviderOutcome,
+    max_age_sec: int,
+) -> str | None:
+    """Reject capability-invalid data before it can terminate a route."""
+
+    if not isinstance(data, dict):
+        return "QUALITY_MISSING_FIELDS"
+
+    if intent == "stocktoday_data" or (
+        intent in {"stock_snapshot", "stock_kline"}
+        and params.get("source") == "stocktoday"
+    ):
+        # Explicit source/dataset calls retain the provider observation so
+        # callers can see stale/unknown/filter-degraded semantics directly.
+        return None
+
+    now = _now_shanghai()
+    if outcome.fetched_at:
+        fetched_at = _parse_fact_datetime(outcome.fetched_at)
+        if fetched_at is not None:
+            if intent in {"stock_snapshot", "realtime_market"}:
+                failure = _fetch_time_failure(fetched_at, now, max_age_sec)
+                if failure is not None:
+                    return failure
+            elif (now - fetched_at).total_seconds() > max_age_sec:
+                return "QUALITY_STALE"
+
+    observation = data.get("_stocktoday")
+    if isinstance(observation, dict):
+        if observation.get("status") == "stale":
+            return "QUALITY_STALE"
+        if intent == "stock_kline" and observation.get("status") == "unverified_bar_time":
+            return "QUALITY_KLINE_BAR_TIME"
+        if observation.get("filter_violations"):
+            return "QUALITY_DATE_MISMATCH"
+
+    if intent == "realtime_market":
+        required = ("上证指数", "深证指数", "创业指数")
+        if any(not _finite_number(data.get(key), positive=True) for key in required):
+            return "QUALITY_INDEX_INCOMPLETE"
+        return None
+
+    if intent == "stock_snapshot":
+        # An explicit StockToday source intentionally preserves its vendor
+        # observation semantics (including stale/unknown timestamps) for
+        # callers that asked for that source only.  Automatic routes and the
+        # realtime polling profile must satisfy the stricter canonical quote
+        # contract below.
+        for requested in params["codes"]:
+            row = data.get(requested)
+            if not isinstance(row, dict) or row.get("error"):
+                return "QUALITY_SNAPSHOT_INCOMPLETE"
+            row_code = row.get("code")
+            if row_code is not None and str(row_code).split(".")[0] != str(requested).split(".")[0]:
+                return "QUALITY_CODE_MISMATCH"
+            price = row.get("price", row.get("最新价"))
+            if not _finite_number(price, positive=True):
+                return "QUALITY_SNAPSHOT_FIELDS"
+            for field in ("last_close", "open", "high", "low", "volume", "amount", "quote_time"):
+                if field not in row or row.get(field) is None:
+                    return "QUALITY_SNAPSHOT_FIELDS"
+            for field in ("last_close", "open", "high", "low"):
+                if not _finite_number(row.get(field), positive=True):
+                    return "QUALITY_SNAPSHOT_FIELDS"
+            for field in ("volume", "amount"):
+                if not _finite_number(row.get(field)) or float(row[field]) < 0:
+                    return "QUALITY_SNAPSHOT_FIELDS"
+            quote_time = _parse_fact_datetime(row.get("quote_time"))
+            if quote_time is None:
+                return "QUALITY_SNAPSHOT_FIELDS"
+            failure = _market_fact_time_failure(
+                quote_time, now, max_age_sec, "QUALITY_SNAPSHOT_STALE"
+            )
+            if failure is not None:
+                return failure
+        return None
+
+    if intent == "stock_kline":
+        bars = data.get("bars")
+        if not isinstance(bars, list) or not bars:
+            return "QUALITY_KLINE_EMPTY"
+        if data.get("adjustment") != params.get("adjustment", "none"):
+            return "QUALITY_ADJUSTMENT_MISMATCH"
+        if data.get("volume_unit") != "share" or data.get("amount_unit") != "CNY":
+            return "QUALITY_KLINE_UNITS"
+        start_date = params.get("start_date")
+        end_date = params.get("end_date")
+        for bar in bars:
+            if not isinstance(bar, dict):
+                return "QUALITY_KLINE_FIELDS"
+            required = ("datetime", "open", "high", "low", "close", "volume", "amount")
+            if any(key not in bar for key in required):
+                return "QUALITY_KLINE_FIELDS"
+            if any(not _finite_number(bar.get(key)) for key in ("open", "high", "low", "close")):
+                return "QUALITY_KLINE_FIELDS"
+            if not _finite_number(bar.get("volume"), positive=True) or not _finite_number(bar.get("amount"), positive=True):
+                return "QUALITY_KLINE_FIELDS"
+            stamp = _parse_fact_datetime(str(bar.get("datetime")))
+            if stamp is None:
+                return "QUALITY_KLINE_DATE"
+            stamp_date = stamp.strftime("%Y%m%d")
+            if start_date and stamp_date < start_date:
+                return "QUALITY_DATE_MISMATCH"
+            if end_date and stamp_date > end_date:
+                return "QUALITY_DATE_MISMATCH"
+            if stamp > now + timedelta(minutes=5):
+                return "QUALITY_FUTURE_BAR"
+            if (
+                params.get("period") in {"daily", "weekly", "monthly"}
+                and stamp.date() == now.date()
+                and now.time().replace(tzinfo=None) < datetime_time(15, 5)
+            ):
+                return "QUALITY_INCOMPLETE_BAR"
+        return None
+
+    if intent == "index_intraday_compare":
+        required_names = ("上证15min", "深证15min", "创业15min")
+        for name in required_names:
+            rows = data.get(name)
+            if not isinstance(rows, list) or not rows:
+                return "QUALITY_COMPARE_INCOMPLETE"
+            for row in rows:
+                if not isinstance(row, dict):
+                    return "QUALITY_COMPARE_FIELDS"
+                required = {"t", "chg", "vol", "volRatio", "amount"}
+                if not required.issubset(row):
+                    return "QUALITY_COMPARE_FIELDS"
+                if not row.get("_cum") and "yesterdayAmt" not in row:
+                    return "QUALITY_COMPARE_FIELDS"
+        return None
+
+    if intent == "legacy_hot_rank":
+        if not isinstance(data.get("reason_stats"), dict) or "zt_count" not in data:
+            return "QUALITY_HOT_RANK_SHAPE"
+        return None
+
+    if intent == "index_kline":
+        requested = params.get("codes") or [params.get("index_code")]
+        requested = [code for code in requested if code]
+        items = data.get("items")
+        if isinstance(items, list):
+            if len(items) != len(requested):
+                return "QUALITY_INDEX_INCOMPLETE"
+            observed = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    return "QUALITY_INDEX_INCOMPLETE"
+                code = item.get("index_code")
+                if code not in requested:
+                    return "QUALITY_INDEX_CODE_MISMATCH"
+                if code in observed:
+                    return "QUALITY_INDEX_INCOMPLETE"
+                observed.add(code)
+                failure = _quality_failure_code(
+                    "stock_kline", params, item, outcome, max_age_sec
+                )
+                if failure is not None:
+                    return failure
+            if observed != set(requested):
+                return "QUALITY_INDEX_INCOMPLETE"
+            return None
+        if len(requested) != 1:
+            return "QUALITY_INDEX_INCOMPLETE"
+        if data.get("index_code") != requested[0]:
+            return "QUALITY_INDEX_CODE_MISMATCH"
+        return _quality_failure_code(
+            "stock_kline", params, data, outcome, max_age_sec
+        )
+
+    return None
 
 
 def _failure_quality(intent: str, params: dict, status: str, count: int) -> dict:
@@ -362,19 +822,42 @@ def _failure_quality(intent: str, params: dict, status: str, count: int) -> dict
     return quality
 
 
+def _source_tier(
+    intent: str,
+    params: dict,
+    spec: RouteSpec,
+    provider_used: str | None,
+    attempts: list[ProviderAttempt],
+) -> str:
+    if intent == "stocktoday_data" or params.get("source") == "stocktoday":
+        return "explicit"
+    if provider_used is not None:
+        return "primary" if provider_used == spec.providers[0] else "fallback"
+    return "primary" if not any(
+        attempt.provider != spec.providers[0] for attempt in attempts
+    ) else "fallback"
+
+
 def _query_with(
     intent: str,
     params: dict,
     *,
     provider_loader: Callable[[str], object] | None = None,
     state_loader: Callable[[], ProviderState] | None = None,
+    policy_loader: Callable[[], object] | None = None,
 ) -> dict:
     """Canonical router core with private, test/smoke-only dependency injection."""
 
     call_params = dict(params)
     provider_loader = provider_loader or _provider_for
     state_loader = state_loader or _provider_state
-    spec: RouteSpec = route_for(intent, call_params)
+    policy_loader = policy_loader or load_compiled_policy
+    try:
+        compiled_policy = policy_loader()
+    except Exception:
+        # A policy loader failure must leave the V2 route intact.
+        compiled_policy = load_compiled_policy()
+    spec: RouteSpec = compiled_policy.route(intent, call_params)
     _validate_params(intent, call_params)
     attempts: list[ProviderAttempt] = []
     provider_used = None
@@ -392,7 +875,29 @@ def _query_with(
             attempts.append(ProviderAttempt(provider_name, "breaker_open", breaker["error_code"], 0))
             continue
         try:
-            outcome = provider_loader(provider_name).call(intent, dict(call_params))
+            provider_params = dict(call_params)
+            # The use-case is a pipeline-owned routing profile, not a
+            # provider selector.  Do not leak it into adapter payloads.
+            provider_params.pop("use_case", None)
+            if intent in {
+                "industry_flow",
+                "northbound_flow",
+                "legacy_hot_rank",
+            } and call_params.get("use_case") == "realtime_poll":
+                # Current-session is an internal semantic marker for legacy
+                # adapters; it is not a provider selector and never appears
+                # in the public contract.
+                provider_params["current_session"] = True
+            if provider_name == "stocktoday" and intent in {
+                "stock_snapshot",
+                "stock_kline",
+            }:
+                # StockToday validates its source ownership at the provider
+                # boundary.  Keep this internal marker scoped to that one
+                # provider; fallback providers must receive the public V2
+                # params unchanged.
+                provider_params["source"] = "stocktoday"
+            outcome = provider_loader(provider_name).call(intent, provider_params)
         except (TimeoutError, socket.timeout):
             outcome = ProviderOutcome(provider_name, "timeout", error_code="TIMEOUT")
         except ImportError:
@@ -440,6 +945,24 @@ def _query_with(
                     ProviderAttempt(actual, "provider_error", "STATUS_DATA_MISMATCH", max(0, int(outcome.latency_ms)))
                 )
                 continue
+            if not is_empty:
+                quality_error = _quality_failure_code(
+                    intent,
+                    call_params,
+                    outcome.data,
+                    outcome,
+                    spec.max_age_sec,
+                )
+                if quality_error is not None:
+                    attempts.append(
+                        ProviderAttempt(
+                            actual,
+                            "quality_failure",
+                            quality_error,
+                            max(0, int(outcome.latency_ms)),
+                        )
+                    )
+                    continue
             terminal = "empty" if is_empty else "success"
             if (
                 terminal == "empty"
@@ -490,7 +1013,15 @@ def _query_with(
     quality = final_quality or _failure_quality(
         intent, call_params, final_status, final_count
     )
-    return build_result(
+    policy_status = getattr(compiled_policy, "policy_status", "inactive")
+    policy_evidence_sha256 = getattr(
+        compiled_policy, "policy_evidence_sha256", None
+    )
+    pipeline_version = getattr(compiled_policy, "pipeline_version", "3.0")
+    route_policy_version = getattr(
+        compiled_policy, "route_policy_version", "3.0"
+    )
+    result = build_result(
         intent=intent,
         data=data,
         status=final_status,
@@ -502,7 +1033,35 @@ def _query_with(
         max_age_sec=spec.max_age_sec,
         fetched_at=fetched_at,
         auth=auth if provider_used is not None else observed_auth or auth,
+        pipeline_version=pipeline_version,
+        route_policy_version=route_policy_version,
+        source_tier=_source_tier(
+            intent, call_params, spec, provider_used, attempts
+        ),
+        policy_evidence_sha256=policy_evidence_sha256,
+        policy_status=policy_status,
     )
+    if provider_used == "stocktoday" and isinstance(data, dict):
+        observation = data.get("_stocktoday", {})
+        result["_meta"]["observation"] = dict(observation)
+        if result["_meta"]["status"] == "success" and observation.get("status") in {"stale", "unknown", "unverified_bar_time"}:
+            result["_meta"]["status"] = "degraded"
+            result["_meta"]["quality"]["status"] = "semantic_degraded"
+        if observation.get("filter_violations") and result["_meta"]["status"] in {"success", "degraded"}:
+            result["_meta"]["status"] = "degraded"
+            result["_meta"]["quality"]["status"] = "semantic_degraded"
+            result["_meta"]["quality"]["reason_codes"].append("FILTER_MISMATCH")
+        if result["_meta"]["status"] == "success" and (
+            observation.get("truncated") or observation.get("missing_codes") or observation.get("duplicate_code_count")
+            or result["_meta"]["quality"]["status"] == "partial"
+        ):
+            result["_meta"]["status"] = "degraded"
+            result["_meta"]["quality"]["status"] = "partial"
+    if intent == "market_hot_rank" and result["_meta"]["status"] in {"error", "empty"}:
+        result["_meta"]["source_gap"] = (
+            "no_semantically_equivalent_hot_rank_fallback"
+        )
+    return result
 
 
 def query(intent: str, **params) -> dict:

@@ -18,7 +18,7 @@ import threading
 import urllib.parse
 import urllib.request
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from functools import wraps
 
@@ -33,6 +33,35 @@ _fail_count = 0
 _using_fallback = False
 _all_servers_down_at = 0
 _PYTDX_DOWN_COOLDOWN = 60
+_SHANGHAI = timezone(timedelta(hours=8))
+
+_COMPAT_STAGE_PAYLOAD = bytes.fromhex(
+    "74 64 78 6c 65 76 65 6c 00 00 00 e1 7a f4 40 4c "
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 05"
+)
+
+
+def _compat_setup_packets() -> list[bytes]:
+    """Return the current public TDX bootstrap packets.
+
+    ``pytdx==1.72`` still sends the retired SetupCmd1/2/3 payloads.  The
+    public nodes accept this three-stage sequence and continue to speak the
+    legacy quote/bar business parsers afterwards.
+    """
+
+    stage_length = (len(_COMPAT_STAGE_PAYLOAD) + 2).to_bytes(2, "little")
+    return [
+        bytes.fromhex("0c 00 00 00 00 00 02 00 02 00 15 00"),
+        bytes.fromhex("0c 02 18 94")
+        + (1).to_bytes(2, "little")
+        + bytes.fromhex("03 00 03 00 0d 00 01"),
+        bytes.fromhex("0c 03 18 99")
+        + (2).to_bytes(2, "little")
+        + stage_length
+        + stage_length
+        + bytes.fromhex("db 0f")
+        + _COMPAT_STAGE_PAYLOAD,
+    ]
 
 # 均线缓存: {code: {ma5_d, ma10_d, ma20_d, ma10_60m, ma10_60m_dir, _strong}}
 _ma_cache = {}
@@ -56,8 +85,25 @@ def _load_tdx_hq_api():
             lineno=128,
         )
         from pytdx.hq import TdxHq_API
+        from pytdx.parser.base import BaseParser
 
-    return TdxHq_API
+    class _CompatSetupParser(BaseParser):
+        def __init__(self, client, packet, lock=None):
+            super().__init__(client, lock=lock)
+            self.packet = packet
+
+        def setup(self):
+            self.send_pkg = bytearray(self.packet)
+
+        def parseResponse(self, body_buf):
+            return body_buf
+
+    class _CurrentProtocolTdxHqAPI(TdxHq_API):
+        def setup(self):
+            for packet in _compat_setup_packets():
+                _CompatSetupParser(self.client, packet, lock=self.lock).call_api()
+
+    return _CurrentProtocolTdxHqAPI
 
 
 def _serialized_pytdx_call(fn):
@@ -173,6 +219,34 @@ def _number(value, default=0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _direct_failure(kind: str) -> dict:
+    return {
+        "error": f"PyTDX direct {kind} unavailable",
+        "error_type": "PYTDX_DIRECT_UNAVAILABLE",
+        "_source": "pytdx",
+    }
+
+
+def _quote_time(value) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if re.fullmatch(r"\d{1,2}:\d{2}:\d{2}(?:\.\d+)?", text):
+        fmt = "%H:%M:%S.%f" if "." in text else "%H:%M:%S"
+        parsed_time = datetime.strptime(text, fmt).time()
+        return datetime.combine(
+            datetime.now(_SHANGHAI).date(), parsed_time, tzinfo=_SHANGHAI
+        ).isoformat(timespec="milliseconds" if "." in text else "seconds")
+    parsed = None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI)
+    return parsed.astimezone(_SHANGHAI).isoformat(timespec="milliseconds")
 
 
 def _eastmoney_json(url: str) -> dict:
@@ -349,7 +423,7 @@ def fetch_quotes(codes: list) -> dict:
 
     api = _get_api()
     if not api:
-        return _fallback_quotes(codes)
+        return _direct_failure("quotes")
 
     tdx_codes = []
     code_map = {}
@@ -365,11 +439,11 @@ def fetch_quotes(codes: list) -> dict:
     try:
         raw = api.get_security_quotes(tdx_codes)
         if not raw:
-            return _fallback_quotes(codes)
+            return _direct_failure("quotes")
     except Exception:
         with _lock:
             _fail_count += 1
-        return _fallback_quotes(codes)
+        return _direct_failure("quotes")
 
     with _lock:
         _fail_count = 0
@@ -394,6 +468,15 @@ def fetch_quotes(codes: list) -> dict:
         mas = _get_mas(api, code, price)
 
         result[code] = {
+            "code": code,
+            "price": price,
+            "last_close": last_close,
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "volume": _number(vol) * 100 if vol is not None else None,
+            "amount": row.get("amount"),
+            "quote_time": _quote_time(row.get("servertime")),
             "最新价": price,
             "涨幅": f"{pct_chg:+.2f}%",
             "量比": f"{vol_ratio:.2f}" if vol_ratio else "—",
@@ -556,7 +639,7 @@ def fetch_index() -> dict:
     """
     api = _get_api()
     if not api:
-        return _fallback_index()
+        return _direct_failure("index")
 
     idx_map = {
         "000001": "上证指数", "399001": "深证指数", "399006": "创业指数",
@@ -566,9 +649,9 @@ def fetch_index() -> dict:
     try:
         raw = api.get_security_quotes(idx_codes)
         if not raw:
-            return _fallback_index()
+            return _direct_failure("index")
     except Exception:
-        return _fallback_index()
+        return _direct_failure("index")
 
     result = {}
     amount_total = 0
@@ -735,8 +818,107 @@ def _all_share_codes(api):
 # ==================== K线 ====================
 
 
+def _filter_direct_bars(bars, period: str) -> list[dict]:
+    """Keep completed, numerically meaningful direct bars only."""
+
+    now = datetime.now()
+    result = []
+    for bar in bars or []:
+        if not isinstance(bar, dict):
+            continue
+        stamp = str(bar.get("datetime", ""))
+        try:
+            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            continue
+        volume = _number(bar.get("vol"), 0.0)
+        amount = _number(bar.get("amount"), 0.0)
+        if volume < 1 or amount < 1:
+            continue
+        if (
+            period in {"daily", "weekly", "monthly"}
+            and parsed.date() == now.date()
+            and now.time() < datetime.strptime("15:05", "%H:%M").time()
+        ):
+            continue
+        result.append(bar)
+    return result
+
+
+_BAR_PAGE_SIZE = 800
+_MAX_RANGE_PAGES = 256
+
+
+def _bar_date(value) -> str:
+    text = str(value or "")[:10]
+    return text.replace("-", "") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else text
+
+
+def _normalize_date_bound(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text.replace("-", "")
+    return text
+
+
+def _paged_direct_bars(fetch_page, *, period, count, start_date, end_date):
+    """Read a bounded direct bar range using PyTDX's offset pagination.
+
+    PyTDX's small ``count`` reads are relative to the newest bars, so they
+    cannot serve historical intraday backfills.  Date-bounded requests use
+    the public 800-row page size and stop only after the lower date boundary
+    has been reached.  The caller still applies the final exact date filter.
+    """
+
+    start_date = _normalize_date_bound(start_date)
+    end_date = _normalize_date_bound(end_date)
+    has_range = start_date is not None or end_date is not None
+    if not has_range:
+        page = fetch_page(0, count or (30 if period in {"daily", "60m"} else 48))
+        return _filter_direct_bars(page or [], period)
+
+    rows = []
+    lower_bound = start_date or end_date
+    for page_number in range(_MAX_RANGE_PAGES):
+        page = fetch_page(page_number * _BAR_PAGE_SIZE, _BAR_PAGE_SIZE)
+        if not page:
+            break
+        rows.extend(_filter_direct_bars(page, period))
+        page_dates = [_bar_date(row.get("datetime")) for row in page if isinstance(row, dict)]
+        if page_dates and min(page_dates) <= lower_bound:
+            break
+    else:
+        return []
+
+    filtered = []
+    seen = set()
+    for row in rows:
+        stamp = str(row.get("datetime", ""))
+        date_value = _bar_date(stamp)
+        if start_date and date_value < start_date:
+            continue
+        if end_date and date_value > end_date:
+            continue
+        key = stamp
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append(row)
+    filtered.sort(key=lambda row: str(row.get("datetime", "")))
+    return filtered[-count:] if count else filtered
+
+
 @_serialized_pytdx_call
-def fetch_kline(code: str, period: str = "daily") -> dict:
+def fetch_kline(
+    code: str,
+    period: str = "daily",
+    *,
+    count: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
     """K线+均线
 
     Args:
@@ -748,19 +930,30 @@ def fetch_kline(code: str, period: str = "daily") -> dict:
     """
     api = _get_api()
     if not api:
-        return _fallback_kline(code, period=period)
+        return _direct_failure("kline")
 
-    _PERIOD_MAP = {"daily": 9, "weekly": 5, "monthly": 6, "60m": 3, "15m": 1, "5m": 0}
+    _PERIOD_MAP = {"daily": 9, "weekly": 5, "monthly": 6, "60m": 3, "15m": 1, "5m": 0, "1m": 7}
     bar_type = _PERIOD_MAP.get(period, 9)
-    count = 30 if period in ("daily", "60m") else 48
 
     mkt = 1 if str(code).startswith(("6", "688")) else 0
     try:
-        bars = api.get_security_bars(bar_type, mkt, str(code), 0, count)
+        bars = _paged_direct_bars(
+            lambda start, page_count: api.get_security_bars(
+                bar_type, mkt, str(code), start, page_count
+            ),
+            period=period,
+            count=count,
+            start_date=start_date,
+            end_date=end_date,
+        )
         if not bars:
-            return _fallback_kline(code, period=period, count=count)
+            return _direct_failure("kline")
     except Exception:
-        return _fallback_kline(code, period=period, count=count)
+        return _direct_failure("kline")
+
+    bars = _filter_direct_bars(bars, period)
+    if not bars:
+        return _direct_failure("kline")
 
     bar_list = [{
         "time": str(b.get("datetime", "")),
@@ -772,6 +965,88 @@ def fetch_kline(code: str, period: str = "daily") -> dict:
         "amount": b.get("amount", 0),
     } for b in bars]
     return _build_kline_result(code, bar_list)
+
+
+@_serialized_pytdx_call
+def fetch_index_kline(
+    index_code: str,
+    *,
+    period: str = "daily",
+    count: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Direct PyTDX index bars used only after StockToday index history."""
+
+    markets = {
+        "000001.SH": (1, "000001"),
+        "399001.SZ": (0, "399001"),
+        "399006.SZ": (0, "399006"),
+    }
+    normalized_code = str(index_code).upper()
+    target = markets.get(normalized_code)
+    if target is None:
+        return {"error": "unsupported index code", "error_type": "INVALID_PARAMS"}
+    if period not in {"daily", "weekly", "monthly"}:
+        return {
+            "error": "PyTDX index minute volume is not canonical",
+            "error_type": "INCOMPATIBLE_PERIOD",
+        }
+    api = _get_api()
+    if not api:
+        return _direct_failure("index_kline")
+    bar_type = {
+        "daily": 9,
+        "weekly": 5,
+        "monthly": 6,
+        "1m": 7,
+        "5m": 0,
+        "15m": 1,
+        "60m": 3,
+    }.get(period)
+    if bar_type is None:
+        return {"error": "unsupported index period", "error_type": "INVALID_PARAMS"}
+    row_count = count or (30 if period in {"daily", "60m"} else 48)
+    try:
+        raw = _paged_direct_bars(
+            lambda start, page_count: api.get_index_bars(
+                bar_type, target[0], target[1], start, page_count
+            ),
+            period=period,
+            count=count,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception:
+        return _direct_failure("index_kline")
+    rows = _filter_direct_bars(raw or [], period)
+    if not rows:
+        return _direct_failure("index_kline")
+    bars = []
+    for row in rows:
+        stamp = str(row.get("datetime", ""))
+        bars.append(
+            {
+                "datetime": stamp,
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "volume": _number(row.get("vol"), 0.0) * 10000,
+                "amount": _number(row.get("amount"), 0.0),
+            }
+        )
+    if not bars:
+        return _direct_failure("index_kline")
+    return {
+        "index_code": normalized_code,
+        "period": period,
+        "bars": bars[-count:] if count else bars,
+        "adjustment": "none",
+        "volume_unit": "share",
+        "amount_unit": "CNY",
+        "source": "pytdx_index",
+    }
 
 
 def _build_kline_result(
@@ -833,15 +1108,18 @@ def _fallback_kline(code: str, period: str = "daily", count: int | None = None) 
     }
 
 
-def _fetch_tencent_kline(code: str, *, period: str, count: int) -> list[dict]:
+def _fetch_tencent_kline(
+    code: str, *, period: str, count: int, adjustment: str = "none"
+) -> list[dict]:
     period_map = {"daily": "day", "weekly": "week", "monthly": "month"}
     remote_period = period_map.get(period)
-    if not remote_period:
+    if not remote_period or adjustment not in {"none", "qfq"}:
         return []
     symbol = ("sh" if str(code).startswith(("6", "9")) else "bj" if str(code).startswith("8") else "sz") + str(code)
+    remote_key = f"{adjustment}{remote_period}" if adjustment == "qfq" else remote_period
     url = (
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
-        + urllib.parse.urlencode({"param": f"{symbol},{remote_period},,,{count},qfq"})
+        + urllib.parse.urlencode({"param": f"{symbol},{remote_period},,,{count},{adjustment}"})
     )
     try:
         req = urllib.request.Request(url, headers={
@@ -851,7 +1129,7 @@ def _fetch_tencent_kline(code: str, *, period: str, count: int) -> list[dict]:
         with urllib.request.urlopen(req, timeout=10) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         stock = ((payload or {}).get("data") or {}).get(symbol) or {}
-        rows = stock.get(f"qfq{remote_period}") or stock.get(remote_period) or []
+        rows = stock.get(remote_key) or []
     except Exception:
         return []
 

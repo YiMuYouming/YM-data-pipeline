@@ -80,17 +80,17 @@ CANONICAL_ROUTES = {
     "limit_state": "market_limit_state",
     "market_limit_state": "market_limit_state",
     "stock_event": "stock_event",
+    "sector_inflow": "industry_flow",
+    "northbound": "northbound_flow",
+    "ths_hot": "legacy_hot_rank",
+    "kline_15m": "index_intraday_compare",
 }
 LEGACY_DIRECT_ROUTES = {
     key: _ROUTES[key]
     for key in (
         "sector_index",
-        "kline_15m",
-        "ths_hot",
         "tencent",
-        "northbound",
         "dragon_tiger",
-        "sector_inflow",
         "iwencai_content",
         "industry_research",
     )
@@ -129,8 +129,45 @@ def fetch(data_type: str, **kwargs) -> dict:
 
     if data_type in CANONICAL_ROUTES:
         intent = CANONICAL_ROUTES[data_type]
-        result = canonical_query(intent, **kwargs)
+        canonical_kwargs = dict(kwargs)
+        if data_type == "sector_inflow" and "top_n" in canonical_kwargs:
+            canonical_kwargs["limit"] = canonical_kwargs.pop("top_n")
+        if data_type == "ths_hot" and "date_str" in canonical_kwargs:
+            date_value = canonical_kwargs.pop("date_str")
+            if isinstance(date_value, str) and len(date_value) == 10:
+                date_value = date_value.replace("-", "")
+            canonical_kwargs["trade_date"] = date_value
+        if data_type in {"sector_inflow", "northbound", "ths_hot", "kline_15m"}:
+            canonical_kwargs.setdefault("use_case", "realtime_poll")
+        result = canonical_query(intent, **canonical_kwargs)
         data = result.get("data")
+        if isinstance(data, dict):
+            if data_type == "sector_inflow":
+                rows = list(data.get("items") or [])
+                limit = canonical_kwargs.get("limit", 20)
+                data = {
+                    **data,
+                    "total": len(rows),
+                    "top": rows[:limit],
+                    "bottom": rows[-limit:] if rows else [],
+                }
+            elif data_type == "northbound":
+                rows = list(data.get("items") or [])
+                data = {
+                    **data,
+                    "date": data.get("trade_date"),
+                    "minutes": rows,
+                    "minute_count": len(rows),
+                    "source": "northbound_hsgt",
+                }
+            elif data_type == "ths_hot":
+                rows = list(data.get("items") or [])
+                data = {
+                    **data,
+                    "stocks": rows,
+                    "total": len(rows),
+                    "source": "ths_hot",
+                }
         if data_type == "breadth" and isinstance(data, dict):
             aggregates = data.get("aggregates")
             breadth = aggregates.get("breadth") if isinstance(aggregates, dict) else None

@@ -12,9 +12,10 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+from .. import query
 from ..fetch import fetch
 from ..sources.pytdx import fetch_quotes as _pytdx_quotes, fetch_breadth, \
-    fetch_sector, fetch_kline_15m, api_session, _format_amount
+    fetch_sector, api_session, _format_amount
 
 _OUTPUT = Path(__file__).resolve().parent.parent.parent / "outputs" / "dashboard_live_new.json"
 _DASHBOARD_DATA = Path.home() / "Documents/YM_Capital/live-dashboard/data/dashboard_data.json"
@@ -121,7 +122,12 @@ def build_live(include_extras: bool = True) -> dict:
     data["yesterday_baseline"] = _yesterday_baseline()
 
     # 15min 量价数据
-    k15 = fetch_kline_15m()
+    k15_result = query(
+        "index_intraday_compare",
+        period="15m",
+        use_case="realtime_poll",
+    )
+    k15 = k15_result.get("data", {}) if isinstance(k15_result, dict) else {}
     for key in ("上证15min", "深证15min", "创业15min"):
         data[key] = k15.get(key, [])
 

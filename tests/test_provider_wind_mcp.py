@@ -2,6 +2,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -285,7 +286,21 @@ class WindProviderTests(unittest.TestCase):
                 return ProviderOutcome(
                     provider=self.name,
                     status="success",
-                    data={stock_code: {"price": 1400}},
+                    data={
+                        stock_code: {
+                            "code": stock_code,
+                            "price": 1400.0,
+                            "last_close": 1390.0,
+                            "open": 1395.0,
+                            "high": 1405.0,
+                            "low": 1388.0,
+                            "volume": 1000.0,
+                            "amount": 1400000.0,
+                            "quote_time": datetime.now().astimezone().isoformat(
+                                timespec="seconds"
+                            ),
+                        }
+                    },
                     latency_ms=1,
                     auth={"required": False, "status": "not_required"},
                 )
@@ -298,7 +313,12 @@ class WindProviderTests(unittest.TestCase):
             ):
                 snapshot = api.query("stock_snapshot", codes=[stock_code])
 
-        self.assertEqual("success", snapshot["_meta"]["status"])
+        self.assertEqual("degraded", snapshot["_meta"]["status"])
+        self.assertEqual("pytdx", snapshot["_meta"]["provider_used"])
+        self.assertEqual(
+            ["stocktoday", "tencent", "pytdx"],
+            snapshot["_meta"]["source_chain"],
+        )
         self.assertEqual([stock_code], snapshot_provider.calls[0][1]["codes"])
 
     def test_wind_screener_empty_error_auth_and_malformed_are_explicit(self):

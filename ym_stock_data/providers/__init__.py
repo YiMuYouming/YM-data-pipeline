@@ -2,8 +2,6 @@
 
 from .base import Provider, ProviderOutcome
 from .local import LOCAL_PROVIDER_NAMES, LocalProvider
-from .tdx_mcp import TDX_PROVIDER_NAMES, TdxMcpProvider
-from .wind_mcp import WIND_PROVIDER_NAMES, WindMcpProvider
 
 __all__ = [
     "LOCAL_PROVIDER_NAMES",
@@ -15,3 +13,17 @@ __all__ = [
     "WIND_PROVIDER_NAMES",
     "WindMcpProvider",
 ]
+
+
+def __getattr__(name: str):
+    """Load optional MCP providers only when callers explicitly request them."""
+
+    if name in {"TDX_PROVIDER_NAMES", "TdxMcpProvider"}:
+        from . import tdx_mcp
+
+        return getattr(tdx_mcp, name)
+    if name in {"WIND_PROVIDER_NAMES", "WindMcpProvider"}:
+        from . import wind_mcp
+
+        return getattr(wind_mcp, name)
+    raise AttributeError(name)

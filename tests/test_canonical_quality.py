@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -95,16 +96,40 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertEqual(2947, result["data"]["上涨家数"])
         self.assertEqual(2147, result["data"]["下跌家数"])
 
-    def test_snapshot_quality_reports_partial_coverage_and_missing_codes(self):
-        provider = StaticProvider("pytdx", {"600519": {"price": 1400}})
-        with patch.object(api, "_provider_for", return_value=provider):
+    def test_snapshot_quality_rejects_partial_coverage_and_falls_through(self):
+        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        provider = StaticProvider(
+            "pytdx",
+            {
+                "600519": {
+                    "code": "600519",
+                    "price": 1400.0,
+                    "last_close": 1390.0,
+                    "open": 1395.0,
+                    "high": 1405.0,
+                    "low": 1388.0,
+                    "volume": 1000.0,
+                    "amount": 1400000.0,
+                    "quote_time": now,
+                }
+            },
+        )
+
+        def provider_for(name):
+            return provider if name == "pytdx" else api.UnavailableProvider(name)
+
+        with patch.object(api, "_provider_for", side_effect=provider_for):
             result = query("stock_snapshot", codes=["600519", "000858"])
 
-        quality = result["_meta"]["quality"]
-        self.assertEqual("partial", quality["status"])
-        self.assertEqual(0.5, quality["coverage"])
-        self.assertEqual(["000858"], quality["missing"])
-        self.assertIn("coverage_shortfall", quality["reason_codes"])
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertIsNone(result["_meta"]["provider_used"])
+        rejected = next(
+            attempt
+            for attempt in result["_meta"]["attempts"]
+            if attempt["provider"] == "pytdx"
+        )
+        self.assertEqual("quality_failure", rejected["status"])
+        self.assertEqual("QUALITY_SNAPSHOT_INCOMPLETE", rejected["error_code"])
 
     def test_sector_quality_reports_partial_name_coverage(self):
         sector = {"code": "881160", "name": "国防军工", "change_pct": 1.2}
@@ -124,22 +149,30 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertEqual(["商业航天"], quality["missing"])
         self.assertEqual("exact", quality["semantic_equivalence"])
 
-    def test_kline_internal_fallback_keeps_semantic_degradation(self):
+    def test_kline_quality_rejects_incomplete_legacy_fallback_payload(self):
         raw = {
             "code": "600519",
             "bars": [{"time": "2026-07-29", "close": 1400, "amount": None}],
             "_source": "tencent_fallback",
             "_meta": {"fallback_from": "pytdx", "fallback_to": "tencent"},
         }
-        with patch("ym_stock_data.providers.local.pytdx.fetch_kline", return_value=raw):
+        provider = StaticProvider("pytdx", raw)
+
+        def provider_for(name):
+            return provider if name == "pytdx" else api.UnavailableProvider(name)
+
+        with patch.object(api, "_provider_for", side_effect=provider_for):
             result = query("stock_kline", code="600519", count=1)
 
-        quality = result["_meta"]["quality"]
-        self.assertEqual("degraded", result["_meta"]["status"])
-        self.assertEqual("partial", quality["status"])
-        self.assertEqual("unknown", quality["semantic_equivalence"])
-        self.assertIn("fallback_source", quality["reason_codes"])
-        self.assertIn("amount", quality["missing"])
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertIsNone(result["_meta"]["provider_used"])
+        rejected = next(
+            attempt
+            for attempt in result["_meta"]["attempts"]
+            if attempt["provider"] == "pytdx"
+        )
+        self.assertEqual("quality_failure", rejected["status"])
+        self.assertEqual("QUALITY_ADJUSTMENT_MISMATCH", rejected["error_code"])
 
     def test_explicit_review_keeps_shape_quality_summary_and_aggregates(self):
         provider = StaticProvider(
