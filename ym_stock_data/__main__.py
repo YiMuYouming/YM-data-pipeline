@@ -132,9 +132,9 @@ def _parser() -> argparse.ArgumentParser:
     stocktoday_status.add_argument("receipt", type=Path)
     facts_parser = commands.add_parser("market-facts", help="dated limit facts and derived short-term indicators")
     facts_commands = facts_parser.add_subparsers(dest="facts_command", required=True)
-    for name in ("collect-limits", "collect-history", "collect-daily", "collect-returns", "report"):
+    for name in ("collect-limits", "collect-history", "collect-daily", "collect-returns", "refresh", "report"):
         action = facts_commands.add_parser(name)
-        action.add_argument("--date", required=name != "report", help="exchange trade date YYYYMMDD")
+        action.add_argument("--date", required=name not in {"report", "refresh"}, help="exchange trade date YYYYMMDD")
         action.add_argument("--db", type=Path, help="separate market-facts SQLite path")
     for name in ("backfill-history", "backfill-daily"):
         backfill = facts_commands.add_parser(name)
@@ -232,6 +232,28 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             store = MarketFactStore(args.db or DEFAULT_DB, read_only=args.facts_command == "report")
+            if args.facts_command == "refresh":
+                trade_date = args.date or latest_completed_trade_date(datetime.now(TZ_SHANGHAI))
+                receipt = {"trade_date": trade_date, "limit_events": None, "daily_ohlc": None, "gaps": []}
+                if store.latest_limit_run(trade_date):
+                    receipt["limit_events"] = "already_present"
+                else:
+                    try:
+                        source = canonical_query("market_limit_state", date=trade_date)
+                        receipt["limit_events"] = store.ingest_limits(trade_date, source)
+                    except (ValueError, OSError) as error:
+                        receipt["gaps"].append({"dataset": "limit_events", "error_code": type(error).__name__})
+                with store._connect() as conn:
+                    daily_present = conn.execute("SELECT 1 FROM daily_runs WHERE trade_date=? LIMIT 1", (trade_date,)).fetchone()
+                if daily_present:
+                    receipt["daily_ohlc"] = "already_present"
+                else:
+                    try:
+                        receipt["daily_ohlc"] = _collect_daily(store, trade_date)
+                    except (ValueError, OSError) as error:
+                        receipt["gaps"].append({"dataset": "daily_ohlc", "error_code": type(error).__name__})
+                _print_json(receipt)
+                return 2 if receipt["gaps"] else 0
             if args.facts_command in {"backfill-history", "backfill-daily"}:
                 from datetime import datetime
                 start = datetime.strptime(args.start, "%Y%m%d").date()

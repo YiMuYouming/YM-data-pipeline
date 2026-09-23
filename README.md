@@ -46,6 +46,11 @@ PY
 也会阻断相关派生值。连板股三日风险和一年中位数尚未产出。
 此库尚未接入生产消费者。
 
+已有公共只读意图 `query("market_facts", trade_date="20260923")`（或
+`./ym-data query market_facts 'trade_date="20260923"'`），从当前运行环境的
+`data/market-facts.sqlite3` 读同一份报告；缺库/缺日期返回带 error code 的失败，
+历史查询不被当作实时行情。每项仍须核对 `trade_date`、`source_gaps` 和证据时间。
+
 逐项试用时只运行 `report`；它以 SQLite 只读模式打开现有本机库，库不存在会明确报错，
 不会在查询时建库。建议按下面顺序检查 `source_gaps`、`return_evidence`、
 `limit_daily_quality` 和各指标是否为 `null`：
@@ -69,6 +74,7 @@ PY
 | `stocktoday_data` | 显式 StockToday 只读数据集 | `api_name`, `params`, `fields`, `max_rows` |
 | `review_sentiment` | 市场宽度或显式自然语言筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date`, `lang`, `version` |
 | `market_limit_state` | 涨跌停池聚合 | 无 |
+| `market_facts` | 已封存交易日的晋级率、涨跌停及短线收益 | 可选 `trade_date` |
 | `market_limit_board` | 涨停、跌停、炸板、昨日涨停明细 | `kind`, `date` |
 | `market_hot_rank` | 同花顺或东财热榜 | `source`, `trade_date`, `limit` |
 | `stock_event` | 个股低频事件 | `event`, `code` |
@@ -167,6 +173,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
+| `market_facts` | 本环境独立 SQLite 事实库；只读查询 | `configured_unverified` 或 `unavailable` | `market_facts` 唯一源；缺日期/缺库显式失败 | 否；不能以旧缓存冒充当日事实 |
 | `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 看板 `realtime_market` 第一源；`stock_snapshot`、`stock_kline` 后备，默认 `realtime_market` 链也按 RouteSpec 后备 | 允许；只按对应 RouteSpec 次序 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 日/周/月末级后备；不提供指数分钟 K 线 | 允许；仅在 StockToday、东财指数与新浪指数失败或合法空集后 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market` 后备末级 | 允许；仅在前置源失败或合法空集后 |

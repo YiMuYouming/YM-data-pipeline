@@ -46,6 +46,13 @@ _INDEX_INTRADAY_POLL = RouteSpec(
 )
 
 _ROUTES = {
+    "market_facts": RouteSpec(
+        intent="market_facts",
+        providers=("market_facts",),
+        data_scope="按交易日封存的涨跌停事实、晋级率与短线收益",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=86400,
+    ),
     "stocktoday_data": RouteSpec(
         intent="stocktoday_data",
         providers=("stocktoday",),

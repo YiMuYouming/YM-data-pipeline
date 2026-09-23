@@ -17,6 +17,7 @@ from .provider_state import ProviderState
 from .providers.base import ProviderOutcome
 from .providers.iwencai import IWenCaiOpenAPIProvider, PyWenCaiProvider
 from .providers.local import LOCAL_PROVIDER_NAMES, LocalProvider
+from .providers.market_facts import MarketFactsProvider
 from .providers.pytdx_screener import PytdxScreenerProvider
 from .providers.stocktoday import StockTodayProvider, validate_dataset, validate_source
 from .providers.wind_mcp import (
@@ -67,6 +68,7 @@ TDX_DIAGNOSTIC_NAMES = (
     "tdx_news",
 )
 _ALLOWED_PARAMS = {
+    "market_facts": frozenset({"trade_date"}),
     "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
     "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
@@ -150,6 +152,7 @@ def _wind_factory(name: str) -> Callable[[], WindMcpProvider]:
 
 
 PROVIDER_REGISTRY: dict[str, object] = {
+    "market_facts": MarketFactsProvider,
     **{name: _local_factory(name) for name in LOCAL_PROVIDER_NAMES},
     **{name: _tdx_factory(name) for name in TDX_DIAGNOSTIC_NAMES},
     **{name: _wind_factory(name) for name in WIND_PROVIDER_NAMES},
@@ -264,6 +267,10 @@ def _validate_params(intent: str, params: dict) -> None:
         raise ValueError(f"unsupported {intent} params: {', '.join(sorted(unknown))}")
     if "use_case" in params and params["use_case"] not in _USE_CASES:
         raise ValueError("unsupported use_case")
+    if intent == "market_facts":
+        day = params.get("trade_date")
+        if day is not None and (not isinstance(day, str) or not re.fullmatch(r"\d{8}", day)):
+            raise ValueError("market_facts trade_date must use YYYYMMDD")
     if intent == "stocktoday_data":
         validate_dataset(params)
     if intent in {"stock_snapshot", "stock_kline"} and "source" in params:
@@ -570,6 +577,9 @@ def _validate_params(intent: str, params: dict) -> None:
 def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, int]:
     if not isinstance(data, dict) or data.get("error"):
         return False, False, 0
+    if intent == "market_facts":
+        valid = bool(data.get("trade_date") and isinstance(data.get("counts"), dict))
+        return valid, False, 1 if valid else 0
     if intent == "review_sentiment":
         if params.get("query") is not None:
             rows = data.get("datas")
@@ -721,6 +731,11 @@ def _quality_failure_code(
 
     if not isinstance(data, dict):
         return "QUALITY_MISSING_FIELDS"
+
+    if intent == "market_facts":
+        if params.get("trade_date") and data.get("trade_date") != params["trade_date"]:
+            return "QUALITY_DATE_MISMATCH"
+        return None
 
     if intent == "stocktoday_data" or (
         intent in {"stock_snapshot", "stock_kline"}
@@ -1176,6 +1191,12 @@ def _query_with(
         result["_meta"]["source_gap"] = (
             "no_semantically_equivalent_hot_rank_fallback"
         )
+    if intent == "market_facts" and result["_meta"]["status"] == "success" and isinstance(data, dict):
+        gaps = list(data.get("source_gaps") or [])
+        if gaps:
+            result["_meta"]["status"] = "degraded"
+            result["_meta"]["quality"]["status"] = "partial"
+            result["_meta"]["quality"]["reason_codes"] = gaps
     return result
 
 
