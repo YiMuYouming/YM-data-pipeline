@@ -60,6 +60,11 @@ class EastmoneyClient:
         adapter = HTTPAdapter(max_retries=retry)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
+        self.no_retry_session = requests.Session()
+        self.no_retry_session.headers.update({"User-Agent": "Mozilla/5.0"})
+        no_retry = HTTPAdapter(max_retries=0)
+        self.no_retry_session.mount("https://", no_retry)
+        self.no_retry_session.mount("http://", no_retry)
         self._lock = threading.Lock()
         self._last_call = 0.0
         self._breaker_until = 0.0
@@ -71,6 +76,7 @@ class EastmoneyClient:
         params: dict | None = None,
         headers: dict | None = None,
         timeout: float = 15,
+        retry: bool = True,
         **kwargs,
     ):
         with self._lock:
@@ -81,7 +87,7 @@ class EastmoneyClient:
             if wait > 0:
                 wait += random.uniform(*self.jitter)
                 time.sleep(round(wait, 10))
-            response = self.session.get(
+            response = (self.session if retry else self.no_retry_session).get(
                 url,
                 params=params,
                 headers=headers,

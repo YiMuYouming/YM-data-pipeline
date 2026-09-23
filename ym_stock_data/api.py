@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 import socket
 import math
+import queue
+import threading
+import time
 from datetime import datetime, time as datetime_time, timedelta
 from typing import Callable
 
@@ -156,6 +159,54 @@ PROVIDER_REGISTRY: dict[str, object] = {
     "stocktoday": StockTodayProvider,
 }
 _STATE: ProviderState | None = None
+_COMPARE_BUDGET_SECONDS = 14.0
+_COMPARE_PROVIDER_SECONDS = (6.0, 5.0, 3.0)
+_COMPARE_BREAKER_SECONDS = 60
+_compare_failures: dict[str, int] = {}
+_compare_lock = threading.Lock()
+
+
+def _compare_key(provider: str) -> str:
+    return f"index_intraday_compare:{provider}"
+
+
+def _compare_record(provider: str, *, success: bool, state: ProviderState) -> None:
+    key = _compare_key(provider)
+    with _compare_lock:
+        count = 0 if success else _compare_failures.get(key, 0) + 1
+        if count:
+            _compare_failures[key] = count
+        else:
+            _compare_failures.pop(key, None)
+    if success:
+        state.record_success(key)
+    elif count >= 2:
+        state.record_failure(
+            provider=key,
+            failure_type="compare_failure",
+            error_code="RECENT_COMPARE_FAILURE",
+            breaker_seconds=_COMPARE_BREAKER_SECONDS,
+        )
+
+
+def _bounded_provider_call(provider: object, provider_name: str, intent: str, params: dict, seconds: float):
+    """Bound this read-only comparison without waiting for a stuck upstream call."""
+    result: queue.Queue = queue.Queue(maxsize=1)
+
+    def run():
+        try:
+            result.put((provider.call(intent, params), None))
+        except Exception as exc:
+            result.put((None, exc))
+
+    threading.Thread(target=run, daemon=True, name="ym-index-compare").start()
+    try:
+        outcome, error = result.get(timeout=max(0.001, seconds))
+    except queue.Empty:
+        return ProviderOutcome(provider_name, "timeout", error_code="QUERY_BUDGET_EXCEEDED")
+    if error is not None:
+        raise error
+    return outcome
 
 
 def _provider_state() -> ProviderState:
@@ -868,8 +919,18 @@ def _query_with(
     fetched_at = None
     auth = None
     observed_auth = None
+    compare_deadline = time.monotonic() + _COMPARE_BUDGET_SECONDS if intent == "index_intraday_compare" else None
+    compare_state = state_loader() if compare_deadline is not None else None
 
     for provider_index, provider_name in enumerate(spec.providers):
+        if compare_deadline is not None:
+            if time.monotonic() >= compare_deadline:
+                attempts.append(ProviderAttempt(provider_name, "timeout", "QUERY_BUDGET_EXCEEDED", 0))
+                break
+            scoped_breaker = compare_state.active_breaker(_compare_key(provider_name))
+            if scoped_breaker:
+                attempts.append(ProviderAttempt(provider_name, "breaker_open", scoped_breaker["error_code"], 0))
+                continue
         breaker = state_loader().active_breaker(provider_name)
         if breaker:
             attempts.append(ProviderAttempt(provider_name, "breaker_open", breaker["error_code"], 0))
@@ -903,7 +964,13 @@ def _query_with(
                 # provider; fallback providers must receive the public V2
                 # params unchanged.
                 provider_params["source"] = "stocktoday"
-            outcome = provider_loader(provider_name).call(intent, provider_params)
+            provider = provider_loader(provider_name)
+            if compare_deadline is not None:
+                remaining = compare_deadline - time.monotonic()
+                allowed = min(remaining, _COMPARE_PROVIDER_SECONDS[min(provider_index, 2)])
+                outcome = _bounded_provider_call(provider, provider_name, intent, provider_params, allowed)
+            else:
+                outcome = provider.call(intent, provider_params)
         except (TimeoutError, socket.timeout):
             outcome = ProviderOutcome(provider_name, "timeout", error_code="TIMEOUT")
         except ImportError:
@@ -932,6 +999,8 @@ def _query_with(
                 attempts.append(
                     ProviderAttempt(provider_name, "provider_error", "INCOMPATIBLE_PROVIDER", max(0, int(outcome.latency_ms)))
                 )
+                if compare_state is not None:
+                    _compare_record(provider_name, success=False, state=compare_state)
                 continue
             attempts.append(ProviderAttempt(provider_name, "provider_error", "INTERNAL_FALLBACK", 0))
         if outcome_status in {"success", "empty"}:
@@ -945,11 +1014,15 @@ def _query_with(
                         max(0, int(outcome.latency_ms)),
                     )
                 )
+                if compare_state is not None:
+                    _compare_record(provider_name, success=False, state=compare_state)
                 continue
             if outcome_status == "empty" and not is_empty:
                 attempts.append(
                     ProviderAttempt(actual, "provider_error", "STATUS_DATA_MISMATCH", max(0, int(outcome.latency_ms)))
                 )
+                if compare_state is not None:
+                    _compare_record(provider_name, success=False, state=compare_state)
                 continue
             if not is_empty:
                 quality_error = _quality_failure_code(
@@ -968,6 +1041,8 @@ def _query_with(
                             max(0, int(outcome.latency_ms)),
                         )
                     )
+                    if compare_state is not None:
+                        _compare_record(provider_name, success=False, state=compare_state)
                     continue
             terminal = "empty" if is_empty else "success"
             if (
@@ -985,6 +1060,8 @@ def _query_with(
                     or any(item.status != "empty" for item in attempts)
                 ):
                     attempts.append(empty_attempt)
+                    if compare_state is not None:
+                        _compare_record(provider_name, success=False, state=compare_state)
                     auth = outcome.auth or auth
                     continue
             data, final_quality = normalize_success(
@@ -1005,6 +1082,8 @@ def _query_with(
                 if terminal == "success" and any(item.status != "success" for item in attempts[:-1])
                 else terminal
             )
+            if compare_state is not None:
+                _compare_record(provider_name, success=True, state=compare_state)
             break
         attempts.append(
             ProviderAttempt(
@@ -1015,6 +1094,8 @@ def _query_with(
             )
         )
         auth = outcome.auth or auth
+        if compare_state is not None:
+            _compare_record(provider_name, success=False, state=compare_state)
 
     quality = final_quality or _failure_quality(
         intent, call_params, final_status, final_count
