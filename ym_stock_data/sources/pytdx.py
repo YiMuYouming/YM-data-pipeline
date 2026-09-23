@@ -412,7 +412,7 @@ def _fallback_breadth() -> dict:
 
 
 @_serialized_pytdx_call
-def fetch_quotes(codes: list) -> dict:
+def fetch_quotes(codes: list, *, fast: bool = False) -> dict:
     """批量个股实时报价
 
     Returns:
@@ -463,9 +463,13 @@ def fetch_quotes(codes: list) -> dict:
         pct_chg = round((price - last_close) / last_close * 100, 2) if last_close else 0
         vol = row.get("vol", 0)
 
-        vol_ratio = _compute_vol_ratio(api, code, vol, minutes_traded)
-
-        mas = _get_mas(api, code, price)
+        # The high-frequency poll reads the quote batch in one TCP request.
+        # Per-symbol bar requests can make a 35-stock poll take >20 seconds.
+        vol_ratio = (
+            _compute_vol_ratio(api, code, vol, minutes_traded)
+            if not fast or code in _vol_cache else None
+        )
+        mas = _ma_cache.get(str(code), {}) if fast else _get_mas(api, code, price)
 
         result[code] = {
             "code": code,

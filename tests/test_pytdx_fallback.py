@@ -108,6 +108,17 @@ class PytdxDirectProviderTests(unittest.TestCase):
         load_api.assert_not_called()
         fetch_tencent.assert_not_called()
 
+    def test_fast_quotes_skip_per_symbol_history_requests(self):
+        api = Mock()
+        api.get_security_quotes.return_value = [{
+            "code": "600519", "price": 1250.0, "last_close": 1240.0,
+            "vol": 100, "servertime": "13:10:00",
+        }]
+        with patch.object(pytdx, "_get_api", return_value=api):
+            result = pytdx.fetch_quotes(["600519"], fast=True)
+        self.assertEqual(1250.0, result["600519"]["price"])
+        api.get_security_bars.assert_not_called()
+
     def test_fetch_index_reports_direct_unavailable_when_disabled_without_fallback(self):
         with patch.dict("os.environ", {"YIMU_DISABLE_PYTDX": "1"}), \
              patch.object(pytdx, "_fallback_index") as fallback_index, \
