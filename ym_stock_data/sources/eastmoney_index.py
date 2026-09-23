@@ -42,17 +42,20 @@ def get_json_payload(
     params: dict,
     headers: dict,
     timeout: float = 15,
+    fast: bool = False,
 ) -> tuple[dict | None, dict | None]:
     """GET one EastMoney JSON payload with the bounded source retry policy."""
 
     last_error = None
-    for attempt in range(_INDEX_GET_ATTEMPTS):
+    attempts = 1 if fast else _INDEX_GET_ATTEMPTS
+    for attempt in range(attempts):
         try:
             response = CLIENT.get(
                 endpoint,
                 params=params,
                 headers=headers,
                 timeout=timeout,
+                retry=not fast,
             )
             if getattr(response, "skipped_by_breaker", False) is True:
                 return None, {"error": response.reason, "error_type": "BREAKER_OPEN"}
@@ -63,7 +66,7 @@ def get_json_payload(
             return payload, None
         except Exception as exc:
             last_error = exc
-            if attempt + 1 == _INDEX_GET_ATTEMPTS:
+            if attempt + 1 == attempts:
                 return None, {"error": str(exc), "error_type": type(exc).__name__}
             time.sleep(_INDEX_RETRY_BACKOFF_SECONDS[attempt])
     return None, {
@@ -133,6 +136,7 @@ def fetch_index_kline(
     count: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    _compare_fast: bool = False,
 ) -> dict:
     """Fetch an index K-line range from Eastmoney's read-only push2his API."""
 
@@ -168,7 +172,8 @@ def fetch_index_kline(
         ENDPOINT,
         params=params,
         headers=request_headers,
-        timeout=15,
+        timeout=2.5 if _compare_fast else 15,
+        fast=_compare_fast,
     )
     if request_error is not None:
         return request_error
@@ -307,7 +312,7 @@ def build_index_intraday_compare(
             end_date=target_date,
         )
         if payload.get("error"):
-            continue
+            break
         rows = _compare_rows(
             payload.get("bars") or [],
             target_date=target_date,
@@ -315,7 +320,7 @@ def build_index_intraday_compare(
             now=now,
         )
         if not rows:
-            continue
+            break
         result[name] = rows
         items.append({"index_code": index_code, "period": period, "bars": rows})
     if len(items) != len(_COMPARE_INDEXES):
@@ -338,7 +343,7 @@ def fetch_index_intraday_compare(
     """Build the legacy three-index comparison shape from Eastmoney bars."""
 
     return build_index_intraday_compare(
-        fetch_index_kline,
+        lambda code, **kwargs: fetch_index_kline(code, _compare_fast=True, **kwargs),
         source="eastmoney_index",
         period=period,
         trade_date=trade_date,

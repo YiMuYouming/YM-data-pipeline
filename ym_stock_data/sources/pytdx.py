@@ -33,6 +33,7 @@ _fail_count = 0
 _using_fallback = False
 _all_servers_down_at = 0
 _PYTDX_DOWN_COOLDOWN = 60
+_PYTDX_CONNECT_BUDGET = 7
 _SHANGHAI = timezone(timedelta(hours=8))
 
 _COMPAT_STAGE_PAYLOAD = bytes.fromhex(
@@ -151,10 +152,14 @@ def _get_api():
             _fail_count += 1
             return None
 
+        connect_deadline = time.monotonic() + _PYTDX_CONNECT_BUDGET
         for ip, port in PYTDX_SERVERS:
+            remaining = connect_deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
                 api = TdxHq_API()
-                if api.connect(ip, port, time_out=PYTDX_CONNECT_TIMEOUT):
+                if api.connect(ip, port, time_out=min(PYTDX_CONNECT_TIMEOUT, remaining)):
                     if not _api_has_business_data(api):
                         try:
                             api.disconnect()
@@ -188,6 +193,19 @@ def disconnect():
         if _api:
             try:
                 _api.disconnect()
+            except Exception:
+                pass
+            _api = None
+            _connected_at = 0
+
+
+def _invalidate_quote_socket(api):
+    """A failed business read must not reuse the same broken socket next poll."""
+    global _api, _connected_at
+    with _lock:
+        if _api is api:
+            try:
+                api.disconnect()
             except Exception:
                 pass
             _api = None
@@ -439,10 +457,12 @@ def fetch_quotes(codes: list, *, fast: bool = False) -> dict:
     try:
         raw = api.get_security_quotes(tdx_codes)
         if not raw:
+            _invalidate_quote_socket(api)
             return _direct_failure("quotes")
     except Exception:
         with _lock:
             _fail_count += 1
+        _invalidate_quote_socket(api)
         return _direct_failure("quotes")
 
     with _lock:

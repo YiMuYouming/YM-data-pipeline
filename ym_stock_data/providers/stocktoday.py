@@ -931,6 +931,8 @@ class StockTodayProvider:
         nested = {"trade_date": params.get("trade_date")}
         nested = {key: value for key, value in nested.items() if value}
         outcome = self._request_table(api_name, nested)
+        if api_name == "moneyflow_mkt_dc" and outcome.error_code == "INVALID_RESPONSE":
+            outcome = self._request_table(api_name, nested)
         if outcome.error_code:
             return outcome
         raw = outcome.data if isinstance(outcome.data, dict) else {}
@@ -1178,6 +1180,8 @@ class StockTodayProvider:
                     }
                 )
         outcome = self._request_table(name, nested)
+        if name == "pro_bar" and outcome.error_code == "INVALID_RESPONSE":
+            outcome = self._request_table(name, nested)
         if outcome.error_code or intent == "stocktoday_data":
             return outcome
         data = outcome.data if isinstance(outcome.data, dict) else {}

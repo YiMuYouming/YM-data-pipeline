@@ -68,6 +68,7 @@ def fetch_index_kline(
     count: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    _compare_fast: bool = False,
 ) -> dict:
     """Fetch Sina index minute bars in canonical share/CNY units."""
 
@@ -100,7 +101,7 @@ def fetch_index_kline(
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=2.5 if _compare_fast else 10) as response:
             text = response.read().decode("utf-8", "replace")
         match = re.search(r"\((\[.*\])\)\s*;?\s*$", text, re.DOTALL)
         rows = json.loads(match.group(1)) if match else []
@@ -166,7 +167,7 @@ def fetch_index_intraday_compare(
     """Build the shared legacy comparison shape from Sina bars."""
 
     return build_index_intraday_compare(
-        fetch_index_kline,
+        lambda code, **kwargs: fetch_index_kline(code, _compare_fast=True, **kwargs),
         source="sina_index",
         period=period,
         trade_date=trade_date,
