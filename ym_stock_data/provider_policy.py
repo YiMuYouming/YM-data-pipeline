@@ -695,8 +695,8 @@ class CompiledPolicy:
         if intent == "stocktoday_data":
             return route_for(intent, params_dict)
         # High-frequency dashboard polling is an explicit pipeline-owned
-        # profile.  It must keep its PyTDX-first route even when a reviewed
-        # capability policy supplies the default Agent/research order.
+        # profile.  Keep its per-intent route even when a reviewed capability
+        # policy supplies the default Agent/research order.
         if params_dict.get("use_case") == "realtime_poll":
             return route_for(intent, params_dict)
         # An explicit StockToday request remains explicit and keeps the V2

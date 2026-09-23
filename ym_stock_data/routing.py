@@ -30,7 +30,7 @@ _REALTIME_POLL = RouteSpec(
 )
 _STOCK_SNAPSHOT_POLL = RouteSpec(
     intent="stock_snapshot",
-    providers=("pytdx", "tencent", "tdx_quotes"),
+    providers=("tencent", "pytdx", "tdx_quotes"),
     data_scope="A股个股实时行情与标准化报价字段",
     trade_usage=_TRADE_USAGE,
     max_age_sec=60,
