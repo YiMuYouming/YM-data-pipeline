@@ -26,8 +26,8 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 市场资金流 | `fund_flow` | 可选 `trade_date`、`limit` |
 | 北向资金 | `northbound_flow` | 可选 `trade_date`、`limit`；仅作辅助参考 |
 | 热榜与题材归因 | `legacy_hot_rank` | 可选 `trade_date`、`limit` |
-| 涨停、跌停、炸板、昨日涨停明细 | `market_limit_board` | `kind=up/down/broken/yesterday`；可选日期 |
-| 同花顺/东财热榜 | `market_hot_rank` | `source=ths/dc`；可选日期、`limit` |
+| 涨停、跌停、炸板、昨日涨停明细 | `market_limit_board` | `kind=up/down/broken/yesterday`；可选 `date` |
+| 同花顺/东财热榜 | `market_hot_rank` | `source=ths/dc`；可选 `trade_date`、`limit` |
 | 涨跌停状态聚合 | `market_limit_state` | 兼容查询；新请求优先使用明细 intent |
 | 个股低频事件 | `stock_event` | 只传受支持的事件参数 |
 | 热度、问财型筛选 | `review_sentiment` | 把用户原始筛选写入 `query` |
@@ -93,7 +93,7 @@ K 线检查 `datetime`、`volume_unit=share`、`amount_unit=CNY` 和 `adjustment
 
 | 精确短语 | 固定入口 | 必填参数 |
 | --- | --- | --- |
-| `查涨停板` / `查跌停板` | `market_limit_board`，固定 `kind=up/down` | 无；可选 `trade_date` |
+| `查涨停板` / `查跌停板` | `market_limit_board`，固定 `kind=up/down` | 无；可选 `date` |
 | `查同花顺热榜` | `market_hot_rank`，固定 `source=ths` | 无；可选 `trade_date`、`limit` |
 | `查东财热榜` | `market_hot_rank`，固定 `source=dc` | 无；可选 `trade_date`、`limit` |
 | `查实时大盘` | `realtime_market` | 无 |
