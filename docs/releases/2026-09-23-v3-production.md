@@ -66,3 +66,11 @@
 
 - 管道开发分支 `codex/unified-a-share-data-channel-canonical`：`d5d5e95`、`8b543b6`；Hermes 生产分支 `codex/daily-flow-fact-contract-20260912`：`803781c`、`5a0e9c1`。看板运维说明开发分支 `85cf8f9`、Hermes 生产分支 `248ff01`。以上代码与文档已推送；Hermes 两仓库工作树干净。当前服务运行管道 `5a0e9c1`（包 3.0.0，editable 指向 `/home/agentuser/YM-data-pipeline`）、看板 `248ff01`、配置 `YIMU_DISABLE_PYTDX=0`。
 - 仍未关闭：PyTDX 35 股原始时间不全达标，批量报价生产实际使用腾讯；东方财富指数分钟仍多次不完整／超时，新浪是实际可用源，偶发全链路查询 14 秒后仍可能 `error`；StockToday `fund_flow` 无等价备源，前复权瞬时重试不能保证上游永不失败；问财 OpenAPI 鉴权与盘中语义数据缺口独立处理。2027 日历按上文维护日处理。
+
+## 高频个股改为腾讯第一源（2026-09-23 14:56–14:57）
+
+- Hermes 同主机、同 35 股对照显示：StockToday `rt_k` 仅有 33/35，缺 `003026`、`003040`，两只单查仍空；行情在采样中曾落后 139–148 秒。PyTDX 批量 35 股因部分原始时间过旧未通过质量门。比较记录见 `shared/audits/2026-09-23-v3-stability/stocktoday-pytdx-comparison.md`（本机共享目录）。
+- 仅将 `stock_snapshot(use_case=realtime_poll)` 固定路由改为 `tencent → pytdx → tdx_quotes`；`realtime_market` 仍为 PyTDX 第一源，Agent/研究与历史查询的 StockToday 第一源不变。质量检查、原始时间和来源记录沿用原契约。
+- 本机完整回归 699 项通过、5 项按既有条件跳过；真实 35 股查询 `tencent/success`、35/35、约 401 ms。生产代码本机开发分支 `d945d1a`、Hermes 生产分支 `62e776f`，均已推送；回滚 tag `rollback/pre-tencent-primary-20260923` 指向变更前 `7a5f685`，已推送。Hermes `yimu-live-dashboard.service` 于 14:56:41 重启，实际运行管道 `62e776f`、看板 `248ff01`。
+- 真实 `/api/live/quotes` 14:57:01、14:57:10、14:57:18 三次回读：个股均为 `tencent/success`、35/35，`attempts` 只有腾讯，最大原始报价年龄 10 秒；指数仍为 `pytdx/success`。隔离进程将腾讯模拟为 timeout，单股 `003026` 由 PyTDX 真实直连成功，`attempts` 为 `tencent/timeout → pytdx/success`，未改生产配置或状态库。
+- 本次只完成高频个股路由重排，不改变上一节列出的指数分钟、资金流、问财及交易日历限制。回滚时在 Hermes 核对工作树和当前 HEAD 后切到上述 tag，重启看板服务并回读来源；生产 `data/`、缓存和账户 DB 保持原状。
