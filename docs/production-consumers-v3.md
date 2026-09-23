@@ -2,6 +2,9 @@
 
 日期：2026-09-23
 
+当前版本与测试入口见 [渠道工作区总览](README.md)。以下清单限定本次列出的消费者，
+不代表整个工作区所有实验或未来脚本均已完成迁移。
+
 本清单只记录当前代码接入事实。所有生产消费者均把 provider 选择、超时、质量门和降级交给
 `YM-data-pipeline`；Python 公共入口为 `from ym_stock_data import query`，Agent/CLI 入口为
 `./ym-data`。兼容 `fetch()` 只保留在 pipeline 包内部，不允许消费者借此选择 provider。
@@ -20,7 +23,9 @@
 | `YiMu_IR/scripts/build_20260630_semiconductor_three_stock.py` | `stock_kline(adjustment="qfq")` | 明确要求 qfq；多取一根前置收盘后再计算首行涨跌幅/振幅，禁止未复权替代 | `tests.test_build_20260630_semiconductor_three_stock` |
 | `YiMu_IR` 其余两份研究生成器 | `realtime_market`、`sector_index`、`stock_snapshot`、`review_sentiment`、`stock_kline` | 每个 intent 独立保留 meta/error；失败不伪造业务数据 | `py_compile` |
 
-## 真实只读消费验收
+## 首轮真实只读消费验收（历史快照）
+
+以下为当天首轮接入证据；后续高频个股已切换腾讯第一源，不能用本节还原当前路由。
 
 - dashboard：quotes 在 PyTDX 时间过旧后自动使用腾讯；index 由 PyTDX direct 返回完整三指数；northbound、旧热榜、指数 15 分钟比较、行业资金流均经公共 intent 返回。
 - Market Watch：行业表返回 90 行；2026-09-22 涨停原因返回 63 个代码。
@@ -30,6 +35,8 @@
 
 ## 运行状态边界
 
-代码已位于 Projects checkout（Documents 路径解析到同一目录），但监听 8088 的进程是到远端服务的
-SSH 隧道，监听 18088 的本地代理也是既有长生命周期进程。本轮未同步远端、未重启、未部署、未发
-8088 POST，也未接入下单。运行服务切换必须单独执行并回读验证。
+V3 管道与看板已发布到 Hermes，版本、重启及服务回读见
+[生产发布记录](releases/2026-09-23-v3-production.md)。本机 8088 为远端服务 SSH 隧道，
+18088 为本地代理；它们不是另两套生产发布。Market Watch、YiMu IR 和 shadow 是本机按需消费者，
+Hermes 无对应运行实例。本机尚未提交的 `market-facts` 试用不属于此次生产发布。
+本次文档收尾不部署、不重启、不发 8088 POST、不接入下单。

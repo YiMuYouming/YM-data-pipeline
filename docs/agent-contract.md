@@ -3,6 +3,8 @@
 仅在修改 provider、路由、契约、凭据或下游迁移时读取相关章节。相对路径以仓库根为准。
 当前 canonical checkout 是 `/Users/yimu/Projects/YM_Capital/YM-data-pipeline`。
 
+当前发布状态与后续业务测试见 [渠道工作区总览](README.md)；历史计划不是新增验收门槛。
+
 Agent / Skill 的唯一数据入口是 `from ym_stock_data import query` 与仓库根
 `./ym-data`。provider 选择和 fallback 只能由 canonical router 执行，不能由消费端
 自行串接；没有匹配能力时停在 public contract 并报告 source gap。
@@ -11,7 +13,7 @@ Agent / Skill 的唯一数据入口是 `from ym_stock_data import query` 与仓�
 
 新代码只调用 `query(intent, **params)`，不得直接 import `ym_stock_data.sources` 或 `ym_stock_data.v2`。结果统一使用 contract 1.0：`data` 加 `_meta`，其中必须保留 `status`、真实 `provider_used`、完整 `attempts`、`quality`、`fetched_at` 与稳定错误码。
 
-正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集默认终止路由；只有带显式 `query` 的 `review_sentiment` 按 RouteSpec 的 `continue_until_exhausted` 策略继续穷尽自然语言 screener，顺序固定为 OpenAPI → pywencai → TDX screener → 专用 Wind `stock_data.search_stocks`。`pytdx_screener` 只保留为实验性显式 provider，不进入 canonical 自动降级链，也不进入正式 live gate。Wind 必须使用 `wind_screener` 专名并严格验证 tabular `Wind代码`，不得借泛化 `wind_mcp` 扩展其它 intent。穷尽不保证有结果。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
+正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集是否继续由各 RouteSpec 的 `empty_policy` 决定；带显式 `query` 的 `review_sentiment` 按 `continue_until_exhausted` 策略继续穷尽自然语言 screener，顺序固定为 OpenAPI → pywencai → TDX screener → 专用 Wind `stock_data.search_stocks`。`pytdx_screener` 只保留为实验性显式 provider，不进入 canonical 自动降级链，也不进入正式 live gate。Wind 必须使用 `wind_screener` 专名并严格验证 tabular `Wind代码`，不得借泛化 `wind_mcp` 扩展其它 intent。穷尽不保证有结果。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。
 
 V1 `fetch()` 与 V2 `resolve()` 仅是 compatibility wrapper：允许维持旧 shape，但不得拥有第二条 provider chain。不要在新文档或脚本中推荐它们，也不要用强制 `DeprecationWarning` 破坏消费者。
 
@@ -37,7 +39,7 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 ## Provider 边界
 
-- 零鉴权源优先；TDX owned OAuth 只在兼容源失败后调用固定六项只读能力。
+- 按用途执行 RouteSpec：默认行情/历史查询优先 StockToday；高频个股轮询优先腾讯、大盘轮询优先 PyTDX。TDX owned OAuth 仅按对应路由作为后备，调用固定六项只读能力。
 - TDX 不接 realtime/default breadth/sector，不调用任意 tool，不做交易写入。
 - TDX 登录优先走本仓库 `./ym-data auth login-tdx`；状态只走离线
   `./ym-data auth status-tdx`。默认 macOS Keychain，文件 fallback 必须显式

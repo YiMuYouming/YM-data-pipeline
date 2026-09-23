@@ -25,9 +25,11 @@
 
 ## 公共查询入口
 
-标准化行情由 canonical RouteSpec 自动选择来源。StockToday 已是
+标准化行情由 canonical RouteSpec 按用途自动选择来源。默认 Agent 查询的
 `realtime_market`、`stock_snapshot`、日/周/月/分钟 `stock_kline`、
-`market_limit_board` 和 `market_hot_rank` 的第一源；异常、超时或合法空集时，
+`market_limit_board` 和 `market_hot_rank` 以 StockToday 为第一源。
+高频 `realtime_poll` 个股轮询以腾讯为第一源，大盘轮询以 PyTDX 为第一源；
+当前路由与发布边界见 [渠道工作区总览](README.md)。异常、超时或允许继续的合法空集时，
 只有存在语义等价后备的 intent 才按固定顺序降级。长尾接口使用
 `stocktoday_data`，保留 provider-native 字段：
 

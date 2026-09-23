@@ -7,6 +7,9 @@ contract 1.0，并在 `_meta` 中保留真实 provider、attempt chain、质量�
 
 ## 快速开始
 
+当前生产版本、已知缺口及后续测试从 [渠道工作区总览](docs/README.md) 开始；
+日期化发布记录保留历史证据，不把本机未提交试用代码视为已发布功能。
+
 在项目环境中调用，避免把系统 Python 缺依赖误判为 provider 不可用：
 
 ```bash
@@ -103,11 +106,12 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 旧消费者；它们不是 Agent 推荐入口，也不是查询失败后的手工降级步骤。调用方不得直接
 选择 provider、拼接 fallback、调用 vendor SDK 或任意 URL。
 
-当前最小行情路由：StockToday 是 `realtime_market`、`stock_snapshot`、日/周/月/分钟
-`stock_kline` 的统一第一源；合法空集、错误或超时后，才按各自 RouteSpec 进入腾讯、
-PyTDX、东财/TDX 等现有源，并以 `degraded`/`source_tier=fallback` 保留降级事实。分钟
-K 线固定为 StockToday → PyTDX → Sina → TDX。StockToday 不是所有能力的 overall primary，
-每个 intent 的顺序只由 RouteSpec 决定。
+路由按用途固定：默认 Agent 查询的 `realtime_market`、`stock_snapshot` 与
+日/周/月/分钟 `stock_kline` 以 StockToday 为第一源。`use_case="realtime_poll"`
+个股轮询使用腾讯 → PyTDX → TDX，大盘轮询使用 PyTDX → 腾讯 → 东方财富。
+分钟 K 线使用 StockToday → PyTDX → Sina → TDX。异常、超时、质量不合格及
+允许继续的合法空集按对应 RouteSpec 尝试后备，并保留降级事实；消费者不得自行改序。
+完整常用路由及适用边界见 [工作区总览](docs/README.md)。
 
 高频中文短语由仓库内 deterministic intent registry 固定映射，CLI 使用
 `./ym-data intent "查涨停板"`、`查跌停板`、`查同花顺热榜`、`查东财热榜`、`查实时个股`、
@@ -119,7 +123,7 @@ StockToday 的 catalog 只是显式 `stocktoday_data` 的方法/参数边界；�
 provider-native 口径。标准化 intent 的第一源与降级顺序以 RouteSpec 为准，所有调用
 仍必须检查字段、过滤、分页、时效、`quality` 与 `source_gap`。
 
-合法空集默认终止路由；唯一例外是带显式 `query` 的 `review_sentiment`，它固定按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的顺序穷尽四个语义兼容来源。`pytdx_screener` 不再追加到 public route，只保留为实验性显式 provider。只有当次四源 route 的所有 attempt 都是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被后续 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。
+合法空集是否继续由各 RouteSpec 的 `empty_policy` 决定，不以“空集”一概终止。带显式 `query` 的 `review_sentiment` 固定按 OpenAPI → pywencai → TDX screener → Wind `stock_data.search_stocks` 的顺序穷尽四个语义兼容来源。`pytdx_screener` 不再追加到 public route，只保留为实验性显式 provider。只有当次四源 route 的所有 attempt 都是语义有效 empty 时，最终状态才是 `empty`；任一前序 auth/provider/依赖错误都不得被后续 empty 覆盖，链路耗尽后仍是 `error` 且 `provider_used=null`。
 
 实验性 `pytdx_screener` 只接受唯一的 `沪深A股`、`沪市A股` / `上交所A股`、`深市A股` / `深交所A股` universe，并要求至少一个 `非ST`、`非停牌`、单一 `股票代码为/是/=六位代码`、`最新价` 或 `涨幅` AND 条件；数值条件还必须同时带 `非停牌`。比较符和 `到` / `至` / `~` 区间以固定语法完整消费。不支持北交所，也不支持行业、概念、PE、PB、排名、OR 或日期。它使用固定 `pytdx==1.72` 直接读取沪深完整目录与 quotes，每批最多 80 个，不调用既有 `fetch_quotes` 或腾讯、东财、Sina fallback。目录或 quote 不完整、全部价格未就绪时只能报稳定错误，不能伪装合法空集；当前不参与自动 fallback 或正式 live gate。
 
@@ -131,12 +135,12 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
-| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market`、`stock_snapshot`、日周月/分钟 `stock_kline` 后备 | 允许；只按对应 RouteSpec 次序 |
+| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 实时轮询大盘第一源；实时个股及默认行情/K 线链后备 | 允许；只按对应 RouteSpec 次序 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 日/周/月末级后备；不提供指数分钟 K 线 | 允许；仅在 StockToday、东财指数与新浪指数失败或合法空集后 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market` 后备末级 | 允许；仅在前置源失败或合法空集后 |
 | `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第一源；`index_kline` 在 StockToday 后 | 允许；只按对应 RouteSpec 次序 |
 | `eastmoney_stock` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 日/周/月 `stock_kline` 第二源；明确保持 `none` / `qfq` 复权语义 | 允许；仅在 StockToday 失败或合法空集后 |
-| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market`、`stock_snapshot`、日周月 `stock_kline` 第一后备源 | 允许；仅在 StockToday 失败或合法空集后 |
+| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 实时轮询个股第一源；其他行情/K 线链按各自顺序后备 | 允许；只按对应 RouteSpec 次序 |
 | `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 分钟 `stock_kline` 第三源 | 允许；只按上述 RouteSpec 次序 |
 | `sina_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第二源；`index_kline` 在东财指数之后，仅支持分钟周期 | 允许；只按对应 RouteSpec 次序 |
 | `ths_industry` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `sector_index` 唯一源；`industry_flow` 默认链后备，保留价格/表现语义 | `industry_flow` 仅按对应 RouteSpec 次序 |

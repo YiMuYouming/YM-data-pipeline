@@ -1,5 +1,11 @@
 # YM-data-pipeline V3 生产发布与接续（2026-09-23）
 
+> 本文按发布过程保留历史记录，后面的更新覆盖前面的版本与路由。
+> 2026-09-23 收尾核对：Hermes 管道 HEAD `1275298`，运行代码 `62e776f`；
+> 看板 HEAD `214d024`，运行代码 `dffd4c9`，服务 active，两仓库工作树干净。
+> 高频个股已改为腾讯第一源；本机未提交的 `market-facts` 尚未发布。
+> 当前使用、已知缺口和下一轮测试统一从 [渠道工作区总览](../README.md) 进入。
+
 ## 发布边界与实际位置
 
 - 本机 `/Users/yimu/Documents/YM_Capital` 解析到 `/Users/yimu/Projects/YM_Capital`，同一套文件只处理一次。
