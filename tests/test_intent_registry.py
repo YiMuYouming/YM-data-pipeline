@@ -10,6 +10,15 @@ from ym_stock_data.intent_registry import list_registered_intents, resolve_inten
 
 
 class IntentRegistryTests(unittest.TestCase):
+    def test_promotion_phrase_maps_to_dated_market_facts(self):
+        self.assertEqual(
+            {"intent": "market_facts", "params": {"trade_date": "20260923"}},
+            resolve_intent("查晋级率", trade_date="20260923"),
+        )
+        self.assertEqual(
+            {"intent": "market_facts", "params": {}}, resolve_intent("晋级率")
+        )
+
     def test_limit_and_hot_phrases_map_to_fixed_stocktoday_apis(self):
         up = resolve_intent("查涨停板", trade_date="20260923")
         self.assertEqual("market_limit_board", up["intent"])

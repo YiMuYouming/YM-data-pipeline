@@ -44,6 +44,12 @@ _SPECS = (
         optional=("trade_date", "date"),
     ),
     IntentSpec(
+        "market_facts",
+        ("查晋级率", "晋级率", "查市场事实"),
+        "market_facts",
+        optional=("trade_date",),
+    ),
+    IntentSpec(
         "ths_hot",
         ("查同花顺热榜", "同花顺热榜"),
         "market_hot_rank",
