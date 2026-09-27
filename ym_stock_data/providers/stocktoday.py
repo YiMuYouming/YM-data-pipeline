@@ -714,16 +714,17 @@ class StockTodayProvider:
 
         responses, last = {}, None
         for kind in ("U", "D", "Z", "STEP"):
-            for _ in range(2):
+            for _ in range(3):
                 if kind == "STEP":
                     outcome = self._request_table("limit_step", {"trade_date": trade_date})
                 else:
                     outcome = self._request_table(
                         "limit_list_d", {"trade_date": trade_date, "limit_type": kind}
                     )
-                # The gateway intermittently answers an empty up-pool for a
-                # completed day; ask once more before accepting "empty".
-                if not (kind == "U" and outcome.status == "empty"):
+                # The gateway answers ~8% of pool reads with a spurious empty
+                # table (measured 2026-09-27); an empty pool is accepted only
+                # after three consecutive empty reads.
+                if not (kind != "STEP" and outcome.status == "empty"):
                     break
             last = outcome
             if outcome.status not in {"success", "empty"}:

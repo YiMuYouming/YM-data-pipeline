@@ -84,7 +84,7 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 - 休市日 `rt_k` 把上一交易日行情盖成当天日期（9-25 行 = 9-24 收盘），管道按交易日历改回，
   原始时间保留在 `vendor_quote_time`。
 - `stk_limit`、`limit_list_d`、`limit_step`、`rt_min`、`ths_daily`、`moneyflow_ind_ths` 可用；
-  网关偶发超时或空池，空涨停池会重试一次后才判为 empty。
+  网关偶发超时；约 8% 的涨跌停池读取会返回假空表，三池空结果连续读 3 次都空才判为 empty。
 
 ## 目录与数据口径
 

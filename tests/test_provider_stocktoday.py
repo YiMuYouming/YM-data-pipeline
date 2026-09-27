@@ -253,8 +253,9 @@ class StockTodayTests(unittest.TestCase):
         self.assertEqual("limit_step_crosschecked", result.data["_board_source"])
         calls = [(c.kwargs["json"]["api_name"], c.kwargs["json"]["params"].get("limit_type"))
                  for c in self.transport.call_args_list]
-        self.assertEqual([("limit_list_d", "U"), ("limit_list_d", "D"),
-                          ("limit_list_d", "Z"), ("limit_step", None)], calls)
+        # Empty D/Z pools are re-read before being accepted as empty.
+        self.assertEqual([("limit_list_d", "U")] + [("limit_list_d", "D")] * 3
+                         + [("limit_list_d", "Z")] * 3 + [("limit_step", None)], calls)
 
     def test_limit_state_on_a_holiday_reports_the_real_trade_date(self):
         self._limit_transport("20260924", up_rows=lambda day: [{
@@ -277,7 +278,7 @@ class StockTodayTests(unittest.TestCase):
         self.assertEqual("20260928", result.data["date"])
         up_calls = [c for c in self.transport.call_args_list
                     if c.kwargs["json"]["params"].get("limit_type") == "U"]
-        self.assertEqual(2, len(up_calls))
+        self.assertEqual(3, len(up_calls))
 
     def test_limit_board_maps_stocktoday_limit_list_to_canonical_rows(self):
         self.response.json.return_value = {
