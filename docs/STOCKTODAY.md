@@ -79,6 +79,8 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
   额度按上段供应商文档执行，待弈沐确认实际购买档位。
 - `rt_idx_k`、`rt_idx_tick`、`rt_sw_k`、`idx_mins` 返回“该接口为龙虾套餐专属”，当前套餐不含；
   适配器记为 `PLAN_NOT_ENTITLED`，30 分钟内不再调用，指数实时由腾讯提供。
+  拒绝记录按 token 指纹（SHA-256 前 8 位）分键，换 token 自动失效；`./ym-data stocktoday entitlement --refresh`
+  绕过缓存逐个探测 `rt_idx_k`、`rt_idx_min`、`rt_idx_tick`、`rt_sw_k`、`idx_mins`、`rt_k`、`rt_min`、`stk_limit`。
 - `rt_k` 通配 `6*.SH`、`0*.SZ`、`3*.SZ`、`*.BJ` 四批覆盖 5527 只，科创板每只重复一行（按
   `updated_at` 取最新）；003xxx 共 42 只任何写法都不返回，个股报价由腾讯逐只补。
 - 休市日 `rt_k` 把上一交易日行情盖成当天日期（9-25 行 = 9-24 收盘），管道按交易日历改回，

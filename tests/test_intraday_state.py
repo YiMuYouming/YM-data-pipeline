@@ -200,6 +200,42 @@ class StockTodayBudgetAndPlanTests(unittest.TestCase):
         self.assertEqual("success", provider._request_table("rt_k", {"ts_code": "600519.SH"}).status)
 
 
+class EntitlementScopeTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "budget.sqlite3"
+        self.refused = Mock(status_code=200)
+        self.refused.json.return_value = {"code": 1, "msg": "该接口为龙虾套餐专属，请升级套餐后使用"}
+
+    def provider(self, token, transport):
+        return StockTodayProvider(token_loader=lambda: token, post=transport, budget_path=self.path)
+
+    def test_a_new_token_does_not_inherit_the_old_tokens_refusal(self):
+        transport = Mock(return_value=self.refused)
+        self.provider("synthetic-old-token", transport)._request_table("rt_idx_k", {"ts_code": "000001.SH"})
+        ok = Mock(status_code=200)
+        ok.json.return_value = {"code": 0, "data": [{"ts_code": "000001.SH", "close": 1.0}]}
+        transport.return_value = ok
+        result = self.provider("synthetic-new-token", transport)._request_table("rt_idx_k", {"ts_code": "000001.SH"})
+        self.assertEqual("success", result.status)
+        self.assertEqual(2, transport.call_count)
+
+    def test_entitlement_report_refresh_bypasses_the_cache(self):
+        from ym_stock_data.providers.stocktoday import ENTITLEMENT_PROBES, entitlement_report
+
+        transport = Mock(return_value=self.refused)
+        provider = self.provider("synthetic-plan-token", transport)
+        provider._request_table("rt_idx_k", {"ts_code": "000001.SH"})
+        cached = entitlement_report(provider)
+        self.assertEqual("not_entitled", cached["apis"][0]["state"])
+        calls_before = transport.call_count
+        refreshed = entitlement_report(provider, refresh=True)
+        self.assertEqual(calls_before + len(ENTITLEMENT_PROBES), transport.call_count)
+        self.assertEqual(8, len(refreshed["token_fingerprint"]))
+        self.assertNotIn("synthetic", str(refreshed))
+
+
 class PreviousLadderTests(unittest.TestCase):
     def test_previous_ladder_reads_the_sealed_market_facts_run(self):
         from ym_stock_data.market_facts import MarketFactStore

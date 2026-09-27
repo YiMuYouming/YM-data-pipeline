@@ -128,6 +128,12 @@ def _parser() -> argparse.ArgumentParser:
     stocktoday_audit.add_argument("--live", action="store_true")
     stocktoday_audit.add_argument("--resume", type=Path)
     stocktoday_audit.add_argument("--output", type=Path, required=True)
+    stocktoday_entitlement = stocktoday_commands.add_parser(
+        "entitlement", help="probe plan-sensitive realtime APIs for the current token"
+    )
+    stocktoday_entitlement.add_argument("--refresh", action="store_true",
+                                        help="drop this token's cached plan refusals and call upstream")
+    stocktoday_entitlement.add_argument("--json", action="store_true", dest="as_json")
     stocktoday_status = stocktoday_commands.add_parser("audit-status")
     stocktoday_status.add_argument("receipt", type=Path)
     facts_parser = commands.add_parser("market-facts", help="dated limit facts and derived short-term indicators")
@@ -514,6 +520,18 @@ def main(argv: list[str] | None = None) -> int:
                     params = ",".join(method["allowed_params"])
                     print(f'{method["name"]}: {method["desc"]} [{params}]')
             return 0
+        if args.stocktoday_command == "entitlement":
+            from .providers.stocktoday import entitlement_report
+
+            report = entitlement_report(refresh=args.refresh)
+            if args.as_json:
+                _print_json(report)
+            else:
+                print(f'token={report["token_fingerprint"]} refreshed={report["refreshed"]} at={report["checked_at"]}')
+                for row in report["apis"]:
+                    print(f'{row["api_name"]}: {row["state"]} ({row["error_code"] or row["status"]}, '
+                          f'http={row["http_status"]}, upstream={row["upstream_code"]}, rows={row["rows"]})')
+            return 0 if all(row["state"] != "error" for row in report["apis"]) else 2
         if args.stocktoday_command == "audit-status":
             try:
                 _print_json(audit_status(args.receipt))

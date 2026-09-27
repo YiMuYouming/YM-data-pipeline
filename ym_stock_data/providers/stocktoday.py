@@ -104,25 +104,38 @@ class RequestBudget:
             con.execute("INSERT INTO requests VALUES (?)", (now,))
         return True
 
-    def not_entitled(self, api_name, *, now=None):
-        """True while an upstream "plan-only" refusal for this API is remembered."""
+    # Keyed by a token fingerprint so a new token (e.g. after a plan upgrade)
+    # never inherits an old token's refusal.
+    _ENTITLEMENT_DDL = "CREATE TABLE IF NOT EXISTS entitlement_v2 (token_fp TEXT NOT NULL, api_name TEXT NOT NULL, until REAL NOT NULL, PRIMARY KEY(token_fp, api_name))"
+
+    def not_entitled(self, api_name, *, now=None, token_fp=""):
+        """True while an upstream "plan-only" refusal for this token+API is remembered."""
 
         now = time.time() if now is None else now
         try:
             with closing(sqlite3.connect(self.path, timeout=1)) as con:
-                con.execute("CREATE TABLE IF NOT EXISTS entitlement (api_name TEXT PRIMARY KEY, until REAL NOT NULL)")
-                row = con.execute("SELECT until FROM entitlement WHERE api_name=?", (api_name,)).fetchone()
+                con.execute(self._ENTITLEMENT_DDL)
+                row = con.execute("SELECT until FROM entitlement_v2 WHERE token_fp=? AND api_name=?",
+                                  (token_fp, api_name)).fetchone()
         except (OSError, sqlite3.Error):
             return False
         return bool(row and row[0] > now)
 
-    def remember_not_entitled(self, api_name, *, now=None, seconds=ENTITLEMENT_RETRY_SECONDS):
+    def remember_not_entitled(self, api_name, *, now=None, seconds=ENTITLEMENT_RETRY_SECONDS, token_fp=""):
         now = time.time() if now is None else now
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
-                con.execute("CREATE TABLE IF NOT EXISTS entitlement (api_name TEXT PRIMARY KEY, until REAL NOT NULL)")
-                con.execute("INSERT OR REPLACE INTO entitlement VALUES (?, ?)", (api_name, now + seconds))
+                con.execute(self._ENTITLEMENT_DDL)
+                con.execute("INSERT OR REPLACE INTO entitlement_v2 VALUES (?, ?, ?)", (token_fp, api_name, now + seconds))
+        except (OSError, sqlite3.Error):
+            pass
+
+    def forget_entitlement(self, *, token_fp=""):
+        try:
+            with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
+                con.execute(self._ENTITLEMENT_DDL)
+                con.execute("DELETE FROM entitlement_v2 WHERE token_fp=?", (token_fp,))
         except (OSError, sqlite3.Error):
             pass
 
@@ -156,6 +169,49 @@ class RequestBudget:
         if oldest is None:
             return 1.0
         return max(1.0, float(oldest + 60 - now))
+
+
+def token_fingerprint(token) -> str:
+    """First 8 hex chars of the token's SHA-256; never the token itself."""
+
+    import hashlib
+
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()[:8]
+
+
+# Plan-sensitive realtime APIs checked by `./ym-data stocktoday entitlement`.
+ENTITLEMENT_PROBES = (
+    ("rt_idx_k", {"ts_code": "000001.SH"}),
+    ("rt_idx_min", {"ts_code": "000001.SH", "freq": "1MIN"}),
+    ("rt_idx_tick", {"ts_code": "000001.SH"}),
+    ("rt_sw_k", {}),
+    ("idx_mins", {"ts_code": "000001.SH", "freq": "15min"}),
+    ("rt_k", {"ts_code": "600519.SH"}),
+    ("rt_min", {"ts_code": "600519.SH", "freq": "1MIN"}),
+    ("stk_limit", {"ts_code": "600519.SH"}),
+)
+
+
+def entitlement_report(provider=None, *, refresh=False) -> dict:
+    """Probe plan-sensitive APIs; ``refresh`` drops this token's cached refusals first."""
+
+    provider = provider or StockTodayProvider()
+    token = provider.token_loader()
+    fp = token_fingerprint(token)
+    if refresh and hasattr(provider.budget, "forget_entitlement"):
+        provider.budget.forget_entitlement(token_fp=fp)
+    rows = []
+    for api_name, params in ENTITLEMENT_PROBES:
+        outcome = provider._request_table(api_name, params)
+        prov = outcome.provenance or {}
+        state = ("entitled" if outcome.status in {"success", "empty"}
+                 else "not_entitled" if outcome.error_code == "PLAN_NOT_ENTITLED" else "error")
+        rows.append({"api_name": api_name, "state": state, "status": outcome.status,
+                     "error_code": outcome.error_code, "http_status": prov.get("http_status"),
+                     "upstream_code": prov.get("upstream_code"),
+                     "rows": len((outcome.data or {}).get("items") or []) if isinstance(outcome.data, dict) else 0})
+    return {"token_fingerprint": fp, "refreshed": bool(refresh), "checked_at":
+            datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds"), "apis": rows}
 
 
 def validate_dataset(params: dict) -> None:
@@ -417,8 +473,9 @@ class StockTodayProvider:
             return self._fail(started, "AUTH_STORAGE_UNAVAILABLE", "auth_error", "error")
         if not token:
             return self._fail(started, "AUTH_MISSING", "auth_error", "missing")
+        token_fp = token_fingerprint(token)
         not_entitled = getattr(self.budget, "not_entitled", None)
-        if not_entitled is not None and not_entitled(name, now=self.clock.time()):
+        if not_entitled is not None and not_entitled(name, now=self.clock.time(), token_fp=token_fp):
             return self._fail(started, "PLAN_NOT_ENTITLED", "incompatible")
         try:
             if not self.budget.acquire(now=self.clock.time()):
@@ -492,7 +549,7 @@ class StockTodayProvider:
                 if "套餐专属" in message or "升级套餐" in message:
                     remember = getattr(self.budget, "remember_not_entitled", None)
                     if remember is not None:
-                        remember(name, now=self.clock.time())
+                        remember(name, now=self.clock.time(), token_fp=token_fp)
                     return self._fail(
                         started,
                         "PLAN_NOT_ENTITLED",
