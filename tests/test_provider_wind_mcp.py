@@ -283,7 +283,7 @@ class WindProviderTests(unittest.TestCase):
         self.assertRegex(stock_code, r"^\d{6}$")
 
         class SnapshotProvider:
-            name = "pytdx"
+            name = "tencent"
 
             def __init__(self):
                 self.calls = []
@@ -319,9 +319,9 @@ class WindProviderTests(unittest.TestCase):
                 snapshot = api.query("stock_snapshot", codes=[stock_code])
 
         self.assertEqual("degraded", snapshot["_meta"]["status"])
-        self.assertEqual("pytdx", snapshot["_meta"]["provider_used"])
+        self.assertEqual("tencent", snapshot["_meta"]["provider_used"])
         self.assertEqual(
-            ["stocktoday", "tencent", "pytdx"],
+            ["stocktoday", "tencent"],
             snapshot["_meta"]["source_chain"],
         )
         self.assertEqual([stock_code], snapshot_provider.calls[0][1]["codes"])

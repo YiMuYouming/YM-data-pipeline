@@ -638,10 +638,10 @@ def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
     attempts = fallback.get("attempts", [])
     chain = "pass" if (
         fallback.get("status") == "degraded"
-        and fallback.get("provider_used") == "tdx_screener"
+        and fallback.get("provider_used") == "wind_screener"
         and fallback.get("row_count", 0) > 0
         and [item.get("provider") for item in attempts]
-        == ["iwencai_openapi", "pywencai", "tdx_screener"]
+        == ["iwencai_openapi", "pywencai", "wind_screener"]
         and [item.get("status") for item in attempts]
         == ["auth_error", "provider_error", "success"]
         and [item.get("origin") for item in attempts]

@@ -24,7 +24,7 @@ ATTEMPT_STATUSES = frozenset(
         "incompatible",
     }
 )
-FRESHNESS_STATUSES = frozenset({"fresh", "stale"})
+FRESHNESS_STATUSES = frozenset({"fresh", "aging", "stale", "unknown", "historical"})
 SOURCE_TIERS = frozenset({"primary", "fallback", "explicit"})
 POLICY_STATUSES = frozenset({"active", "inactive"})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -43,20 +43,20 @@ def _now_iso() -> str:
     return datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds")
 
 
-def _freshness(fetched_at: str, max_age_sec: int) -> dict[str, Any]:
+def _check_fetched_at(fetched_at: str) -> None:
     try:
         fetched = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, AttributeError) as exc:
         raise ValueError("fetched_at must be an ISO-8601 timestamp") from exc
     if fetched.tzinfo is None:
         raise ValueError("fetched_at must include a timezone")
 
-    age_sec = max(0, int((datetime.now(TZ_SHANGHAI) - fetched).total_seconds()))
-    return {
-        "status": "fresh" if age_sec <= max_age_sec else "stale",
-        "age_sec": age_sec,
-        "max_age_sec": max_age_sec,
-    }
+
+def unknown_freshness(max_age_sec: int) -> dict[str, Any]:
+    """Freshness is judged from the data's own time; without one it is unknown."""
+
+    return {"status": "unknown", "age_sec": None, "max_age_sec": max_age_sec,
+            "basis": "no_data_time"}
 
 
 def build_result(
@@ -77,8 +77,15 @@ def build_result(
     source_tier: str = "primary",
     policy_evidence_sha256: str | None = None,
     policy_status: str = "inactive",
+    data_as_of: str | None = None,
+    freshness: dict | None = None,
 ) -> dict:
-    """Build contract 1.0 without leaking provider secrets."""
+    """Build contract 1.0 without leaking provider secrets.
+
+    ``fetched_at`` is only the receipt time.  ``freshness`` is computed by the
+    caller from ``data_as_of`` (the data's own time); it is never derived from
+    the fetch time, so an old quote fetched now is not reported as fresh.
+    """
 
     timestamp = fetched_at or _now_iso()
     result = {
@@ -92,9 +99,10 @@ def build_result(
             "source_chain": [attempt.provider for attempt in attempts],
             "attempts": [asdict(attempt) for attempt in attempts],
             "fetched_at": timestamp,
+            "data_as_of": data_as_of,
             "data_scope": data_scope,
             "quality": dict(quality),
-            "freshness": _freshness(timestamp, max_age_sec),
+            "freshness": dict(freshness) if freshness else unknown_freshness(max_age_sec),
             "auth": dict(
                 auth
                 if auth is not None
@@ -216,13 +224,12 @@ def validate_result(result: dict) -> None:
     if freshness.get("status") not in FRESHNESS_STATUSES:
         raise ValueError("invalid freshness status")
     for key in ("age_sec", "max_age_sec"):
-        if (
-            not isinstance(freshness.get(key), int)
-            or isinstance(freshness.get(key), bool)
-            or freshness[key] < 0
-        ):
+        value = freshness.get(key)
+        if key == "age_sec" and value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(f"freshness.{key} must be a non-negative integer")
-    _freshness(meta["fetched_at"], freshness["max_age_sec"])
+    _check_fetched_at(meta["fetched_at"])
 
     if not isinstance(meta["auth"], dict):
         raise ValueError("auth must be a mapping")

@@ -8,6 +8,7 @@ import ym_stock_data.api as api
 from ym_stock_data import query
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.providers.local import LocalProvider
 from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
 from ym_stock_data.provider_policy import CompiledPolicy
 
@@ -54,8 +55,11 @@ class CanonicalQualityTests(unittest.TestCase):
             "<-7%": 45,
             "跌停": 12,
             "_total": 5094,
+            "indicators": {"indicator_version": "indicators.v1", "emotion": 57.85},
+            "trade_date": "20260924",
+            "data_as_of": "2026-09-24T15:00:00+08:00",
         }
-        with patch("ym_stock_data.providers.local.pytdx.fetch_breadth", return_value=breadth):
+        with patch.object(api, "_provider_for", return_value=StaticProvider("stocktoday", breadth)):
             result = query("review_sentiment")
 
         self.assertEqual(2947, result["data"]["上涨家数"])
@@ -67,46 +71,32 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertIn("aggregates", result["data"])
         self.assertEqual("partial", result["_meta"]["quality"]["status"])
         self.assertIn("炸板率", result["_meta"]["quality"]["missing"])
+        self.assertEqual("indicators.v1", result["data"]["indicators"]["indicator_version"])
+        self.assertEqual("2026-09-24T15:00:00+08:00", result["_meta"]["data_as_of"])
 
-    def test_pytdx_internal_eastmoney_breadth_fallback_keeps_bins_and_provenance(self):
+    def test_pytdx_breadth_diagnostic_reports_internal_eastmoney_provenance(self):
         breadth = {
             "涨停": 72,
-            ">7%": 31,
-            "5~7%": 64,
-            "3~5%": 180,
             "0~3%": 2600,
             "-0~-3%": 1800,
-            "-3~-5%": 210,
-            "-5~-7%": 80,
-            "<-7%": 45,
             "跌停": 12,
-            "_total": 5094,
+            "_total": 4484,
             "_source": "eastmoney_fallback",
         }
         with patch(
             "ym_stock_data.providers.local.pytdx.fetch_breadth",
             return_value=breadth,
         ):
-            result = query("review_sentiment")
+            outcome = LocalProvider("pytdx_breadth").call("review_sentiment", {})
 
-        self.assertEqual("degraded", result["_meta"]["status"])
-        self.assertEqual("eastmoney_breadth", result["_meta"]["provider_used"])
-        self.assertEqual(
-            ["pytdx_breadth", "eastmoney_breadth"],
-            result["_meta"]["source_chain"],
-        )
-        self.assertEqual(
-            ["provider_error", "success"],
-            [attempt["status"] for attempt in result["_meta"]["attempts"]],
-        )
-        self.assertEqual(5094, result["data"]["aggregates"]["breadth"]["_total"])
-        self.assertEqual(2947, result["data"]["上涨家数"])
-        self.assertEqual(2147, result["data"]["下跌家数"])
+        self.assertEqual("eastmoney_breadth", outcome.provider)
+        self.assertEqual("pytdx_breadth", outcome.provenance["fallback_from"])
+        self.assertEqual(4484, outcome.data["_total"])
 
     def test_snapshot_quality_rejects_partial_coverage_and_falls_through(self):
         now = FIXED_NOW_ISO
         provider = StaticProvider(
-            "pytdx",
+            "tencent",
             {
                 "600519": {
                     "code": "600519",
@@ -123,7 +113,7 @@ class CanonicalQualityTests(unittest.TestCase):
         )
 
         def provider_for(name):
-            return provider if name == "pytdx" else api.UnavailableProvider(name)
+            return provider if name == "tencent" else api.UnavailableProvider(name)
 
         with patch.object(api, "_provider_for", side_effect=provider_for):
             result = query("stock_snapshot", codes=["600519", "000858"])
@@ -133,7 +123,7 @@ class CanonicalQualityTests(unittest.TestCase):
         rejected = next(
             attempt
             for attempt in result["_meta"]["attempts"]
-            if attempt["provider"] == "pytdx"
+            if attempt["provider"] == "tencent"
         )
         self.assertEqual("quality_failure", rejected["status"])
         self.assertEqual("QUALITY_SNAPSHOT_INCOMPLETE", rejected["error_code"])
@@ -161,12 +151,12 @@ class CanonicalQualityTests(unittest.TestCase):
             "code": "600519",
             "bars": [{"time": "2026-07-29", "close": 1400, "amount": None}],
             "_source": "tencent_fallback",
-            "_meta": {"fallback_from": "pytdx", "fallback_to": "tencent"},
+            "_meta": {"fallback_from": "stocktoday", "fallback_to": "tencent"},
         }
-        provider = StaticProvider("pytdx", raw)
+        provider = StaticProvider("tencent", raw)
 
         def provider_for(name):
-            return provider if name == "pytdx" else api.UnavailableProvider(name)
+            return provider if name == "tencent" else api.UnavailableProvider(name)
 
         with patch.object(api, "_provider_for", side_effect=provider_for):
             result = query("stock_kline", code="600519", count=1)
@@ -176,7 +166,7 @@ class CanonicalQualityTests(unittest.TestCase):
         rejected = next(
             attempt
             for attempt in result["_meta"]["attempts"]
-            if attempt["provider"] == "pytdx"
+            if attempt["provider"] == "tencent"
         )
         self.assertEqual("quality_failure", rejected["status"])
         self.assertEqual("QUALITY_ADJUSTMENT_MISMATCH", rejected["error_code"])
@@ -247,7 +237,7 @@ class CanonicalQualityTests(unittest.TestCase):
             "max_board": 0,
             "pools": {"zt": [], "zb": [], "dt": []},
         }
-        provider = StaticProvider("eastmoney_limit_pool", empty_pool)
+        provider = StaticProvider("stocktoday", empty_pool)
         with patch.object(api, "_provider_for", return_value=provider):
             result = query("market_limit_state")
 

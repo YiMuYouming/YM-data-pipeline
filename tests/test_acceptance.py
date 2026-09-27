@@ -202,13 +202,13 @@ class AcceptanceTests(unittest.TestCase):
         if current:
             by_id["canonical_tdx_fallback"].update(
                 status="degraded",
-                provider_used="tdx_screener",
+                provider_used="wind_screener",
                 attempts=[
                     {"provider": provider, "status": status, "error_code": error_code, "latency_ms": 1, "origin": origin}
                     for provider, status, error_code, origin in (
                         ("iwencai_openapi", "auth_error", "HTTP_401", "injected"),
                         ("pywencai", "provider_error", "PYWENCAI_PROVIDER_ERROR", "injected"),
-                        ("tdx_screener", "success", None, "live"),
+                        ("wind_screener", "success", None, "live"),
                     )
                 ],
             )
@@ -560,7 +560,7 @@ class AcceptanceTests(unittest.TestCase):
             [item["provider"] for item in controlled["injected_attempts"]],
         )
         self.assertEqual(
-            ["tdx_screener"],
+            ["wind_screener"],
             [item["provider"] for item in controlled["live_attempts"]],
         )
 

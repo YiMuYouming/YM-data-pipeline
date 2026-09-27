@@ -9,6 +9,7 @@ from ym_stock_data import query
 from ym_stock_data.contracts import build_result as real_build_result
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.providers.local import LocalProvider
 from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
 from ym_stock_data.provider_policy import CompiledPolicy
 
@@ -231,19 +232,12 @@ class PublicApiTests(unittest.TestCase):
                         "tencent", [outcome("tencent", "success", data=fallback_data)]
                     )
                     providers = {"stocktoday": stocktoday, "tencent": fallback}
-                    if intent == "stock_kline":
-                        providers["eastmoney_stock"] = FakeProvider(
-                            "eastmoney_stock",
-                            [outcome("eastmoney_stock", "provider_error", error_code="UPSTREAM")],
-                        )
                     with self.provider_patch(providers):
                         result = query(intent, **params)
                     self.assertEqual("degraded", result["_meta"]["status"])
                     self.assertEqual("tencent", result["_meta"]["provider_used"])
                     self.assertEqual("fallback", result["_meta"]["source_tier"])
                     expected_attempts = [failed_status, "success"]
-                    if intent == "stock_kline":
-                        expected_attempts.insert(1, "provider_error")
                     self.assertEqual(
                         expected_attempts,
                         [item["status"] for item in result["_meta"]["attempts"]],
@@ -301,10 +295,10 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("primary", result["_meta"]["source_tier"])
 
         aggregate = FakeProvider(
-            "eastmoney_limit_pool",
+            "stocktoday",
             [
                 outcome(
-                    "eastmoney_limit_pool",
+                    "stocktoday",
                     "success",
                     data={
                         "date": "20260923",
@@ -318,12 +312,12 @@ class PublicApiTests(unittest.TestCase):
                 )
             ],
         )
-        with self.provider_patch({"eastmoney_limit_pool": aggregate}):
+        with self.provider_patch({"stocktoday": aggregate}):
             result = query("market_limit_state")
         self.assertEqual("success", result["_meta"]["status"])
-        self.assertEqual("eastmoney_limit_pool", result["_meta"]["provider_used"])
+        self.assertEqual("stocktoday", result["_meta"]["provider_used"])
 
-    def test_limit_board_fallback_is_explicit_and_hot_rank_has_no_silent_substitute(self):
+    def test_limit_board_has_no_fallback_and_hot_rank_has_no_silent_substitute(self):
         stocktoday = FakeProvider(
             "stocktoday",
             [outcome("stocktoday", "provider_error", error_code="UPSTREAM_ERROR")],
@@ -346,11 +340,11 @@ class PublicApiTests(unittest.TestCase):
             {"stocktoday": stocktoday, "eastmoney_limit_pool": eastmoney}
         ):
             result = query("market_limit_board", kind="up")
-        self.assertEqual("degraded", result["_meta"]["status"])
-        self.assertEqual("eastmoney_limit_pool", result["_meta"]["provider_used"])
-        self.assertEqual("fallback", result["_meta"]["source_tier"])
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertIsNone(result["_meta"]["provider_used"])
+        self.assertEqual([], eastmoney.calls)
         self.assertEqual(
-            ["provider_error", "success"],
+            ["provider_error"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
@@ -392,7 +386,7 @@ class PublicApiTests(unittest.TestCase):
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
-    def test_explicit_screen_two_empties_continue_to_tdx_success(self):
+    def test_explicit_screen_two_empties_continue_to_wind_success(self):
         providers = {
             "iwencai_openapi": FakeProvider(
                 "iwencai_openapi",
@@ -408,11 +402,11 @@ class PublicApiTests(unittest.TestCase):
                 "pywencai",
                 [outcome("pywencai", "empty", data={"datas": [], "row_count": 0})],
             ),
-            "tdx_screener": FakeProvider(
-                "tdx_screener",
+            "wind_screener": FakeProvider(
+                "wind_screener",
                 [
                     outcome(
-                        "tdx_screener",
+                        "wind_screener",
                         "success",
                         data={"datas": [{"股票代码": "600519"}], "row_count": 1},
                     )
@@ -423,13 +417,13 @@ class PublicApiTests(unittest.TestCase):
             result = query("review_sentiment", query="白酒股", limit=20)
 
         self.assertEqual("degraded", result["_meta"]["status"])
-        self.assertEqual("tdx_screener", result["_meta"]["provider_used"])
+        self.assertEqual("wind_screener", result["_meta"]["provider_used"])
         self.assertEqual(
             ["empty", "empty", "success"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
-    def test_explicit_screen_reaches_wind_after_three_compatible_attempts(self):
+    def test_explicit_screen_reaches_wind_after_two_compatible_attempts(self):
         providers = {
             "iwencai_openapi": FakeProvider(
                 "iwencai_openapi",
@@ -438,10 +432,6 @@ class PublicApiTests(unittest.TestCase):
             "pywencai": FakeProvider(
                 "pywencai",
                 [outcome("pywencai", "provider_error", error_code="UPSTREAM_ERROR")],
-            ),
-            "tdx_screener": FakeProvider(
-                "tdx_screener",
-                [outcome("tdx_screener", "empty", data={"datas": [], "row_count": 0})],
             ),
             "wind_screener": FakeProvider(
                 "wind_screener",
@@ -467,7 +457,7 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("degraded", result["_meta"]["status"])
         self.assertEqual("wind_screener", result["_meta"]["provider_used"])
         self.assertEqual(
-            ["empty", "provider_error", "empty", "success"],
+            ["empty", "provider_error", "success"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
         self.assertEqual("English", providers["wind_screener"].calls[0][1]["lang"])
@@ -493,7 +483,6 @@ class PublicApiTests(unittest.TestCase):
             for name in (
                 "iwencai_openapi",
                 "pywencai",
-                "tdx_screener",
                 "wind_screener",
             )
         }
@@ -503,11 +492,11 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("empty", result["_meta"]["status"])
         self.assertEqual("wind_screener", result["_meta"]["provider_used"])
         self.assertEqual(
-            ["iwencai_openapi", "pywencai", "tdx_screener", "wind_screener"],
+            ["iwencai_openapi", "pywencai", "wind_screener"],
             result["_meta"]["source_chain"],
         )
         self.assertEqual(
-            ["empty", "empty", "empty", "empty"],
+            ["empty", "empty", "empty"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
         self.assertEqual("empty", result["_meta"]["quality"]["status"])
@@ -521,7 +510,6 @@ class PublicApiTests(unittest.TestCase):
         statuses = (
             ("iwencai_openapi", "auth_error", "HTTP_401"),
             ("pywencai", "provider_error", "UPSTREAM_ERROR"),
-            ("tdx_screener", "empty", None),
             ("wind_screener", "empty", None),
         )
         providers = {
@@ -553,7 +541,7 @@ class PublicApiTests(unittest.TestCase):
         self.assertIsNone(result["_meta"]["provider_used"])
         self.assertIsNone(result["data"])
         self.assertEqual(
-            ["auth_error", "provider_error", "empty", "empty"],
+            ["auth_error", "provider_error", "empty"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
         self.assertEqual(
@@ -565,7 +553,6 @@ class PublicApiTests(unittest.TestCase):
         statuses = (
             ("iwencai_openapi", "empty", None),
             ("pywencai", "auth_error", "HTTP_401"),
-            ("tdx_screener", "provider_error", "UPSTREAM_ERROR"),
             ("wind_screener", "dependency_missing", "CLI_NOT_FOUND"),
         )
         providers = {
@@ -591,7 +578,7 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("error", result["_meta"]["status"])
         self.assertIsNone(result["_meta"]["provider_used"])
         self.assertEqual(
-            ["empty", "auth_error", "provider_error", "dependency_missing"],
+            ["empty", "auth_error", "dependency_missing"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
 
@@ -656,7 +643,7 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual("tencent", result["_meta"]["provider_used"])
         self.assertEqual(["stocktoday", "tencent"], result["_meta"]["source_chain"])
 
-    def test_stock_kline_count_is_applied_on_primary_path(self):
+    def test_pytdx_diagnostic_applies_stock_kline_count(self):
         raw = {
             "code": "600519",
             "bars": [
@@ -672,26 +659,21 @@ class PublicApiTests(unittest.TestCase):
                 for index in range(5)
             ],
         }
-        stocktoday = FakeProvider(
-            "stocktoday", [outcome("stocktoday", "provider_error", error_code="UPSTREAM")]
-        )
-        tencent = FakeProvider(
-            "tencent", [outcome("tencent", "provider_error", error_code="UPSTREAM")]
-        )
-        with patch.dict(
-            api.PROVIDER_REGISTRY,
-            {"stocktoday": stocktoday, "tencent": tencent},
-        ), patch(
+        # PyTDX is an explicit diagnostic since 2026-09-27; its adapter still
+        # applies the requested count.
+        with patch(
             "ym_stock_data.providers.local.pytdx.fetch_kline",
             return_value=raw,
         ):
-            result = query("stock_kline", code="600519", period="daily", count=2)
+            outcome = LocalProvider("pytdx").call(
+                "stock_kline", {"code": "600519", "period": "daily", "count": 2}
+            )
 
         self.assertEqual(
             ["2026-09-21", "2026-09-22"],
-            [bar["datetime"] for bar in result["data"]["bars"]],
+            [bar["datetime"] for bar in outcome.data["bars"]],
         )
-        self.assertEqual(2, result["data"]["requested_count"])
+        self.assertEqual(2, outcome.data["requested_count"])
 
     def test_compatible_failures_continue_and_degrade_success(self):
         for failed_status in (
@@ -722,7 +704,7 @@ class PublicApiTests(unittest.TestCase):
                 self.assertEqual("degraded", result["_meta"]["status"])
                 self.assertEqual("pywencai", result["_meta"]["provider_used"])
 
-    def test_total_failure_records_missing_registry_provider(self):
+    def test_total_failure_keeps_the_only_provider_error(self):
         first = FakeProvider(
             "eastmoney_research",
             [outcome("eastmoney_research", "provider_error", error_code="HTTP_500")],
@@ -732,36 +714,23 @@ class PublicApiTests(unittest.TestCase):
 
         self.assertEqual("error", result["_meta"]["status"])
         self.assertIsNone(result["_meta"]["provider_used"])
-        self.assertEqual(
-            ["eastmoney_research", "tdx_report"],
-            result["_meta"]["source_chain"],
-        )
-        self.assertEqual("dependency_missing", result["_meta"]["attempts"][1]["status"])
-        self.assertEqual(
-            "PROVIDER_NOT_IMPLEMENTED",
-            result["_meta"]["attempts"][1]["error_code"],
-        )
+        self.assertEqual(["eastmoney_research"], result["_meta"]["source_chain"])
+        self.assertEqual("HTTP_500", result["_meta"]["attempts"][0]["error_code"])
 
     def test_route_external_provider_claim_is_rejected(self):
         stocktoday = FakeProvider(
             "stocktoday",
             [outcome("wind_mcp", "success", data=full_index_data())],
         )
-        spoof = FakeProvider(
-            "pytdx",
-            [outcome("wind_mcp", "success", data=full_index_data())],
-        )
         fallback = FakeProvider(
-            "eastmoney",
-            [outcome("eastmoney", "success", data=full_index_data())],
+            "tencent",
+            [outcome("tencent", "success", data=full_index_data())],
         )
-        with self.provider_patch(
-            {"stocktoday": stocktoday, "pytdx": spoof, "eastmoney": fallback}
-        ):
+        with self.provider_patch({"stocktoday": stocktoday, "tencent": fallback}):
             result = query("realtime_market")
 
         self.assertEqual("degraded", result["_meta"]["status"])
-        self.assertEqual("eastmoney", result["_meta"]["provider_used"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
         self.assertEqual(
             "INCOMPATIBLE_PROVIDER",
             result["_meta"]["attempts"][0]["error_code"],

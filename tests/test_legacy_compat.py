@@ -213,7 +213,7 @@ class LegacyCompatibilityTests(unittest.TestCase):
         self.assertNotIn("aggregates", result)
         self.assertEqual("canonical", result["_meta"]["compatibility_route"])
 
-    def test_legacy_breadth_keeps_bins_under_eastmoney_breadth_fallback(self):
+    def test_legacy_breadth_keeps_bins_from_the_stocktoday_indicator_snapshot(self):
         breadth = {
             "涨停": 72,
             ">7%": 31,
@@ -226,25 +226,22 @@ class LegacyCompatibilityTests(unittest.TestCase):
             "<-7%": 45,
             "跌停": 12,
             "_total": 5094,
-            "_source": "eastmoney_fallback",
+            "indicators": {"indicator_version": "indicators.v1", "emotion": 57.1},
         }
-        with patch.object(
-            api,
-            "_provider_for",
-            side_effect=lambda name: LocalProvider(name)
-            if name in {"pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"}
-            else api.UnavailableProvider(name),
-        ), patch(
-            "ym_stock_data.providers.local.pytdx.fetch_breadth",
-            return_value=breadth,
-        ):
+
+        class IndicatorSnapshot:
+            def call(self, intent, params):
+                return ProviderOutcome("stocktoday", "success", data=dict(breadth),
+                                       fetched_at=FIXED_NOW.isoformat(timespec="seconds"))
+
+        with patch.object(api, "_provider_for", return_value=IndicatorSnapshot()):
             result = fetch("breadth")
 
         self.assertEqual(5094, result["_total"])
         self.assertEqual(72, result["涨停"])
         self.assertEqual(12, result["跌停"])
         self.assertNotIn("query_summary", result)
-        self.assertEqual("eastmoney_breadth", result["_meta"]["provider_used"])
+        self.assertEqual("stocktoday", result["_meta"]["provider_used"])
 
     def test_mixed_provider_review_batch_uses_explicit_compatibility_contract(self):
         class MixedProvider:

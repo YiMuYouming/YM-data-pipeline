@@ -29,6 +29,9 @@ from .stocktoday_inventory import load_inventory
 ENDPOINT = "https://tushare.citydata.club"
 DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-budget.sqlite3"
 MAX_ROWS = 10000
+# rt_idx_k / rt_idx_tick / rt_sw_k / idx_mins answer "该接口为龙虾套餐专属" on the
+# current plan; skip them for six hours instead of spending quota every poll.
+ENTITLEMENT_RETRY_SECONDS = 6 * 3600
 _INDEX_CODES = (
     ("000001.SH", "上证指数"),
     ("399001.SZ", "深证指数"),
@@ -99,6 +102,28 @@ class RequestBudget:
                 return False
             con.execute("INSERT INTO requests VALUES (?)", (now,))
         return True
+
+    def not_entitled(self, api_name, *, now=None):
+        """True while an upstream "plan-only" refusal for this API is remembered."""
+
+        now = time.time() if now is None else now
+        try:
+            with closing(sqlite3.connect(self.path, timeout=1)) as con:
+                con.execute("CREATE TABLE IF NOT EXISTS entitlement (api_name TEXT PRIMARY KEY, until REAL NOT NULL)")
+                row = con.execute("SELECT until FROM entitlement WHERE api_name=?", (api_name,)).fetchone()
+        except (OSError, sqlite3.Error):
+            return False
+        return bool(row and row[0] > now)
+
+    def remember_not_entitled(self, api_name, *, now=None, seconds=ENTITLEMENT_RETRY_SECONDS):
+        now = time.time() if now is None else now
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
+                con.execute("CREATE TABLE IF NOT EXISTS entitlement (api_name TEXT PRIMARY KEY, until REAL NOT NULL)")
+                con.execute("INSERT OR REPLACE INTO entitlement VALUES (?, ?)", (api_name, now + seconds))
+        except (OSError, sqlite3.Error):
+            pass
 
     def wait_seconds(self, *, now=None):
         """Return a bounded wait for the minute window, or ``None`` at day cap.
@@ -275,10 +300,13 @@ def _observation(rows, api_name, params, *, now):
             allowance = int(str(params.get("freq", "0MIN")).replace("MIN", "")) * 60 + 120 if "freq" in params else 120
             a_share_realtime = api_name not in {"rt_hk_k", "rt_hk_tick", "rt_fut_min"}
             if api_name in _A_SHARE_QUOTE_APIS:
-                allowance = 60
+                # REPAIR_PLAN §3: StockToday's normal 1-2 minute lag is not a
+                # degradation; only >600s is expired, 180-600s is "aging".
+                allowance = 600
             if a_share_realtime:
                 try:
-                    session_age = market_fact_age_seconds(oldest, now)
+                    session_oldest = _session_time(oldest)[0]
+                    session_age = market_fact_age_seconds(session_oldest, now)
                 except TradeCalendarUnavailable:
                     session_age = None
                 age = int(session_age) if session_age is not None else age
@@ -286,9 +314,17 @@ def _observation(rows, api_name, params, *, now):
             if len(valid) == len(rows):
                 if a_share_realtime:
                     result["status"] = "fresh" if session_age is not None and session_age <= allowance else "stale"
+                    if result["status"] == "fresh" and api_name in _A_SHARE_QUOTE_APIS and session_age > 180:
+                        result["status"] = "aging"
                 elif age >= -60:
                     result["status"] = "fresh" if age <= allowance else "stale"
     return result
+
+
+def _session_time(stamp):
+    from ..intraday_state import session_data_time
+
+    return session_data_time(stamp)
 
 
 def _rows(body):
@@ -380,6 +416,9 @@ class StockTodayProvider:
             return self._fail(started, "AUTH_STORAGE_UNAVAILABLE", "auth_error", "error")
         if not token:
             return self._fail(started, "AUTH_MISSING", "auth_error", "missing")
+        not_entitled = getattr(self.budget, "not_entitled", None)
+        if not_entitled is not None and not_entitled(name, now=self.clock.time()):
+            return self._fail(started, "PLAN_NOT_ENTITLED", "incompatible")
         try:
             if not self.budget.acquire(now=self.clock.time()):
                 return self._fail(started, "LOCAL_BUDGET_EXHAUSTED")
@@ -446,6 +485,17 @@ class StockTodayProvider:
                         "AUTH_DENIED",
                         "auth_error",
                         "error",
+                        http_status=http_status,
+                        upstream_code=upstream_code,
+                    )
+                if "套餐专属" in message or "升级套餐" in message:
+                    remember = getattr(self.budget, "remember_not_entitled", None)
+                    if remember is not None:
+                        remember(name, now=self.clock.time())
+                    return self._fail(
+                        started,
+                        "PLAN_NOT_ENTITLED",
+                        "incompatible",
                         http_status=http_status,
                         upstream_code=upstream_code,
                     )
@@ -637,91 +687,146 @@ class StockTodayProvider:
             "industry": str(row.get("industry") or row.get("tag") or ""),
         }
 
-    def _fetch_limit_rows(self, *, date, limit_type):
-        ths_type = "涨停池" if limit_type == "U" else "跌停池"
-        candidates = (
-            ("limit_list_d", {"limit_type": limit_type}),
-            ("limit_list_ths", {"limit_type": ths_type}),
-            ("limit_step", {}),
-        )
-        last = None
-        for api_name, extra in candidates:
-            nested = dict(extra)
-            if date:
-                nested["trade_date"] = date
-            outcome = self._request_table(api_name, nested)
+    def _limit_target_date(self, requested):
+        """Requested day, or the latest session whose pools can exist.
+
+        A non-trading request maps to the last completed trading day; the
+        response carries both dates so no holiday is labelled with old data.
+        """
+
+        from ..trading_calendar import is_trading_day, previous_trading_day
+
+        now = datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI)
+        if requested:
+            day = datetime.strptime(requested, "%Y%m%d").date()
+            if not is_trading_day(day):
+                day = previous_trading_day(day)
+            return day.strftime("%Y%m%d")
+        day = now.date()
+        if not is_trading_day(day) or now.time() < datetime.strptime("15:00", "%H:%M").time():
+            day = previous_trading_day(day)
+        return day.strftime("%Y%m%d")
+
+    def _collect_limit_pools(self, trade_date):
+        """limit_list_d U/D/Z plus limit_step, normalized by market_facts."""
+
+        from ..market_facts import normalize_stocktoday_limits
+
+        responses, last = {}, None
+        for kind in ("U", "D", "Z", "STEP"):
+            for _ in range(2):
+                if kind == "STEP":
+                    outcome = self._request_table("limit_step", {"trade_date": trade_date})
+                else:
+                    outcome = self._request_table(
+                        "limit_list_d", {"trade_date": trade_date, "limit_type": kind}
+                    )
+                # The gateway intermittently answers an empty up-pool for a
+                # completed day; ask once more before accepting "empty".
+                if not (kind == "U" and outcome.status == "empty"):
+                    break
             last = outcome
-            rows = outcome.data.get("items", []) if isinstance(outcome.data, dict) else []
-            if outcome.status == "success" and isinstance(rows, list) and rows:
-                return rows, outcome, api_name
             if outcome.status not in {"success", "empty"}:
-                continue
-        return [], last, None
+                return None, outcome
+            responses[kind] = {
+                "_meta": {"status": outcome.status, "provider_used": self.name,
+                          "fetched_at": outcome.fetched_at},
+                "data": outcome.data,
+            }
+        up = (responses["U"]["data"] or {}).get("items") or []
+        if not up:
+            return {}, last
+        try:
+            normalized = normalize_stocktoday_limits(trade_date, responses)
+        except ValueError:
+            return None, self._fail(self.clock.monotonic(), "LIMIT_POOL_INVALID")
+        return normalized["data"], last
 
     def _call_limit_state(self, params):
-        date = params.get("date") or datetime.fromtimestamp(
-            self.clock.time(), TZ_SHANGHAI
-        ).strftime("%Y%m%d")
-        limit_types = [params["limit_type"]] if params.get("limit_type") else ["U", "D"]
-        pools = {"zt": [], "zb": [], "dt": [], "yzt": []}
-        observations = []
-        last = None
-        for limit_type in limit_types:
-            rows, outcome, api_name = self._fetch_limit_rows(
-                date=date, limit_type=limit_type
-            )
-            last = outcome or last
-            if outcome is not None and isinstance(outcome.data, dict):
-                observations.append(dict(outcome.data.get("_stocktoday") or {}))
-            if outcome is not None and outcome.status not in {"success", "empty"}:
-                if not any(pools.values()):
-                    return outcome
-                continue
-            normalized = [self._limit_row(row) for row in rows]
-            pools["zt" if limit_type == "U" else "dt"] = normalized
-            if api_name and observations:
-                observations[-1]["selected_api"] = api_name
+        from .. import indicators
+        from ..sources.limit_state import derive_limit_promotion
+        from ..trading_calendar import previous_trading_day
 
-        count = len(pools["zt"]) + len(pools["dt"])
-        data = {
-            "date": date,
-            "zt_count": len(pools["zt"]),
-            "zb_count": 0,
-            "dt_count": len(pools["dt"]),
-            "yzt_count": 0,
-            "break_rate": 0.0,
-            "max_board": max(
-                (int(row.get("limit_days") or 1) for row in pools["zt"]),
-                default=0,
-            ),
-            "pools": pools,
-            "_stocktoday": {
-                "api_name": "limit_list_d",
-                "status": "empty" if not count else "historical_or_reference",
-                "returned_count": count,
-                "fallback_observations": observations,
-            },
-        }
-        if count:
-            return ProviderOutcome(
-                self.name,
-                "success",
-                data=data,
-                fetched_at=(last.fetched_at if last else None),
-                latency_ms=(last.latency_ms if last else 0),
-                auth=(last.auth if last else None),
-                provenance=(last.provenance if last else None),
-            )
-        if last is not None and last.status not in {"empty", "success"}:
+        requested = params.get("date")
+        trade_date = self._limit_target_date(requested)
+        current, last = self._collect_limit_pools(trade_date)
+        if current is None:
             return last
+        pools = current.get("pools") or {"zt": [], "zb": [], "dt": []}
+        zt, zb, dt = pools.get("zt", []), pools.get("zb", []), pools.get("dt", [])
+        rate = indicators.broken_rate(len(zb), len(zt))
+        data = {
+            "date": trade_date,
+            "requested_date": requested,
+            "date_adjusted": bool(requested and requested != trade_date),
+            "zt_count": len(zt),
+            "zb_count": len(zb),
+            "dt_count": len(dt),
+            "yzt_count": 0,
+            "break_rate": round(rate, 2) if rate is not None else 0.0,
+            "max_board": max((int(row.get("limit_days") or 1) for row in zt), default=0),
+            "pools": {"zt": zt, "zb": zb, "dt": dt, "yzt": []},
+            "_board_source": current.get("_board_source"),
+            "source": self.name,
+            "_stocktoday": {"api_name": "limit_list_d", "status": "historical_or_reference",
+                            "selected_trade_date": trade_date,
+                            "returned_count": len(zt) + len(zb) + len(dt)},
+        }
+        if current and params.get("include_promotion"):
+            previous_date = params.get("previous_date") or previous_trading_day(
+                datetime.strptime(trade_date, "%Y%m%d").date()
+            ).strftime("%Y%m%d")
+            previous, failure = self._collect_limit_pools(previous_date)
+            if not previous:
+                return failure if previous is None else self._fail(
+                    self.clock.monotonic(), "LIMIT_PROMOTION_SOURCE_UNAVAILABLE"
+                )
+            try:
+                data["promotion"] = derive_limit_promotion(
+                    previous, current, previous_date=previous_date, current_date=trade_date
+                )
+                data["promotion"]["source"] = self.name
+            except ValueError as error:
+                return self._fail(self.clock.monotonic(), str(error))
         return ProviderOutcome(
             self.name,
-            "empty",
+            "success" if current else "empty",
             data=data,
-            fetched_at=(last.fetched_at if last else None),
-            latency_ms=(last.latency_ms if last else 0),
-            auth=(last.auth if last else None),
-            provenance=(last.provenance if last else None),
+            fetched_at=last.fetched_at if last else None,
+            latency_ms=last.latency_ms if last else 0,
+            auth=last.auth if last else None,
+            provenance=last.provenance if last else None,
+        )
+
+    def _call_intraday_state(self, intent):
+        from .. import intraday_state
+
+        started = self.clock.monotonic()
+        try:
+            state = intraday_state.build(
+                self, now=datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI)
+            )
+        except intraday_state.IntradayStateError as error:
+            return self._fail(started, error.code, error.status)
+        if intent == "review_sentiment":
+            summary = state["indicators"]
+            data = {
+                **state["breadth_buckets"],
+                "indicators": summary,
+                "trade_date": state["trade_date"],
+                "data_as_of": state["data_as_of"],
+                "_stocktoday": state["_stocktoday"],
+            }
+        else:
+            data = state
+        return ProviderOutcome(
+            self.name,
+            "success",
+            data=data,
+            fetched_at=state["_stocktoday"]["fetched_at"],
+            latency_ms=int((self.clock.monotonic() - started) * 1000),
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(http_status=200),
         )
 
     def _call_limit_board(self, params):
@@ -1114,6 +1219,10 @@ class StockTodayProvider:
             return self._call_realtime_market()
         if intent == "market_limit_state":
             return self._call_limit_state(params)
+        if intent == "market_intraday_state" or (
+            intent == "review_sentiment" and params.get("query") in (None, "", [])
+        ):
+            return self._call_intraday_state(intent)
         if intent == "market_limit_board":
             return self._call_limit_board(params)
         if intent == "market_hot_rank":
@@ -1201,7 +1310,11 @@ class StockTodayProvider:
                 if not row or type(row.get("close")) not in (float, int) or not math.isfinite(row["close"]) or row["close"] <= 0:
                     continue
                 price, previous = row["close"], row.get("pre_close")
-                timestamp = _timestamp(row.get("updated_at")) or _timestamp(row.get("trade_time"))
+                vendor_stamp = _timestamp(row.get("updated_at")) or _timestamp(row.get("trade_time"))
+                try:
+                    timestamp, corrected = _session_time(vendor_stamp) if vendor_stamp else (None, False)
+                except TradeCalendarUnavailable:
+                    timestamp, corrected = vendor_stamp, False
                 snapshot[code] = {
                     "name": row.get("name"),
                     "price": price,
@@ -1216,6 +1329,10 @@ class StockTodayProvider:
                     "quote_time": timestamp.isoformat() if timestamp else None,
                     "source": self.name,
                 }
+                if corrected:
+                    # Holiday / pre-open rows re-stamp the last session with
+                    # the calendar date; keep the vendor stamp for audit.
+                    snapshot[code]["vendor_quote_time"] = vendor_stamp.isoformat()
             if outcome.status == "success" and rows and not any(
                 code in snapshot for code in params["codes"]
             ):

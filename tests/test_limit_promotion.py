@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from ym_stock_data import query
+from ym_stock_data.providers.local import LocalProvider
+from ym_stock_data.routing import route_for
 from ym_stock_data.sources.limit_state import derive_limit_promotion, fetch_limit_promotion
 
 
@@ -65,27 +67,27 @@ class LimitPromotionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     derive_limit_promotion(bad, self.current, previous_date="20260922", current_date="20260923")
 
-    def test_public_query_returns_derived_rates_from_two_dates(self):
+    # Eastmoney pools are an explicit diagnostic since 2026-09-27; the public
+    # route is StockToday.  Keep the adapter's promotion path covered directly.
+    def eastmoney(self, **params):
+        return LocalProvider("eastmoney_limit_pool").call("market_limit_state", params)
+
+    def test_eastmoney_diagnostic_returns_derived_rates_from_two_dates(self):
         answers = {"20260922": self.previous, "20260923": self.current}
         with patch("ym_stock_data.sources.limit_state.fetch_limit_state", side_effect=lambda date: answers[date]):
-            result = query("market_limit_state", date="20260923", previous_date="20260922")
-        self.assertEqual(result["_meta"]["provider_used"], "eastmoney_limit_pool")
-        self.assertIn(result["_meta"]["status"], {"success", "degraded"})
-        self.assertEqual(result["data"]["promotion"]["rates"]["overall"]["pct"], 80.0)
-
-    def test_public_query_can_resolve_previous_exchange_day(self):
-        answers = {"20260922": self.previous, "20260923": self.current}
-        with patch("ym_stock_data.sources.limit_state.fetch_limit_state", side_effect=lambda date: answers[date]) as fetch:
-            result = query("market_limit_state", date="20260923", include_promotion=True)
-        self.assertEqual(result["data"]["promotion"]["previous_date"], "20260922")
-        self.assertEqual(fetch.call_count, 2)
+            outcome = self.eastmoney(date="20260923", previous_date="20260922")
+        self.assertEqual("success", outcome.status)
+        self.assertEqual(outcome.data["promotion"]["rates"]["overall"]["pct"], 80.0)
 
     def test_previous_source_failure_does_not_return_bogus_zero(self):
         answers = {"20260922": {"error": "upstream", "error_type": "network_error"}, "20260923": self.current}
         with patch("ym_stock_data.sources.limit_state.fetch_limit_state", side_effect=lambda date: answers[date]):
-            result = query("market_limit_state", date="20260923", previous_date="20260922")
-        self.assertEqual(result["_meta"]["status"], "error")
-        self.assertIsNone(result["data"])
+            outcome = self.eastmoney(date="20260923", previous_date="20260922")
+        self.assertNotEqual("success", outcome.status)
+        self.assertIsNone(outcome.data)
+
+    def test_public_limit_state_route_is_stocktoday_only(self):
+        self.assertEqual(("stocktoday",), route_for("market_limit_state", {}).providers)
 
     def test_previous_day_must_be_actual_exchange_predecessor(self):
         with self.assertRaises(ValueError):

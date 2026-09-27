@@ -30,7 +30,6 @@ _SAFE_ENUM = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _CONTROLLED_FALLBACK_ROUTE = (
     "iwencai_openapi",
     "pywencai",
-    "tdx_screener",
     "wind_screener",
 )
 
@@ -293,10 +292,10 @@ def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
     attempts = fallback["attempts"]
     chain_status = "pass" if (
         fallback["status"] == "degraded"
-        and fallback["provider_used"] == "tdx_screener"
+        and fallback["provider_used"] == "wind_screener"
         and fallback["row_count"] > 0
         and [item["provider"] for item in attempts]
-        == ["iwencai_openapi", "pywencai", "tdx_screener"]
+        == ["iwencai_openapi", "pywencai", "wind_screener"]
         and [item["status"] for item in attempts]
         == ["auth_error", "provider_error", "success"]
         and [item["origin"] for item in attempts]
@@ -378,9 +377,9 @@ def run_live_smoke(
     def controlled_fallback():
         from . import api as api_module
 
-        tdx_state = _provider_state_payload("tdx_mcp", lambda: diagnostics)
-        if tdx_state["status"] not in {"configured_unverified", "ready"}:
-            return tdx_state
+        live_state = _provider_state_payload("wind_mcp", lambda: diagnostics)
+        if live_state["status"] not in {"configured_unverified", "ready"}:
+            return live_state
         params = {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3}
         spec = api_module.route_for("review_sentiment", dict(params))
         if tuple(spec.providers) != _CONTROLLED_FALLBACK_ROUTE:
@@ -425,7 +424,7 @@ def run_live_smoke(
             next_provider += 1
             if name in injected:
                 return _InjectedProvider(injected[name])
-            if name == "tdx_screener":
+            if name == "wind_screener":
                 return provider_loader(name)
             route_drifted = True
             controlled_origins.add(name)

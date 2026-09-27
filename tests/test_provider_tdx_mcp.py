@@ -873,30 +873,19 @@ class TdxRegistryTests(unittest.TestCase):
                 ),
                 client=FakeProviderClient(payload={"items": []}),
             )
-            providers = {
-                name: FailedProvider(name) for name in ("pytdx", "tencent")
-            }
-            providers["tdx_quotes"] = tdx
-            with patch.object(api, "_STATE", state), patch.object(
-                api, "_provider_for", side_effect=lambda name: providers[name]
-            ):
-                result = api.query("stock_snapshot", codes=["600519"])
+            # TDX left every default route on 2026-09-27; the adapter stays an
+            # explicit diagnostic and must still report missing owned auth.
+            outcome = tdx.call("stock_snapshot", {"codes": ["600519"]})
 
-        self.assertEqual("error", result["_meta"]["status"])
-        self.assertEqual("AUTH_MISSING", result["_meta"]["attempts"][-1]["error_code"])
+        self.assertEqual("auth_error", outcome.status)
+        self.assertEqual("AUTH_MISSING", outcome.error_code)
 
-    def test_routes_keep_tdx_after_compatible_sources_only(self):
-        self.assertEqual("tdx_quotes", route_for("stock_snapshot", {}).providers[-1])
-        self.assertEqual("tdx_kline", route_for("stock_kline", {}).providers[-1])
-        self.assertEqual("tdx_report", route_for("research", {}).providers[-1])
-        self.assertEqual("tdx_news", route_for("news", {}).providers[-1])
-        for intent, params in (
-            ("realtime_market", {}),
-            ("review_sentiment", {}),
-            ("sector_index", {"names": ["半导体"]}),
-        ):
+    def test_no_default_route_uses_tdx(self):
+        from ym_stock_data.routing import all_route_specs
+
+        for spec in all_route_specs():
             self.assertFalse(
-                any(name.startswith("tdx_") for name in route_for(intent, params).providers)
+                any(name.startswith("tdx_") for name in spec.providers), spec
             )
 
 

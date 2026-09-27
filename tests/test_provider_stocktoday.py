@@ -158,8 +158,9 @@ class StockTodayTests(unittest.TestCase):
         self.assertEqual(0, result["data"]["_stocktoday"]["age_sec"])
         fallback.call.assert_not_called()
 
-    def test_canonical_market_falls_back_after_quote_exceeds_sixty_trading_seconds(self):
-        now = datetime.fromisoformat("2026-09-23T13:01:30+08:00")
+    def test_canonical_market_falls_back_only_after_quote_expires_at_600_trading_seconds(self):
+        # 11:30 → 13:11 is 660 trading seconds (lunch paused): expired.
+        now = datetime.fromisoformat("2026-09-23T13:11:00+08:00")
         clock = Mock()
         clock.time.return_value = now.timestamp()
         clock.monotonic.return_value = 1.0
@@ -221,31 +222,62 @@ class StockTodayTests(unittest.TestCase):
         )
         self.assertEqual(102, result.data["上证指数"])
 
-    def test_limit_state_maps_stocktoday_limit_list_to_canonical_pool(self):
-        self.response.json.return_value = {
-            "code": 0,
-            "total": 1,
-            "data": [
-                {
-                    "ts_code": "600519.SH",
-                    "trade_date": "20260923",
-                    "name": "贵州茅台",
-                    "close": 1400,
-                    "pct_chg": 10,
-                    "limit_times": 2,
-                }
-            ],
-        }
+    def _limit_transport(self, trade_date, *, up_rows):
+        def respond(url, json, **_kwargs):
+            api_name, params = json["api_name"], json["params"]
+            if api_name == "limit_step":
+                rows = [{"ts_code": "600519.SH", "trade_date": params["trade_date"],
+                         "name": "贵州茅台", "nums": "2"}]
+            elif params.get("limit_type") == "U":
+                rows = up_rows(params["trade_date"])
+            else:
+                rows = []
+            response = Mock(status_code=200)
+            response.json.return_value = {"code": 0, "total": len(rows), "data": rows}
+            return response
+        self.transport.side_effect = respond
 
-        result = self.provider.call(
-            "market_limit_state", {"date": "20260923", "limit_type": "U"}
-        )
+    def test_limit_state_uses_three_pools_and_cross_checked_ladder(self):
+        self._limit_transport("20260923", up_rows=lambda day: [{
+            "ts_code": "600519.SH", "trade_date": day, "name": "贵州茅台",
+            "close": 1400, "pct_chg": 10, "limit_times": 2, "limit_type": "U",
+        }])
+
+        result = self.provider.call("market_limit_state", {"date": "20260923"})
 
         self.assertEqual("success", result.status)
-        self.assertEqual(1, result.data["zt_count"])
-        self.assertEqual(0, result.data["dt_count"])
-        self.assertEqual("limit_list_d", self.transport.call_args.kwargs["json"]["api_name"])
-        self.assertEqual("U", self.transport.call_args.kwargs["json"]["params"]["limit_type"])
+        self.assertEqual("20260923", result.data["date"])
+        self.assertFalse(result.data["date_adjusted"])
+        self.assertEqual((1, 0, 0), (result.data["zt_count"], result.data["zb_count"], result.data["dt_count"]))
+        self.assertEqual(2, result.data["max_board"])
+        self.assertEqual("limit_step_crosschecked", result.data["_board_source"])
+        calls = [(c.kwargs["json"]["api_name"], c.kwargs["json"]["params"].get("limit_type"))
+                 for c in self.transport.call_args_list]
+        self.assertEqual([("limit_list_d", "U"), ("limit_list_d", "D"),
+                          ("limit_list_d", "Z"), ("limit_step", None)], calls)
+
+    def test_limit_state_on_a_holiday_reports_the_real_trade_date(self):
+        self._limit_transport("20260924", up_rows=lambda day: [{
+            "ts_code": "600519.SH", "trade_date": day, "name": "贵州茅台",
+            "close": 1400, "pct_chg": 10, "limit_times": 2, "limit_type": "U",
+        }])
+
+        result = self.provider.call("market_limit_state", {"date": "20260925"})
+
+        self.assertEqual("20260924", result.data["date"])
+        self.assertEqual("20260925", result.data["requested_date"])
+        self.assertTrue(result.data["date_adjusted"])
+        requested = {c.kwargs["json"]["params"]["trade_date"] for c in self.transport.call_args_list}
+        self.assertEqual({"20260924"}, requested)
+
+    def test_limit_state_empty_up_pool_is_empty_not_zero_success(self):
+        self._limit_transport("20260928", up_rows=lambda day: [])
+        result = self.provider.call("market_limit_state", {"date": "20260928"})
+        self.assertEqual("empty", result.status)
+        self.assertEqual("20260928", result.data["date"])
+        up_calls = [c for c in self.transport.call_args_list
+                    if c.kwargs["json"]["params"].get("limit_type") == "U"]
+        self.assertEqual(2, len(up_calls))
 
     def test_limit_board_maps_stocktoday_limit_list_to_canonical_rows(self):
         self.response.json.return_value = {
@@ -467,7 +499,9 @@ class StockTodayTests(unittest.TestCase):
             ("2026-09-23T12:00:00+08:00", "2026-09-23T11:30:00+08:00", True),
             ("2026-09-23T17:00:00+08:00", "2026-09-23T15:00:00+08:00", True),
             ("2026-09-26T12:00:00+08:00", "2026-09-24T15:00:00+08:00", True),
-            ("2026-09-23T13:03:00+08:00", "2026-09-23T11:30:00+08:00", False),
+            ("2026-09-23T13:03:00+08:00", "2026-09-23T11:30:00+08:00", True),
+            ("2026-09-23T13:05:00+08:00", "2026-09-23T11:30:00+08:00", "aging"),
+            ("2026-09-23T13:11:00+08:00", "2026-09-23T11:30:00+08:00", False),
         )
         for now_text, quote_time, fresh in examples:
             with self.subTest(now=now_text):
@@ -500,11 +534,19 @@ class StockTodayTests(unittest.TestCase):
                         provider_loader=lambda name: self.provider if name == "stocktoday" else fallback,
                         state_loader=lambda: self.state,
                     )
-                if fresh:
+                if fresh == "aging":
+                    # 300s old: StockToday stays the batch source, the aging
+                    # code is refreshed per code from Tencent.
+                    self.assertEqual("stocktoday", result["_meta"]["provider_used"])
+                    self.assertEqual("aging", result["data"]["_stocktoday"]["status"])
+                    self.assertEqual("tencent", result["data"]["600519"]["source"])
+                    self.assertEqual(["600519"], result["_meta"]["filled_by_fallback"])
+                    self.assertEqual({"codes": ["600519"]}, fallback.call.call_args.args[1])
+                elif fresh:
                     self.assertEqual("stocktoday", result["_meta"]["provider_used"], result["_meta"]["attempts"])
                     self.assertEqual("success", result["_meta"]["status"])
                     self.assertEqual("fresh", result["data"]["_stocktoday"]["status"])
-                    self.assertEqual(0, result["data"]["_stocktoday"]["age_sec"])
+                    self.assertLessEqual(result["data"]["_stocktoday"]["age_sec"], 180)
                     self.assertEqual(quote_time, result["data"]["600519"]["quote_time"])
                     fallback.call.assert_not_called()
                 else:

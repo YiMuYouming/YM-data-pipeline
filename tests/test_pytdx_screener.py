@@ -732,7 +732,6 @@ class RoutingAndContractTests(unittest.TestCase):
             (
                 "iwencai_openapi",
                 "pywencai",
-                "tdx_screener",
                 "wind_screener",
             ),
             compatible.providers,
@@ -745,7 +744,7 @@ class RoutingAndContractTests(unittest.TestCase):
             {"query": "沪深A股 非ST", "date": "2026-07-30"},
         ):
             with self.subTest(params=params):
-                self.assertEqual(4, len(route_for("review_sentiment", params).providers))
+                self.assertEqual(3, len(route_for("review_sentiment", params).providers))
 
     def test_incompatible_query_has_no_phantom_pytdx_attempt(self):
         providers = {
@@ -762,7 +761,6 @@ class RoutingAndContractTests(unittest.TestCase):
             for name in (
                 "iwencai_openapi",
                 "pywencai",
-                "tdx_screener",
                 "wind_screener",
                 "pytdx_screener",
             )
@@ -808,7 +806,7 @@ class RoutingAndContractTests(unittest.TestCase):
 
         self.assertEqual("error", result["_meta"]["status"])
         self.assertIsNone(result["_meta"]["provider_used"])
-        self.assertEqual(4, len(result["_meta"]["attempts"]))
+        self.assertEqual(3, len(result["_meta"]["attempts"]))
         self.assertEqual("missing", result["_meta"]["auth"]["status"])
         providers["pytdx_screener"].call.assert_not_called()
 

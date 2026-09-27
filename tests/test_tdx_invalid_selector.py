@@ -105,19 +105,12 @@ class InvalidSelectorTests(unittest.TestCase):
                 return TdxMcpProvider(name)
             return FailedProvider(name)
 
-        state = ProviderState(self.root / "state.sqlite3")
-        with (
-            self.selector_patch(),
-            patch.object(api, "_STATE", state),
-            patch.object(api, "_provider_for", side_effect=provider_loader),
-        ):
-            result = api.query("stock_snapshot", codes=["600519"])
+        with self.selector_patch():
+            outcome = provider_loader("tdx_quotes").call("stock_snapshot", {"codes": ["600519"]})
 
-        meta = result["_meta"]
-        self.assertEqual("error", meta["status"])
-        self.assertEqual("auth_error", meta["attempts"][-1]["status"])
-        self.assertEqual("AUTH_EXPIRED", meta["attempts"][-1]["error_code"])
-        self.assertEqual({"required": True, "status": "expired"}, meta["auth"])
+        self.assertEqual("auth_error", outcome.status)
+        self.assertEqual("AUTH_EXPIRED", outcome.error_code)
+        self.assertEqual({"required": True, "status": "expired"}, outcome.auth)
 
     def test_doctor_reports_expired_for_invalid_selector(self):
         with self.selector_patch():

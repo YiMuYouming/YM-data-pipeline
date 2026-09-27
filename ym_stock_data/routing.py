@@ -22,18 +22,18 @@ _TRADE_USAGE = "辅助，不单独触发交易"
 
 _REALTIME_POLL = RouteSpec(
     intent="realtime_market",
-    providers=("pytdx", "tencent", "eastmoney"),
+    providers=("stocktoday", "tencent"),
     data_scope="A股三大指数、成交额与涨跌家数",
     trade_usage=_TRADE_USAGE,
-    max_age_sec=60,
+    max_age_sec=600,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
 )
 _STOCK_SNAPSHOT_POLL = RouteSpec(
     intent="stock_snapshot",
-    providers=("tencent", "pytdx", "tdx_quotes"),
+    providers=("stocktoday", "tencent"),
     data_scope="A股个股实时行情与标准化报价字段",
     trade_usage=_TRADE_USAGE,
-    max_age_sec=60,
+    max_age_sec=600,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
 )
 _INDEX_INTRADAY_POLL = RouteSpec(
@@ -62,10 +62,10 @@ _ROUTES = {
     ),
     "realtime_market": RouteSpec(
         intent="realtime_market",
-        providers=("stocktoday", "tencent", "pytdx", "eastmoney"),
+        providers=("stocktoday", "tencent"),
         data_scope="A股三大指数、成交额与涨跌家数",
         trade_usage=_TRADE_USAGE,
-        max_age_sec=60,
+        max_age_sec=600,
         empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
     ),
     "sector_index": RouteSpec(
@@ -77,26 +77,25 @@ _ROUTES = {
     ),
     "stock_snapshot": RouteSpec(
         intent="stock_snapshot",
-        providers=("stocktoday", "tencent", "pytdx", "tdx_quotes"),
+        providers=("stocktoday", "tencent"),
         data_scope="A股个股实时行情与标准化报价字段",
         trade_usage=_TRADE_USAGE,
-        max_age_sec=60,
+        max_age_sec=600,
         empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
     ),
     "market_limit_state": RouteSpec(
         intent="market_limit_state",
-        providers=("eastmoney_limit_pool",),
-        data_scope="A股涨停、炸板与跌停池聚合",
+        providers=("stocktoday",),
+        data_scope="A股涨停、炸板与跌停池聚合；日期取数据实际交易日",
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
     ),
     "market_limit_board": RouteSpec(
         intent="market_limit_board",
-        providers=("stocktoday", "eastmoney_limit_pool"),
+        providers=("stocktoday",),
         data_scope="A股涨停、跌停、炸板或昨日涨停明细",
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
-        empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
     ),
     "market_hot_rank": RouteSpec(
         intent="market_hot_rank",
@@ -140,7 +139,7 @@ _ROUTES = {
     ),
     "index_kline": RouteSpec(
         intent="index_kline",
-        providers=("stocktoday", "eastmoney_index", "sina_index", "pytdx_index"),
+        providers=("stocktoday", "eastmoney_index", "sina_index"),
         data_scope="指数历史日/周/月或分钟K线；按日期区间返回",
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
@@ -163,24 +162,31 @@ _ROUTES = {
     ),
     "research": RouteSpec(
         intent="research",
-        providers=("eastmoney_research", "tdx_report"),
+        providers=("eastmoney_research",),
         data_scope="A股研报元数据与报告行",
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
     ),
     "filings": RouteSpec(
         intent="filings",
-        providers=("cninfo", "tdx_notice", "wind_documents"),
+        providers=("cninfo", "wind_documents"),
         data_scope="A股公告元数据与文档检索",
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
     ),
     "news": RouteSpec(
         intent="news",
-        providers=("cls", "tdx_news"),
+        providers=("cls",),
         data_scope="A股新闻行；重大事实仍需一手来源核实",
         trade_usage=_TRADE_USAGE,
         max_age_sec=1800,
+    ),
+    "market_intraday_state": RouteSpec(
+        intent="market_intraday_state",
+        providers=("stocktoday",),
+        data_scope="盘中全市场宽度、情绪、涨跌停、炸板与连板；指标口径见 indicators 登记表",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=600,
     ),
     "wind_enrichment": RouteSpec(
         intent="wind_enrichment",
@@ -193,7 +199,7 @@ _ROUTES = {
 
 _STOCK_KLINE_DAILY = RouteSpec(
     intent="stock_kline",
-    providers=("stocktoday", "eastmoney_stock", "tencent", "pytdx", "tdx_kline"),
+    providers=("stocktoday", "tencent"),
     data_scope="A股个股日周月K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=86400,
@@ -201,7 +207,7 @@ _STOCK_KLINE_DAILY = RouteSpec(
 )
 _STOCK_KLINE_MINUTE = RouteSpec(
     intent="stock_kline",
-    providers=("stocktoday", "pytdx", "sina", "tdx_kline"),
+    providers=("stocktoday",),
     data_scope="A股个股分钟K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,
@@ -209,8 +215,8 @@ _STOCK_KLINE_MINUTE = RouteSpec(
 )
 _REVIEW_SENTIMENT_DEFAULT = RouteSpec(
     intent="review_sentiment",
-    providers=("pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"),
-    data_scope="A股市场宽度与涨跌停聚合口径",
+    providers=("stocktoday",),
+    data_scope="A股市场宽度与情绪；读 indicators 单一实现",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,
 )
@@ -219,10 +225,9 @@ _REVIEW_SENTIMENT_QUERY = RouteSpec(
     providers=(
         "iwencai_openapi",
         "pywencai",
-        "tdx_screener",
         "wind_screener",
     ),
-    data_scope="问财自然语言选股口径",
+    data_scope="问财自然语言选股口径；仅显式研究查询",
     trade_usage=_TRADE_USAGE,
     max_age_sec=1800,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,

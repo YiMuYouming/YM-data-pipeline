@@ -336,6 +336,12 @@ def _fallback_index() -> dict:
     return _fallback_index_tencent()
 
 
+def _tencent_quote_time(value: str) -> str | None:
+    from .tencent import _quote_time
+
+    return _quote_time(value)
+
+
 def _fallback_index_tencent() -> dict:
     """Second no-auth index fallback when Eastmoney is unavailable."""
     url = "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006"
@@ -356,6 +362,7 @@ def _fallback_index_tencent() -> dict:
     }
     result = {}
     amount_total = 0.0
+    quote_times = []
     for line in text.split(";"):
         if "=" not in line or '"' not in line:
             continue
@@ -373,6 +380,9 @@ def _fallback_index_tencent() -> dict:
         last_close = _number(values[4])
         amount = _number(values[37]) * 10000
         result[name] = round(price, 2) if price else 0
+        stamp = _tencent_quote_time(values[30])
+        if stamp:
+            quote_times.append(stamp)
         result[f"{name}涨幅"] = f"{pct:+.2f}%"
         result[f"{name}成交额"] = _format_amount(amount)
         if high and low and last_close:
@@ -383,6 +393,9 @@ def _fallback_index_tencent() -> dict:
         result["成交额"] = _format_amount(amount_total)
     if result:
         result["_source"] = "tencent_index_fallback"
+        if quote_times:
+            # Oldest index quote time; the pipeline derives data_as_of from it.
+            result["quote_time"] = min(quote_times)
     return result
 
 

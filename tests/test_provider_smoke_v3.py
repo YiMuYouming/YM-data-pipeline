@@ -103,7 +103,8 @@ class ProviderSmokeV3Tests(unittest.TestCase):
             for spec in all_route_specs()
             for provider in spec.providers
         }
-        expected_pairs.add(("pytdx_screener", "review_sentiment"))
+        expected_pairs |= self.smoke._EXPLICIT_ONLY_CASE_PAIRS
+        self.assertIn(("pytdx_screener", "review_sentiment"), expected_pairs)
         direct_pairs = {
             (item["provider"], item["intent"])
             for item in entries

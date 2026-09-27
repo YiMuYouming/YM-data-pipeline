@@ -430,6 +430,30 @@
       "capability": "industry_flow",
       "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "market_limit_state",
+      "capability": "market_limit_state",
+      "params": {"date": "20260924"},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "review_sentiment",
+      "capability": "review_sentiment",
+      "params": {},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "market_intraday_state",
+      "capability": "market_intraday_state",
+      "params": {},
+      "read_only": true
     }
   ],
   "external_pending": [

@@ -141,16 +141,16 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         }}
         self.assertEqual(1, counts["iwencai_openapi"])
         self.assertEqual(1, counts["pywencai"])
-        self.assertEqual(2, counts["tdx_screener"])
-        self.assertEqual(1, counts["wind_screener"])
+        self.assertEqual(1, counts["tdx_screener"])
+        self.assertEqual(2, counts["wind_screener"])
         self.assertEqual(0, counts["pytdx_screener"])
 
     def test_controlled_fallback_uses_real_router_and_marks_injected_origins(self) -> None:
         report, _calls = self._run()
         case = next(item for item in report["cases"] if item["case_id"] == "canonical_tdx_fallback")
         self.assertEqual("degraded", case["status"])
-        self.assertEqual("tdx_screener", case["provider_used"])
-        self.assertEqual(["iwencai_openapi", "pywencai", "tdx_screener"], [a["provider"] for a in case["attempts"]])
+        self.assertEqual("wind_screener", case["provider_used"])
+        self.assertEqual(["iwencai_openapi", "pywencai", "wind_screener"], [a["provider"] for a in case["attempts"]])
         self.assertEqual(["injected", "injected", "live"], [a["origin"] for a in case["attempts"]])
         self.assertEqual(["auth_error", "provider_error", "success"], [a["status"] for a in case["attempts"]])
 

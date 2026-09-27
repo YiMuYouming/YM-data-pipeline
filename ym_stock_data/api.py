@@ -89,6 +89,7 @@ _ALLOWED_PARAMS = {
     ),
     "market_limit_state": frozenset({"date", "limit_type", "previous_date", "include_promotion"}),
     "market_limit_board": frozenset({"kind", "date"}),
+    "market_intraday_state": frozenset({"use_case"}),
     "market_hot_rank": frozenset({"source", "trade_date", "limit"}),
     "industry_flow": frozenset({"trade_date", "limit", "use_case"}),
     "fund_flow": frozenset({"trade_date", "limit"}),
@@ -617,6 +618,10 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("bars")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "market_intraday_state":
+        valid = isinstance(data.get("indicators"), dict) and bool(data.get("trade_date"))
+        covered = (data.get("coverage") or {}).get("covered") if valid else 0
+        return valid, False, int(covered or 1) if valid else 0
     if intent == "market_limit_state":
         required = {"zt_count", "zb_count", "dt_count", "break_rate", "max_board", "pools"}
         if not required.issubset(data):
@@ -720,6 +725,164 @@ def _fetch_time_failure(stamp: datetime, now: datetime, max_age_sec: int) -> str
     return "QUALITY_STALE" if age > max_age_sec else None
 
 
+def _snapshot_row_failure(
+    requested: str, row: object, now: datetime, max_age_sec: int
+) -> str | None:
+    """Canonical quote contract for one requested code."""
+
+    if not isinstance(row, dict) or row.get("error"):
+        return "QUALITY_SNAPSHOT_INCOMPLETE"
+    row_code = row.get("code")
+    if row_code is not None and str(row_code).split(".")[0] != str(requested).split(".")[0]:
+        return "QUALITY_CODE_MISMATCH"
+    price = row.get("price", row.get("最新价"))
+    if not _finite_number(price, positive=True):
+        return "QUALITY_SNAPSHOT_FIELDS"
+    for field in ("last_close", "open", "high", "low", "volume", "amount", "quote_time"):
+        if field not in row or row.get(field) is None:
+            return "QUALITY_SNAPSHOT_FIELDS"
+    for field in ("last_close", "open", "high", "low"):
+        if not _finite_number(row.get(field), positive=True):
+            return "QUALITY_SNAPSHOT_FIELDS"
+    for field in ("volume", "amount"):
+        if not _finite_number(row.get(field)) or float(row[field]) < 0:
+            return "QUALITY_SNAPSHOT_FIELDS"
+    quote_time = _parse_fact_datetime(row.get("quote_time"))
+    if quote_time is None:
+        return "QUALITY_SNAPSHOT_FIELDS"
+    return _market_fact_time_failure(
+        quote_time, now, max_age_sec, "QUALITY_SNAPSHOT_STALE"
+    )
+
+
+# Freshness tiers (REPAIR_PLAN §3): normal <=180s, aging 180-600s, expired >600s.
+NORMAL_DATA_AGE_SEC = 180
+_REALTIME_TIERED = frozenset({"stock_snapshot", "realtime_market", "market_intraday_state"})
+_EXPLICIT_DATE_PARAMS = ("date", "trade_date", "start_date", "end_date")
+
+
+def _stamp_from(value: object) -> datetime | None:
+    """ISO datetime, or a trade date (YYYYMMDD / YYYY-MM-DD) at its 15:00 close."""
+
+    text = str(value or "").strip()
+    if re.fullmatch(r"\d{8}", text):
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        text = f"{text}T15:00:00+08:00"
+    return _parse_fact_datetime(text)
+
+
+def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
+    """The data's own time (oldest relevant row), never the fetch time."""
+
+    from .intraday_state import session_data_time
+
+    if not isinstance(data, dict):
+        return None
+    if intent == "stock_snapshot":
+        stamps = [
+            _stamp_from(row.get("quote_time"))
+            for code in params.get("codes", [])
+            for row in [data.get(code)]
+            if isinstance(row, dict)
+        ]
+        stamps = [stamp for stamp in stamps if stamp is not None]
+        if not stamps:
+            return None
+        try:
+            return min(session_data_time(stamp)[0] for stamp in stamps)
+        except TradeCalendarUnavailable:
+            return None
+    if intent == "realtime_market":
+        stamp = _stamp_from(data.get("quote_time")) or _stamp_from(
+            (data.get("_stocktoday") or {}).get("oldest_at")
+        )
+        try:
+            return session_data_time(stamp)[0] if stamp else None
+        except TradeCalendarUnavailable:
+            return None
+    if intent in {"market_intraday_state", "review_sentiment"}:
+        return _stamp_from(data.get("data_as_of"))
+    if intent == "market_limit_state" or intent == "market_limit_board":
+        return _stamp_from(data.get("date"))
+    if intent in {"market_facts", "market_hot_rank", "legacy_hot_rank",
+                  "industry_flow", "fund_flow", "northbound_flow"}:
+        return _stamp_from(data.get("trade_date"))
+    if intent in {"stock_kline", "index_kline"}:
+        bars = data.get("bars") if isinstance(data.get("bars"), list) else []
+        stamps = [_stamp_from(str(bar.get("datetime", ""))[:10]) for bar in bars if isinstance(bar, dict)]
+        stamps = [stamp for stamp in stamps if stamp is not None]
+        return max(stamps) if stamps else None
+    return None
+
+
+def _data_freshness(
+    intent: str, params: dict, stamp: datetime | None, max_age_sec: int
+) -> dict:
+    from .contracts import unknown_freshness
+
+    if stamp is None:
+        return unknown_freshness(max_age_sec)
+    now = _now_shanghai()
+    result = {"age_sec": None, "max_age_sec": max_age_sec, "basis": "data_as_of"}
+    if intent in _REALTIME_TIERED:
+        try:
+            age = market_fact_age_seconds(stamp, now)
+            in_session = is_trading_day(now.date()) and now.time() >= datetime_time(9, 15)
+        except TradeCalendarUnavailable:
+            return unknown_freshness(max_age_sec)
+        if age is None:
+            return {**result, "status": "stale" if in_session else "unknown"}
+        age = max(0, int(age))
+        status = "fresh" if age <= NORMAL_DATA_AGE_SEC else "aging" if age <= max_age_sec else "stale"
+        return {**result, "status": status, "age_sec": age}
+    if any(params.get(key) for key in _EXPLICIT_DATE_PARAMS):
+        return {**result, "status": "historical"}
+    try:
+        expected = latest_completed_trade_date(now)
+    except TradeCalendarUnavailable:
+        return unknown_freshness(max_age_sec)
+    return {**result, "status": "fresh" if stamp.strftime("%Y%m%d") >= expected else "stale"}
+
+
+def _fill_snapshot_codes(
+    params: dict,
+    data: dict,
+    provider_loader: Callable[[str], object],
+    max_age_sec: int,
+) -> dict:
+    """Fill missing or aging StockToday rows per code from Tencent.
+
+    The batch stays StockToday; filled rows carry ``source=tencent``.  Rows that
+    are invalid and could not be filled are dropped, never passed through.
+    """
+
+    now = _now_shanghai()
+    needs = [
+        code for code in params["codes"]
+        if _snapshot_row_failure(code, data.get(code), now, NORMAL_DATA_AGE_SEC) is not None
+    ]
+    report = {"provider": "tencent", "requested": needs, "filled": [],
+              "status": None, "error_code": None}
+    if needs:
+        try:
+            outcome = provider_loader("tencent").call("stock_snapshot", {"codes": needs})
+        except Exception as error:
+            outcome = ProviderOutcome("tencent", "provider_error",
+                                      error_code=_safe_error_code(type(error).__name__, "PROVIDER_ERROR"))
+        report["status"], report["error_code"] = outcome.status, outcome.error_code
+        rows = outcome.data if outcome.status == "success" and isinstance(outcome.data, dict) else {}
+        for code in needs:
+            row = rows.get(code)
+            if _snapshot_row_failure(code, row, now, max_age_sec) is None:
+                data[code] = {**row, "source": "tencent"}
+                report["filled"].append(code)
+    for code in params["codes"]:
+        if _snapshot_row_failure(code, data.get(code), now, max_age_sec) is not None:
+            data.pop(code, None)
+    return report
+
+
 def _quality_failure_code(
     intent: str,
     params: dict,
@@ -760,8 +923,9 @@ def _quality_failure_code(
     if isinstance(observation, dict):
         if observation.get("status") == "stale":
             return "QUALITY_STALE"
-        if intent == "stock_kline" and observation.get("status") == "unverified_bar_time":
-            return "QUALITY_KLINE_BAR_TIME"
+        # An unverified minute-bar time convention is reported as degraded
+        # (below, after build_result), not rejected: StockToday is the only
+        # minute source since 2026-09-27 and Tencent has no minute bars.
         if observation.get("filter_violations"):
             return "QUALITY_DATE_MISMATCH"
 
@@ -776,34 +940,19 @@ def _quality_failure_code(
         # observation semantics (including stale/unknown timestamps) for
         # callers that asked for that source only.  Automatic routes and the
         # realtime polling profile must satisfy the stricter canonical quote
-        # contract below.
+        # contract below.  StockToday as the routed primary may miss or age
+        # individual codes: those are filled per code from Tencent afterwards,
+        # so only an all-invalid batch fails here.
+        tolerant = outcome.provider == "stocktoday"
+        valid_rows = 0
         for requested in params["codes"]:
-            row = data.get(requested)
-            if not isinstance(row, dict) or row.get("error"):
-                return "QUALITY_SNAPSHOT_INCOMPLETE"
-            row_code = row.get("code")
-            if row_code is not None and str(row_code).split(".")[0] != str(requested).split(".")[0]:
-                return "QUALITY_CODE_MISMATCH"
-            price = row.get("price", row.get("最新价"))
-            if not _finite_number(price, positive=True):
-                return "QUALITY_SNAPSHOT_FIELDS"
-            for field in ("last_close", "open", "high", "low", "volume", "amount", "quote_time"):
-                if field not in row or row.get(field) is None:
-                    return "QUALITY_SNAPSHOT_FIELDS"
-            for field in ("last_close", "open", "high", "low"):
-                if not _finite_number(row.get(field), positive=True):
-                    return "QUALITY_SNAPSHOT_FIELDS"
-            for field in ("volume", "amount"):
-                if not _finite_number(row.get(field)) or float(row[field]) < 0:
-                    return "QUALITY_SNAPSHOT_FIELDS"
-            quote_time = _parse_fact_datetime(row.get("quote_time"))
-            if quote_time is None:
-                return "QUALITY_SNAPSHOT_FIELDS"
-            failure = _market_fact_time_failure(
-                quote_time, now, max_age_sec, "QUALITY_SNAPSHOT_STALE"
-            )
-            if failure is not None:
+            failure = _snapshot_row_failure(requested, data.get(requested), now, max_age_sec)
+            if failure is None:
+                valid_rows += 1
+            elif not tolerant:
                 return failure
+        if tolerant and not valid_rows:
+            return "QUALITY_SNAPSHOT_INCOMPLETE"
         return None
 
     if intent == "stock_kline":
@@ -1140,6 +1289,29 @@ def _query_with(
         if compare_state is not None:
             _compare_record(provider_name, success=False, state=compare_state)
 
+    fill_report = None
+    if (
+        intent == "stock_snapshot"
+        and provider_used == "stocktoday"
+        and call_params.get("source") != "stocktoday"
+        and isinstance(data, dict)
+    ):
+        fill_report = _fill_snapshot_codes(call_params, data, provider_loader, spec.max_age_sec)
+        missing_after = [code for code in call_params["codes"] if code not in data]
+        observation = data.get("_stocktoday")
+        if isinstance(observation, dict):
+            observation["missing_codes"] = missing_after
+        if final_quality is not None:
+            final_quality = dict(final_quality)
+            final_quality["returned_count"] = len(call_params["codes"]) - len(missing_after)
+            final_quality["missing"] = missing_after
+            if fill_report["filled"]:
+                final_quality["reason_codes"] = sorted(
+                    set(final_quality.get("reason_codes") or []) | {"FILLED_BY_FALLBACK"}
+                )
+            if not missing_after and final_quality.get("status") == "partial":
+                final_quality["status"] = "normal"
+    stamp = _data_as_of(intent, call_params, data) if provider_used else None
     quality = final_quality or _failure_quality(
         intent, call_params, final_status, final_count
     )
@@ -1170,13 +1342,20 @@ def _query_with(
         ),
         policy_evidence_sha256=policy_evidence_sha256,
         policy_status=policy_status,
+        data_as_of=stamp.isoformat(timespec="seconds") if stamp else None,
+        freshness=_data_freshness(intent, call_params, stamp, spec.max_age_sec),
     )
+    if fill_report is not None:
+        result["_meta"]["filled_by_fallback"] = list(fill_report["filled"])
+        result["_meta"]["fill_attempt"] = fill_report
     if provider_used == "stocktoday" and isinstance(data, dict):
         observation = data.get("_stocktoday", {})
         result["_meta"]["observation"] = dict(observation)
         if result["_meta"]["status"] == "success" and observation.get("status") in {"stale", "unknown", "unverified_bar_time"}:
             result["_meta"]["status"] = "degraded"
             result["_meta"]["quality"]["status"] = "semantic_degraded"
+            if observation.get("status") == "unverified_bar_time":
+                result["_meta"]["quality"]["reason_codes"].append("QUALITY_KLINE_BAR_TIME")
         if observation.get("filter_violations") and result["_meta"]["status"] in {"success", "degraded"}:
             result["_meta"]["status"] = "degraded"
             result["_meta"]["quality"]["status"] = "semantic_degraded"

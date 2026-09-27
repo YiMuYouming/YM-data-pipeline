@@ -449,7 +449,6 @@ class ProviderPolicyV3Tests(unittest.TestCase):
             (
                 "iwencai_openapi",
                 "pywencai",
-                "tdx_screener",
                 "wind_screener",
             ),
             query_route.providers,

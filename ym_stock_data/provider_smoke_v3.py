@@ -84,7 +84,30 @@ _ALLOWED_OPERATIONS = frozenset({"direct_provider_call", "direct_provider_probe"
 _FALLBACK_KINDS = frozenset({"source_internal", "provider_internal"})
 _DATA_STATUSES = frozenset({"success", "empty", "degraded"})
 _RECEIPT_TIME_TOLERANCE_MS = 1000
-_EXPLICIT_ONLY_CASE_PAIRS = frozenset({("pytdx_screener", "review_sentiment")})
+# Adapters kept for explicit diagnosis only.  Since 2026-09-27 StockToday is
+# the single core source and Tencent the only fallback, so these pairs are no
+# longer in any default route but stay probe-able.
+_EXPLICIT_ONLY_CASE_PAIRS = frozenset({
+    ("pytdx_screener", "review_sentiment"),
+    ("eastmoney", "realtime_market"),
+    ("eastmoney_stock", "stock_kline"),
+    ("eastmoney_breadth", "review_sentiment"),
+    ("eastmoney_limit_pool", "market_limit_state"),
+    ("eastmoney_limit_pool", "review_sentiment"),
+    ("eastmoney_limit_pool", "market_limit_board"),
+    ("pytdx", "stock_snapshot"),
+    ("pytdx", "realtime_market"),
+    ("pytdx", "stock_kline"),
+    ("pytdx_breadth", "review_sentiment"),
+    ("pytdx_index", "index_kline"),
+    ("sina", "stock_kline"),
+    ("tdx_kline", "stock_kline"),
+    ("tdx_news", "news"),
+    ("tdx_notice", "filings"),
+    ("tdx_quotes", "stock_snapshot"),
+    ("tdx_report", "research"),
+    ("tdx_screener", "review_sentiment"),
+})
 _MAX_METADATA_FIELDS = 200
 _PROBE_MANIFEST_KEYS = frozenset(
     {"schema_version", "manifest_version", "providers", "external_pending"}
