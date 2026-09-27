@@ -39,8 +39,10 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 ## Provider 边界
 
-- 按用途执行 RouteSpec：默认行情/历史查询优先 StockToday；高频个股轮询优先腾讯、大盘轮询优先 PyTDX。TDX owned OAuth 仅按对应路由作为后备，调用固定六项只读能力。
-- TDX 不接 realtime/default breadth/sector，不调用任意 tool，不做交易写入。
+- 按用途执行 RouteSpec（2026-09-27 起）：StockToday 是唯一核心源，腾讯是唯一降级后备（个股逐只补、大盘整组切）；东方财富、新浪、PyTDX、TDX 退出默认路由，只作显式诊断；问财只服务带 `query` 的显式研究。StockToday 套餐不含的接口（`rt_idx_k`、`rt_sw_k`、`idx_mins`）记为 `PLAN_NOT_ENTITLED` 并 6 小时内不再调用。
+- 时效以 `_meta.data_as_of` 计：盘中 ≤180 秒 fresh、180–600 秒 aging（个股逐只补腾讯）、>600 秒 stale（整组切腾讯）；全市场指标（`market_intraday_state`）不换源、不拼腾讯，失败即报错，由消费端停在最后正常值并标时间。
+- 指标（情绪、涨跌停、炸板率、晋级率、最高板、涨停/连板/炸板收益、赚钱效应、连板风险值）只在 `ym_stock_data/indicators.py` 实现，登记在 `v3/indicators.v1.json`，定义以 Vault《交易指标术语表》为准；`tests/test_indicators.py` 会拦截其他位置出现的公式。
+- TDX 不接任何默认路由，不调用任意 tool，不做交易写入。
 - TDX 登录优先走本仓库 `./ym-data auth login-tdx`；状态只走离线
   `./ym-data auth status-tdx`。默认 macOS Keychain，文件 fallback 必须显式
   `--store file`。若官方授权页只能回到 WorkBuddy，可在弈沐明确授权下做一次性受控凭据迁入并记录 `imported_from=workbuddy`；运行时代码不得扫描、读取或持续同步 WorkBuddy 凭据。

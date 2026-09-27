@@ -28,10 +28,11 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 热榜与题材归因 | `legacy_hot_rank` | 可选 `trade_date`、`limit` |
 | 涨停、跌停、炸板、昨日涨停明细 | `market_limit_board` | `kind=up/down/broken/yesterday`；可选 `date` |
 | 同花顺/东财热榜 | `market_hot_rank` | `source=ths/dc`；可选 `trade_date`、`limit` |
-| 涨跌停状态聚合 | `market_limit_state` | 兼容查询；新请求优先使用明细 intent |
+| 涨跌停状态聚合 | `market_limit_state` | 可选 `date`；`data.date` 是数据实际交易日，休市请求会标 `date_adjusted` |
+| 盘中情绪、涨跌停、炸板、连板梯队 | `market_intraday_state` | 无；StockToday 全市场快照，指标来自 indicators，无后备 |
 | 已封存交易日的晋级率与短线收益 | `market_facts` | 可选 `trade_date=YYYYMMDD`；逐项检查缺口和来源时间 |
 | 个股低频事件 | `stock_event` | 只传受支持的事件参数 |
-| 热度、问财型筛选 | `review_sentiment` | 把用户原始筛选写入 `query` |
+| 热度、问财型筛选（仅显式研究） | `review_sentiment` | 把用户原始筛选写入 `query`；不带 `query` 时返回宽度与情绪（同 indicators） |
 | 研报、公告、新闻 | `research`、`filings`、`news` | 只传 canonical 参数 |
 | 显式 StockToday 数据集 | `stocktoday_data` | `api_name`、`params`；可选 `fields` |
 | 显式 Wind 研究增强 | `wind_enrichment` | 仅用于研究增强，不改变行情路由 |
@@ -53,12 +54,21 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 昨日二板及以上今日平均收益 | `yesterday_consecutive_return_pct` | 历史板数未经核实时值为空 |
 | 昨日炸板今日平均收益 | `yesterday_broken_return_pct` | 昨日炸板完整名单与今日全部报价覆盖 |
 | 次日晋级率 | `promotion_overall_by_code`；分层看 `promotion.rates` | 同源相邻日名单；板数冲突时分层为空 |
-| 市场情绪 | `yimu_emotion` | 分母是当日有日线的股票，**不是**全部上市股票；`ths_emotion_equivalent` 仍为空 |
+| 市场情绪 | `yimu_emotion` | 上涨 ÷（上涨 + 下跌）× 100（术语表 §3.1，`indicator_version`）；`ths_emotion_equivalent` 仍为空 |
 | 连板股三日风险 | `consecutive_break_risk` | 当前为空；定义、复权价格和一年窗口尚未完成 |
 
 每项先看 `source_gaps`、`limit_daily_quality` 和原始 `fetched_at`；缺报价、停牌、
 历史榜单与日线冲突时只报告缺口，不补零。精确同花顺热榜仍用
 `market_hot_rank(source=ths)`，不可由这些涨跌幅指标伪造。
+
+## 来源、时效与降级
+
+StockToday 是唯一核心源，腾讯是唯一降级后备，其他来源不在默认路由；
+问财只服务显式 `query` 研究。判断时效读 `_meta.data_as_of` 与 `_meta.freshness`
+（盘中 ≤180 秒 fresh、180–600 秒 aging、>600 秒 stale），不要用 `fetched_at` 当行情时间；
+StockToday 一两分钟的延迟是正常值，带时间引用即可。个股行上 `source=tencent` 表示该代码
+由腾讯逐只补（见 `_meta.filled_by_fallback`）。指标定义只看 Vault《交易指标术语表》，
+不要在调用方自己算情绪、炸板率或晋级率。
 
 ## 公共入口示例
 

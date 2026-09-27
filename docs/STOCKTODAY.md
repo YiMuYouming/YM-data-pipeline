@@ -27,8 +27,8 @@
 
 标准化行情由 canonical RouteSpec 按用途自动选择来源。默认 Agent 查询的
 `realtime_market`、`stock_snapshot`、日/周/月/分钟 `stock_kline`、
-`market_limit_board` 和 `market_hot_rank` 以 StockToday 为第一源。
-高频 `realtime_poll` 个股轮询以腾讯为第一源，大盘轮询以 PyTDX 为第一源；
+`market_limit_state`、`market_limit_board`、`market_hot_rank`、`market_intraday_state`
+和默认 `review_sentiment` 以 StockToday 为第一源（含 `realtime_poll`），腾讯是唯一后备；
 当前路由与发布边界见 [渠道工作区总览](README.md)。异常、超时或允许继续的合法空集时，
 只有存在语义等价后备的 intent 才按固定顺序降级。长尾接口使用
 `stocktoday_data`，保留 provider-native 字段：
@@ -68,10 +68,23 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 
 ## 本地预算边界
 
-管道没有从购买信息或官方 endpoint 获得精确额度，因此不臆造本地限额：
-`YM_STOCKTODAY_PER_DAY` 与 `YM_STOCKTODAY_PER_MINUTE` 默认均为 `0`，表示本地不设
-假上限。只有在明确掌握真实购买限制时，才通过环境变量显式配置；上游返回的 429、
-限流或 breaker 状态仍会保留，跨进程预算锁也继续生效。
+代码默认值仍为 `0`（不设上限）；限额只由运行环境设置。依据供应商 Skill 的
+100 次/分钟与 20000 次/日（超限报 `请求超限20000次`），本机 `.env` 与 Hermes
+服务环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、`YM_STOCKTODAY_PER_DAY=18000`。
+上游返回的 429、限流或 breaker 状态仍会保留，跨进程预算锁也继续生效。
+
+2026-09-27 实测（`shared/research/ssot-audit-2026-09-27/raw/phase0/stocktoday_probe_20260927.txt`）：
+
+- `token_info` 在本网关返回 HTTP 404“接口不存在”，无法用它核对套餐和额度；
+  额度按上段供应商文档执行，待弈沐确认实际购买档位。
+- `rt_idx_k`、`rt_idx_tick`、`rt_sw_k`、`idx_mins` 返回“该接口为龙虾套餐专属”，当前套餐不含；
+  适配器记为 `PLAN_NOT_ENTITLED`，6 小时内不再调用，指数实时由腾讯提供。
+- `rt_k` 通配 `6*.SH`、`0*.SZ`、`3*.SZ`、`*.BJ` 四批覆盖 5527 只，科创板每只重复一行（按
+  `updated_at` 取最新）；003xxx 共 42 只任何写法都不返回，个股报价由腾讯逐只补。
+- 休市日 `rt_k` 把上一交易日行情盖成当天日期（9-25 行 = 9-24 收盘），管道按交易日历改回，
+  原始时间保留在 `vendor_quote_time`。
+- `stk_limit`、`limit_list_d`、`limit_step`、`rt_min`、`ths_daily`、`moneyflow_ind_ths` 可用；
+  网关偶发超时或空池，空涨停池会重试一次后才判为 empty。
 
 ## 目录与数据口径
 

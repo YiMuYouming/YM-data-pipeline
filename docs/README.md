@@ -38,22 +38,21 @@
 
 | 能力/用途 | 固定顺序 |
 | --- | --- |
-| 高频个股 `stock_snapshot(use_case="realtime_poll")` | 腾讯 → PyTDX → TDX |
-| 高频大盘 `realtime_market(use_case="realtime_poll")` | PyTDX → 腾讯 → 东方财富 |
-| 默认 Agent 个股 | StockToday → 腾讯 → PyTDX → TDX |
-| 默认 Agent 大盘 | StockToday → 腾讯 → PyTDX → 东方财富 |
-| 股票日/周/月 K 线 | StockToday → 东方财富 → 腾讯 → PyTDX → TDX |
-| 股票分钟 K 线 | StockToday → PyTDX → Sina → TDX |
-| 指数 K 线 | StockToday → 东方财富指数 → Sina 指数 → PyTDX 指数；按周期能力筛选，Sina 支持分钟、PyTDX 支持日/周/月 |
-| 三指数分钟比较 | 东方财富指数 → Sina 指数 → StockToday |
-| 涨跌停板 | StockToday → 东方财富涨跌停池 |
+| 个股 `stock_snapshot`（含 `realtime_poll`） | StockToday → 腾讯；缺票/超 180 秒的代码逐只由腾讯补 |
+| 大盘 `realtime_market`（含 `realtime_poll`） | StockToday → 腾讯（套餐不含 `rt_idx_k`，实际由腾讯提供） |
+| 盘中宽度/情绪/涨跌停/炸板/连板 `market_intraday_state`、默认 `review_sentiment` | StockToday 全市场快照 → indicators；无后备 |
+| 股票日/周/月 K 线 | StockToday → 腾讯 |
+| 股票分钟 K 线 | StockToday；bar 时间约定未核实时标 degraded |
+| 指数 K 线 | StockToday → 东方财富指数 → Sina 指数（例外：腾讯无指数 K 线适配器） |
+| 三指数分钟比较 | 东方财富指数 → Sina 指数 → StockToday（例外：套餐不含 `idx_mins`） |
+| 涨跌停池 `market_limit_state` / 明细 `market_limit_board` | StockToday；`limit_list_d` 三池 + `limit_step` 交叉核对板数，日期取实际交易日 |
+| 板块 `sector_index`、盘中行业资金流、北向、旧热榜 | 保留原链（例外：StockToday 无盘中等价接口，待国庆期间处理） |
 | 同花顺/东财热榜 `market_hot_rank`、市场资金流 `fund_flow` | StockToday；当前无已验证的等价后备 |
 | 其他已开通接口 | 先查 catalog，再通过 `stocktoday_data` 直达；结果保留上游原生字段，不冒充标准化结果 |
 
-高频个股改为腾讯第一源，是针对 Hermes PyTDX 个股批量报价过旧的已发布修复。
-不能再把腾讯返回记为 PyTDX 直连成功。PyTDX 大盘直连是否成功独立判断。
-额度配置不再假设每天 5,000 次：本地默认不设臆造上限；真实购买额度仍须以账户权益核实，
-上游 429/限流不会被绕过，详见 StockToday 文档。
+2026-09-27 起 StockToday 为唯一核心源、腾讯为唯一后备（REPAIR_PLAN v2）；上表“例外”行是当前
+套餐覆盖不到的能力。本地预算由运行环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、
+`YM_STOCKTODAY_PER_DAY=18000`，详见 StockToday 文档。
 
 ## 验收时必须读的字段
 
