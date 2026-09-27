@@ -38,7 +38,7 @@ _STOCK_SNAPSHOT_POLL = RouteSpec(
 )
 _INDEX_INTRADAY_POLL = RouteSpec(
     intent="index_intraday_compare",
-    providers=("eastmoney_index", "sina_index", "stocktoday"),
+    providers=("stocktoday", "tencent"),
     data_scope="三大指数分钟量价与同时间段参考比较",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,
@@ -147,7 +147,7 @@ _ROUTES = {
     ),
     "index_intraday_compare": RouteSpec(
         intent="index_intraday_compare",
-        providers=("eastmoney_index", "sina_index", "stocktoday"),
+        providers=("stocktoday", "tencent"),
         data_scope="三大指数分钟量价与同时间段参考比较",
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,

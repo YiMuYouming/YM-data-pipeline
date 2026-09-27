@@ -448,6 +448,14 @@
       "read_only": true
     },
     {
+      "provider": "tencent",
+      "operation": "direct_provider_call",
+      "intent": "index_intraday_compare",
+      "capability": "index_intraday_compare",
+      "params": {"period": "15m"},
+      "read_only": true
+    },
+    {
       "provider": "stocktoday",
       "operation": "direct_provider_call",
       "intent": "market_intraday_state",

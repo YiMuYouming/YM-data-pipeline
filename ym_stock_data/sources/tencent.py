@@ -102,3 +102,87 @@ def fetch_quotes(codes: list[str]) -> dict:
         }
 
     return result
+
+
+_INDEX_SYMBOLS = {"000001.SH": "sh000001", "399001.SZ": "sz399001", "399006.SZ": "sz399006"}
+_PERIOD_MINUTES = {"5m": 5, "15m": 15, "60m": 60}
+
+
+def _get_json(url: str) -> dict:
+    import json
+
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://gu.qq.com/"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _session_minute(clock: str) -> int | None:
+    """Minutes since 09:30 on the trading clock (09:30→0, 11:30→120, 15:00→240)."""
+    hour, minute = int(clock[:2]), int(clock[2:4])
+    value = hour * 60 + minute
+    if 9 * 60 + 30 <= value <= 11 * 60 + 30:
+        return value - (9 * 60 + 30)
+    if 13 * 60 < value <= 15 * 60:
+        return 120 + value - 13 * 60
+    return None
+
+
+def _clock_of(session_minute: int) -> str:
+    base = 9 * 60 + 30 + session_minute if session_minute <= 120 else 13 * 60 + session_minute - 120
+    return f"{base // 60:02d}:{base % 60:02d}"
+
+
+def fetch_index_minute_bars(index_code: str, *, period: str = "15m", **_ignored) -> dict:
+    """Last five sessions of index bars built from Tencent cumulative minute data.
+
+    Each minute row is ``HHMM price cum_volume(lots) cum_amount(CNY)``; a bar's
+    volume and amount are the differences of the cumulative values at its end.
+    """
+    symbol = _INDEX_SYMBOLS.get(str(index_code).upper())
+    size = _PERIOD_MINUTES.get(period)
+    if symbol is None or size is None:
+        return {"error": "unsupported tencent index or period", "error_type": "INVALID_PARAMS"}
+    payload = _get_json(f"https://web.ifzq.gtimg.cn/appstock/app/day/query?code={symbol}")
+    days = ((payload.get("data") or {}).get(symbol) or {}).get("data") or []
+    bars = []
+    for day in days:
+        date = str(day.get("date") or "")
+        if len(date) != 8:
+            continue
+        slots: dict[int, dict] = {}
+        previous_volume = previous_amount = 0.0
+        for raw in day.get("data") or []:
+            parts = str(raw).split()
+            if len(parts) < 4:
+                continue
+            minute = _session_minute(parts[0])
+            if minute is None:
+                continue
+            price, cum_volume, cum_amount = float(parts[1]), float(parts[2]), float(parts[3])
+            end = max(1, -(-minute // size)) * size
+            bar = slots.setdefault(end, {"open": price, "high": price, "low": price,
+                                         "start_volume": previous_volume, "start_amount": previous_amount})
+            bar.update(close=price, high=max(bar["high"], price), low=min(bar["low"], price),
+                       end_volume=cum_volume, end_amount=cum_amount)
+            previous_volume, previous_amount = cum_volume, cum_amount
+        for end in sorted(slots):
+            bar = slots[end]
+            bars.append({
+                "datetime": f"{date[:4]}-{date[4:6]}-{date[6:]} {_clock_of(end)}",
+                "open": bar["open"], "high": bar["high"], "low": bar["low"], "close": bar["close"],
+                "volume": (bar["end_volume"] - bar["start_volume"]) * 100,
+                "amount": bar["end_amount"] - bar["start_amount"],
+            })
+    if not bars:
+        return {"error": "tencent index minutes empty", "error_type": "NO_DATA"}
+    bars.sort(key=lambda bar: bar["datetime"])
+    return {"index_code": index_code, "period": period, "bars": bars, "adjustment": "none",
+            "volume_unit": "share", "amount_unit": "CNY", "source": "tencent"}
+
+
+def fetch_index_intraday_compare(*, period: str = "15m", trade_date: str | None = None) -> dict:
+    from .eastmoney_index import build_index_intraday_compare
+
+    return build_index_intraday_compare(
+        fetch_index_minute_bars, source="tencent", period=period, trade_date=trade_date,
+    )

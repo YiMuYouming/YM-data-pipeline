@@ -208,7 +208,7 @@ class CoreRepairTests(unittest.TestCase):
             ).providers,
         )
         self.assertEqual(
-            ("eastmoney_index", "sina_index", "stocktoday"),
+            ("stocktoday", "tencent"),
             route_for(
                 "index_intraday_compare",
                 {"period": "15m", "use_case": "realtime_poll"},
@@ -557,39 +557,18 @@ class CoreRepairTests(unittest.TestCase):
         self.assertEqual("ths_industry", result["_meta"]["provider_used"])
         self.assertEqual("success", result["_meta"]["status"])
 
-    def test_query_realtime_compare_rejects_stocktoday_shape_without_pytdx(self):
-        compare_row = {
-            "t": "09:35",
-            "chg": 1.0,
-            "vol": 100,
-            "volRatio": 1.2,
-            "amount": 1000,
-            "yesterdayAmt": 900,
-        }
-        primary = _FakeProvider(
-            "eastmoney_index",
-            [_outcome("eastmoney_index", "provider_error", error_code="UPSTREAM")],
-        )
-        fallback = _FakeProvider(
-            "stocktoday",
-            [_outcome("stocktoday", "success", {"items": [compare_row]})],
-        )
-        sina = _FakeProvider(
-            "sina_index",
-            [_outcome("sina_index", "provider_error", error_code="SHOULD_NOT_RUN")],
-        )
+    def test_query_realtime_compare_rejects_incomplete_stocktoday_shape_then_tries_tencent(self):
+        compare_row = {"t": "09:35", "chg": 1.0, "vol": 100, "volRatio": 1.2,
+                       "amount": 1000, "yesterdayAmt": 900}
+        primary = _FakeProvider("stocktoday", [_outcome("stocktoday", "success", {"items": [compare_row]})])
+        fallback = _FakeProvider("tencent", [_outcome("tencent", "provider_error", error_code="UPSTREAM")])
         result = self._run_with_fakes(
-            "index_intraday_compare",
-            {"eastmoney_index": primary, "sina_index": sina, "stocktoday": fallback},
-            period="15m",
+            "index_intraday_compare", {"stocktoday": primary, "tencent": fallback}, period="15m",
         )
-
         self.assertIsNone(result["_meta"]["provider_used"])
-        self.assertEqual(
-            ["provider_error", "provider_error", "quality_failure"],
-            [attempt["status"] for attempt in result["_meta"]["attempts"]],
-        )
-        self.assertEqual("QUALITY_COMPARE_INCOMPLETE", result["_meta"]["attempts"][2]["error_code"])
+        self.assertEqual(["quality_failure", "provider_error"],
+                         [attempt["status"] for attempt in result["_meta"]["attempts"]])
+        self.assertEqual("QUALITY_COMPARE_INCOMPLETE", result["_meta"]["attempts"][0]["error_code"])
 
     def test_eastmoney_compare_builds_three_index_legacy_shape(self):
         def fake_kline(index_code, **_params):

@@ -44,7 +44,7 @@
 | 股票日/周/月 K 线 | StockToday → 腾讯 |
 | 股票分钟 K 线 | StockToday；bar 时间约定未核实时标 degraded |
 | 指数 K 线 | StockToday → 东方财富指数 → Sina 指数（例外：腾讯无指数 K 线适配器） |
-| 三指数分钟比较 | 东方财富指数 → Sina 指数 → StockToday（例外：套餐不含 `idx_mins`） |
+| 三指数分钟比较 | StockToday（`idx_mins`，当前套餐不含）→ 腾讯分时累计量额按 5/15/60 分钟聚合 |
 | 涨跌停池 `market_limit_state` / 明细 `market_limit_board` | StockToday；`limit_list_d` 三池 + `limit_step` 交叉核对板数，日期取实际交易日 |
 | 板块 `sector_index`、盘中行业资金流、北向、旧热榜 | 保留原链（例外：StockToday 无盘中等价接口，待国庆期间处理） |
 | 同花顺/东财热榜 `market_hot_rank`、市场资金流 `fund_flow` | StockToday；当前无已验证的等价后备 |

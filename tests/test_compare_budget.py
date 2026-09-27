@@ -49,18 +49,16 @@ class CompareBudgetTests(unittest.TestCase):
 
     def test_total_budget_and_fixed_fallback(self):
         providers = {
-            "eastmoney_index": _Provider("eastmoney_index", ProviderOutcome("eastmoney_index", "success", _comparison()), .2),
-            "sina_index": _Provider("sina_index", ProviderOutcome("sina_index", "success", _comparison())),
-            "stocktoday": _Provider("stocktoday", ProviderOutcome("stocktoday", "success", _comparison())),
+            "stocktoday": _Provider("stocktoday", ProviderOutcome("stocktoday", "success", _comparison()), .2),
+            "tencent": _Provider("tencent", ProviderOutcome("tencent", "success", _comparison())),
         }
         with patch.object(api, "_COMPARE_BUDGET_SECONDS", .11), patch.object(api, "_COMPARE_PROVIDER_SECONDS", (.04, .04, .04)):
             started = time.monotonic()
             result = self._query(providers)
             elapsed = time.monotonic() - started
         self.assertLess(elapsed, .15)
-        self.assertEqual("sina_index", result["_meta"]["provider_used"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
         self.assertEqual("QUERY_BUDGET_EXCEEDED", result["_meta"]["attempts"][0]["error_code"])
-        self.assertEqual(0, providers["stocktoday"].calls)
 
     def test_fast_eastmoney_compare_does_not_stack_source_retries(self):
         with patch.object(eastmoney_index.CLIENT, "get", side_effect=ConnectionError("offline")) as get:
@@ -73,10 +71,9 @@ class CompareBudgetTests(unittest.TestCase):
         self.assertFalse(get.call_args.kwargs["retry"])
 
     def test_consecutive_failure_skips_then_probes_and_recovers(self):
-        primary = _Provider("eastmoney_index", ProviderOutcome("eastmoney_index", "provider_error", error_code="UPSTREAM"))
-        fallback = _Provider("sina_index", ProviderOutcome("sina_index", "success", _comparison()))
-        providers = {"eastmoney_index": primary, "sina_index": fallback,
-                     "stocktoday": _Provider("stocktoday", ProviderOutcome("stocktoday", "empty", {}))}
+        primary = _Provider("stocktoday", ProviderOutcome("stocktoday", "provider_error", error_code="UPSTREAM"))
+        fallback = _Provider("tencent", ProviderOutcome("tencent", "success", _comparison()))
+        providers = {"stocktoday": primary, "tencent": fallback}
         with patch.object(api, "_COMPARE_BREAKER_SECONDS", 1):
             self._query(providers)
             self._query(providers)
@@ -84,11 +81,11 @@ class CompareBudgetTests(unittest.TestCase):
             self.assertEqual(2, primary.calls)
             self.assertEqual("breaker_open", skipped["_meta"]["attempts"][0]["status"])
             time.sleep(1.05)
-            primary.outcome = ProviderOutcome("eastmoney_index", "success", _comparison())
+            primary.outcome = ProviderOutcome("stocktoday", "success", _comparison())
             recovered = self._query(providers)
-        self.assertEqual("eastmoney_index", recovered["_meta"]["provider_used"])
+        self.assertEqual("stocktoday", recovered["_meta"]["provider_used"])
         self.assertEqual(3, primary.calls)
-        self.assertIsNone(self.state.active_breaker(api._compare_key("eastmoney_index")))
+        self.assertIsNone(self.state.active_breaker(api._compare_key("stocktoday")))
 
 
 if __name__ == "__main__":

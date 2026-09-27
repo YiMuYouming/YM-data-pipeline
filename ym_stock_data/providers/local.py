@@ -352,6 +352,7 @@ def _legacy_index_intraday_compare(
     fetcher = {
         "eastmoney_index": eastmoney_index.fetch_index_intraday_compare,
         "sina_index": sina_index.fetch_index_intraday_compare,
+        "tencent": tencent.fetch_index_intraday_compare,
     }.get(provider)
     if fetcher is None:
         return ProviderOutcome(
@@ -499,6 +500,9 @@ class LocalProvider:
             ),
             ("sina_index", "index_intraday_compare"): lambda: _legacy_index_intraday_compare(
                 params, provider="sina_index"
+            ),
+            ("tencent", "index_intraday_compare"): lambda: _legacy_index_intraday_compare(
+                params, provider="tencent"
             ),
             ("pytdx_breadth", "review_sentiment"): pytdx.fetch_breadth,
             ("eastmoney_breadth", "review_sentiment"): pytdx._fallback_breadth,

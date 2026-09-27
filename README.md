@@ -155,7 +155,7 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 东方财富、新浪、PyTDX 与 TDX 退出默认路由，适配器只保留显式诊断；问财只服务带
 `query` 的显式研究查询。当前 StockToday 套餐不含 `rt_idx_k`、`rt_sw_k`、`idx_mins`
 （上游答复“龙虾套餐专属”），所以指数实时由腾讯提供；盘中板块（`sector_index`）、
-行业资金流、北向、旧热榜和三指数分钟比较暂保留原链，见 [工作区总览](docs/README.md)。
+行业资金流、北向和旧热榜暂保留原链（三指数分钟比较已改 StockToday → 腾讯），见 [工作区总览](docs/README.md)。
 异常、超时、质量不合格及允许继续的合法空集按对应 RouteSpec 尝试后备，并保留降级事实；
 消费者不得自行改序。
 
@@ -197,11 +197,11 @@ TDX 自 2026-09-27 起不在任何默认路由；此前 TDX route provider 只�
 | `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`、`stock_snapshot`、`stock_kline`）；2026-09-27 退出默认路由 | 否 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`index_kline` 日/周/月）；已退出默认路由 | 否 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`）；已退出默认路由 | 否 |
-| `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第一源；`index_kline` 在 StockToday 后 | 允许；只按对应 RouteSpec 次序 |
+| `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在 StockToday 后；`index_intraday_compare` 仅显式诊断 | 允许；只按对应 RouteSpec 次序 |
 | `eastmoney_stock` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（日/周/月 `stock_kline`，保持 `none` / `qfq` 复权语义）；已退出默认路由 | 否 |
-| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 唯一降级后备：`realtime_market`、`stock_snapshot`（含逐只补 StockToday 缺票）、日/周/月 `stock_kline` | 允许；只在 StockToday 失败、缺代码或超时后 |
+| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 唯一降级后备：`realtime_market`、`stock_snapshot`（含逐只补 StockToday 缺票）、日/周/月 `stock_kline`、`index_intraday_compare`（分时累计量额聚合） | 允许；只在 StockToday 失败、缺代码或超时后 |
 | `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（分钟 `stock_kline`）；已退出默认路由 | 否 |
-| `sina_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第二源；`index_kline` 在东财指数之后，仅支持分钟周期 | 允许；只按对应 RouteSpec 次序 |
+| `sina_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在东财指数之后；`index_intraday_compare` 仅显式诊断，仅支持分钟周期 | 允许；只按对应 RouteSpec 次序 |
 | `ths_industry` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `sector_index` 唯一源；`industry_flow` 默认链后备，保留价格/表现语义 | `industry_flow` 仅按对应 RouteSpec 次序 |
 | `pytdx_breadth` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`review_sentiment` 宽度）；情绪值只由 indicators 计算 | 否 |
 | `eastmoney_breadth` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`review_sentiment` 宽度） | 否 |
