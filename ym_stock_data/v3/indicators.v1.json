@@ -1,0 +1,119 @@
+{
+  "version": "indicators.v1",
+  "glossary": "YouMingVault/10_⚡Now/01_💰弈沐资本/交易指标术语表.md",
+  "implementation": "ym_stock_data/indicators.py",
+  "universes": {
+    "traded_a_shares": "当日有成交的全部 A 股（含 ST 与北交所，不含 B 股和停牌股）；盘中取 StockToday rt_k 全市场快照 vol>0 的行，盘后取 market_facts 日线行",
+    "non_st_a_shares": "全部 A 股去掉名称含 ST 的股票（含北交所）；盘中按 stk_limit 涨跌停价派生，盘后取 StockToday limit_list_d 涨停/跌停/炸板池"
+  },
+  "indicators": [
+    {
+      "key": "emotion",
+      "name": "情绪值",
+      "glossary_section": "3.1",
+      "formula": "上涨家数 ÷ (上涨家数 + 下跌家数) × 100",
+      "inputs": ["up_count", "down_count"],
+      "universe": "traded_a_shares",
+      "bands": [
+        {"below": 20, "label": "冰点"},
+        {"below": 40, "label": "低迷"},
+        {"below": 70, "label": "正常"},
+        {"through": 80, "label": "强势"},
+        {"above": 80, "label": "高潮"}
+      ],
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "breadth",
+      "name": "上涨家数、下跌家数、平盘家数、涨跌比",
+      "glossary_section": "3.1",
+      "formula": "按当日涨跌幅 >0 / <0 / =0 计数；涨跌比 = 上涨 ÷ 下跌",
+      "inputs": ["pct_change"],
+      "universe": "traded_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "limit_counts",
+      "name": "涨停家数、跌停家数",
+      "glossary_section": "1.4",
+      "formula": "盘中：现价等于 stk_limit 涨停价（跌停价）；盘后：limit_list_d 涨停（跌停）池",
+      "inputs": ["close", "up_limit", "down_limit"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "broken_rate",
+      "name": "炸板率（封板率 = 100 − 炸板率）",
+      "glossary_section": "1.4",
+      "formula": "曾涨停未封死 ÷ 曾触及涨停 × 100；曾触及涨停 = 涨停 + 炸板",
+      "inputs": ["broken_count", "up_count"],
+      "universe": "non_st_a_shares",
+      "bands": [
+        {"below": 16, "label": "一致性强"},
+        {"below": 25, "label": "正常偏强"},
+        {"below": 30, "label": "正常分歧"},
+        {"below": 35, "label": "分歧加大"},
+        {"through": 40, "label": "分歧严重"},
+        {"above": 40, "label": "退潮信号"}
+      ],
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "promotion",
+      "name": "晋级率（一进二、二进三、三进四+、整体）",
+      "glossary_section": "1.1",
+      "formula": "昨日 N 板今日封到 N+1 板的数量 ÷ 昨日 N 板总数 × 100；一进二 N=1、二进三 N=2、三进四+ N=3；整体 = 全部昨日涨停",
+      "inputs": ["previous_boards", "current_boards"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "board_heights",
+      "name": "最高板、次高板",
+      "glossary_section": "1.3",
+      "formula": "最高板 = 当日涨停股最大连板数；次高板 = 低于最高板的最大连板数",
+      "inputs": ["current_boards"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "needs_vault_detail",
+      "detail_needed": "术语表只定义最高板；次高板按“低于最高板的最大板数”登记，待弈沐确认"
+    },
+    {
+      "key": "cohort_returns",
+      "name": "涨停收益、连板收益、炸板收益",
+      "glossary_section": "1.5",
+      "formula": "昨日涨停池（连板池 = 昨日 ≥2 板，炸板池）全部股票今日涨跌幅的算术平均；缺任一只不出数",
+      "inputs": ["previous_up_codes", "previous_broken_codes", "pct_change"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "defined"
+    },
+    {
+      "key": "money_effect",
+      "name": "赚钱效应",
+      "glossary_section": "3.2",
+      "formula": "现有实现：涨停收益 >2 为“好”，<0 为“差”，其余“一般”",
+      "inputs": ["limit_up_return"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "needs_vault_detail",
+      "detail_needed": "术语表 §3.2 为涨停收益、连板收益、炸板收益、连板风险值四项综合，未给出“差”的精确判定；当前仍用旧实现的单项阈值"
+    },
+    {
+      "key": "board_risk",
+      "name": "连板风险值",
+      "glossary_section": "3.3",
+      "formula": "现有实现：clamp(1 − 整体晋级率(0–1) × 1.8, 0, 1)",
+      "inputs": ["promotion_overall"],
+      "universe": "non_st_a_shares",
+      "intraday_postclose_same": true,
+      "definition_status": "needs_vault_detail",
+      "detail_needed": "术语表 §3.3 为“断板后 3 日内跌幅 >50% 的个股占近期断板股比例”，需断板样本窗口与跌幅口径（累计还是单日）；当前仍用旧实现的晋级率代理值"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import sqlite3
 from datetime import date, datetime, time
 from pathlib import Path
 
+from . import indicators
 from .contracts import TZ_SHANGHAI
 from .sources.limit_state import derive_limit_promotion
 from .trading_calendar import is_trading_day, previous_trading_day
@@ -560,18 +561,26 @@ class MarketFactStore:
                 returns[f"{key}_return_pct"] = round(sum(changes[code] for code in codes) / len(codes), 6)
         emotion = None
         if daily:
-            emotion = {"score": round(daily["up_count"] / daily["row_count"] * 100, 6),
+            score = indicators.emotion(daily["up_count"], daily["down_count"])
+            emotion = {"score": score, "band": indicators.emotion_band(score),
                        "up": daily["up_count"], "flat": daily["flat_count"],
-                       "down": daily["down_count"], "denominator": daily["row_count"],
+                       "down": daily["down_count"],
+                       "denominator": daily["up_count"] + daily["down_count"],
+                       "formula": "indicators.emotion（术语表 §3.1）",
+                       "indicator_version": indicators.INDICATOR_VERSION,
+                       # Old up / all-traded-rows value, kept for side-by-side
+                       # comparison until 2026-10-04, then removed.
+                       "legacy_score_up_over_all_rows": indicators.legacy_emotion_all_rows(
+                           daily["up_count"], daily["row_count"]),
                        "universe": daily["universe"], "provider": daily["provider"],
                        "fetched_at": daily["fetched_at"], "run_id": daily["id"]}
-            gaps.append("emotion_all_listed_denominator_unverified")
         else:
             gaps.append("all_market_daily_breadth_missing")
         gaps.append("consecutive_break_risk_definition_and_adjusted_history_missing")
         return {
             "trade_date": trade_date,
             "previous_trade_date": previous_date,
+            "indicator_version": indicators.INDICATOR_VERSION,
             "counts": ({"up": current["up_count"], "down": current["down_count"],
                         "broken": current["broken_count"]} if current else None),
             "promotion": promotion,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from . import indicators
 from .aggregates import aggregate_review_sentiment
 from .contracts import TZ_SHANGHAI, ProviderAttempt
 from .quality import assess_quality
@@ -155,8 +156,9 @@ def _review_breadth(
 ) -> tuple[dict, dict]:
     up = _breadth_count(data, ("涨停", ">7%", "5~7%", "3~5%", "0~3%"))
     down = _breadth_count(data, ("-0~-3%", "-3~-5%", "-5~-7%", "<-7%", "跌停"))
-    red_rate = round(up / (up + down) * 100, 2) if up + down else None
-    exact = provider == "pytdx_breadth"
+    score = indicators.emotion(up, down)
+    red_rate = round(score, 2) if score is not None else None
+    exact = provider in {"pytdx_breadth", "stocktoday"}
     limit_up = _breadth_count(data, ("涨停",)) if exact else None
     limit_down = _breadth_count(data, ("跌停",)) if exact else None
     row = {
@@ -202,6 +204,10 @@ def _review_breadth(
             "breadth": dict(data),
         },
     }
+    if isinstance(data.get("indicators"), dict):
+        normalized["indicators"] = dict(data["indicators"])
+        normalized["trade_date"] = data.get("trade_date")
+        normalized["data_as_of"] = data.get("data_as_of")
     return normalized, quality
 
 
@@ -344,6 +350,12 @@ def normalize_success(
     elif intent == "market_limit_state":
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         quality = assess_quality([data] if count else [])
+    elif intent == "market_intraday_state":
+        quality = assess_quality([data.get("indicators") or {}])
+        gaps = [str(gap) for gap in data.get("source_gaps") or []]
+        if gaps:
+            quality["status"] = "partial"
+            quality["reason_codes"] = sorted(set(quality.get("reason_codes") or []) | set(gaps))
     elif intent in {
         "market_limit_board",
         "market_hot_rank",

@@ -38,4 +38,5 @@ include = ["ym_stock_data", "ym_stock_data.*"]
     "stocktoday-audit-receipt.v3.json",
     "provider-smoke.v3.json",
     "trading-holidays.json",
+    "indicators.v1.json",
 ]

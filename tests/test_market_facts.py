@@ -162,7 +162,7 @@ class MarketFactStoreTests(unittest.TestCase):
         self.assertEqual(report["promotion_overall_by_code"]["numerator"], 1)
         self.assertIn("promotion_tier_board_counts_unverified", report["source_gaps"])
 
-    def test_daily_emotion_uses_up_over_all_traded_including_flat(self):
+    def test_daily_emotion_is_up_over_up_plus_down(self):
         items = [
             {"ts_code": f"{i:06d}.SZ", "trade_date": "20260923",
              "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.0,
@@ -176,11 +176,15 @@ class MarketFactStoreTests(unittest.TestCase):
         receipt = self.store.ingest_daily("20260923", result)
         self.assertEqual(receipt["row_count"], 4000)
         report = self.store.report("20260923")
-        self.assertEqual(report["yimu_emotion"]["score"], 50.0)
-        self.assertEqual(report["yimu_emotion"]["denominator"], 4000)
+        # 2000 up, 1000 flat, 1000 down: glossary §3.1 excludes flat stocks.
+        self.assertAlmostEqual(report["yimu_emotion"]["score"], 66.666667, places=6)
+        self.assertEqual(report["yimu_emotion"]["band"], "正常")
+        self.assertEqual(report["yimu_emotion"]["denominator"], 3000)
         self.assertEqual(report["yimu_emotion"]["flat"], 1000)
+        self.assertEqual(report["yimu_emotion"]["legacy_score_up_over_all_rows"], 50.0)
+        self.assertEqual(report["indicator_version"], "indicators.v1")
         self.assertIsNone(report["ths_emotion_equivalent"])
-        self.assertIn("emotion_all_listed_denominator_unverified", report["source_gaps"])
+        self.assertNotIn("emotion_all_listed_denominator_unverified", report["source_gaps"])
         self.assertIsNone(report["consecutive_break_risk"])
         bad = {**result, "data": {**result["data"], "truncated": True}}
         with self.assertRaisesRegex(ValueError, "coverage"):

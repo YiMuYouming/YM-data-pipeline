@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import re
 
+from .. import indicators
 from .eastmoney_http import CLIENT
 
 
@@ -151,25 +152,7 @@ def derive_limit_promotion(
 
     previous_stocks, excluded_previous = stock_set(previous, previous_date)
     current_stocks, excluded_current = stock_set(current, current_date)
-    promoted = {
-        code: (board, current_stocks[code])
-        for code, board in previous_stocks.items()
-        if current_stocks.get(code) == board + 1
-    }
-
-    def rate(previous_board: int | None) -> dict:
-        universe = (
-            previous_stocks
-            if previous_board is None
-            else {code: board for code, board in previous_stocks.items() if board == previous_board}
-        )
-        winners = sorted(code for code in universe if code in promoted)
-        return {
-            "numerator": len(winners),
-            "denominator": len(universe),
-            "pct": round(len(winners) / len(universe) * 100, 6) if universe else None,
-            "promoted_codes": winners,
-        }
+    tiers = indicators.promotion(previous_stocks, current_stocks)
 
     return {
         "previous_date": previous.get("date"),
@@ -180,12 +163,7 @@ def derive_limit_promotion(
         "highest_board": max(current_stocks.values()),
         "excluded_st_previous": excluded_previous,
         "excluded_st_current": excluded_current,
-        "rates": {
-            "one_to_two": rate(1),
-            "two_to_three": rate(2),
-            "three_to_four": rate(3),
-            "overall": rate(None),
-        },
+        "rates": tiers,
         "basis": "previous_complete_non_st_zt_pool_to_current_complete_non_st_zt_pool",
         "source": "eastmoney_limit_pool",
     }
