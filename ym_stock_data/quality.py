@@ -67,6 +67,13 @@ def _looks_like_sector_code(value: object) -> bool:
 
 def _row_shape(row: Mapping[str, object]) -> str:
     normalized_items = [(_normalized_key(key), value) for key, value in row.items()]
+    keys = {key for key, _ in normalized_items}
+
+    if {"datetime", "open", "high", "low", "close", "volume", "amount"}.issubset(keys):
+        return "kline_bars"
+    if ("trade_date" in keys and isinstance(row.get("counts"), Mapping)
+            and isinstance(row.get("source_gaps"), list)):
+        return "market_fact_report"
 
     has_stock_identity = any(
         any(marker in key for marker in _STOCK_IDENTITY_MARKERS)

@@ -15,6 +15,7 @@ from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.routing import route_for
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_policy import CompiledPolicy
 
 
 SECRET = "synthetic-stocktoday-test-token"
@@ -39,6 +40,7 @@ class StockTodayTests(unittest.TestCase):
         )
         self.state = ProviderState(Path(self.tmp.name) / "state.sqlite3")
         self.addCleanup(patch.stopall)
+        patch.object(api, "load_compiled_policy", return_value=CompiledPolicy(None, "inactive", None)).start()
         patch.object(api, "_STATE", self.state).start()
         patch.dict(api.PROVIDER_REGISTRY, {"stocktoday": self.provider}).start()
 

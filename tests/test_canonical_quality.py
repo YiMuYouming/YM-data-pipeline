@@ -8,6 +8,8 @@ import ym_stock_data.api as api
 from ym_stock_data import query
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
+from ym_stock_data.provider_policy import CompiledPolicy
 
 
 class StaticProvider:
@@ -27,6 +29,11 @@ class StaticProvider:
 
 class CanonicalQualityTests(unittest.TestCase):
     def setUp(self):
+        freeze_trading_clock(self)
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         state = ProviderState(Path(self.temp_dir.name) / "providers.sqlite3")
@@ -97,7 +104,7 @@ class CanonicalQualityTests(unittest.TestCase):
         self.assertEqual(2147, result["data"]["下跌家数"])
 
     def test_snapshot_quality_rejects_partial_coverage_and_falls_through(self):
-        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        now = FIXED_NOW_ISO
         provider = StaticProvider(
             "pytdx",
             {
@@ -173,6 +180,38 @@ class CanonicalQualityTests(unittest.TestCase):
         )
         self.assertEqual("quality_failure", rejected["status"])
         self.assertEqual("QUALITY_ADJUSTMENT_MISMATCH", rejected["error_code"])
+
+    def test_stock_kline_quality_identifies_validated_bar_shape(self):
+        provider = StaticProvider("stocktoday", {
+            "code": "600737", "period": "daily", "adjustment": "none",
+            "volume_unit": "share", "amount_unit": "CNY",
+            "bars": [{"datetime": "2026-09-23", "open": 14.98,
+                      "high": 15.26, "low": 14.57, "close": 15.03,
+                      "volume": 71119216, "amount": 1065797796}],
+        })
+        with patch.object(api, "_provider_for", return_value=provider):
+            result = query("stock_kline", code="600737", period="daily",
+                           start_date="20260923", end_date="20260923")
+        quality = result["_meta"]["quality"]
+        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("kline_bars", quality["row_shape"])
+        self.assertEqual("kline_bars", quality["expected_row_shape"])
+        self.assertEqual("exact", quality["semantic_equivalence"])
+
+    def test_market_fact_report_shape_keeps_real_source_gaps(self):
+        provider = StaticProvider("market_facts", {
+            "trade_date": "20260923", "counts": {"up": 51, "down": 13},
+            "source_gaps": ["emotion_all_listed_denominator_unverified"],
+        })
+        with patch.object(api, "_provider_for", return_value=provider):
+            result = query("market_facts", trade_date="20260923")
+        quality = result["_meta"]["quality"]
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertEqual("market_fact_report", quality["row_shape"])
+        self.assertEqual("exact", quality["semantic_equivalence"])
+        self.assertEqual("partial", quality["status"])
+        self.assertIn("emotion_all_listed_denominator_unverified",
+                      quality["reason_codes"])
 
     def test_explicit_review_keeps_shape_quality_summary_and_aggregates(self):
         provider = StaticProvider(

@@ -10,6 +10,8 @@ import ym_stock_data.api as api
 from ym_stock_data.doctor import collect_diagnostics
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
+from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
     WIND_EVENT_ALLOWLIST,
@@ -23,6 +25,11 @@ from ym_stock_data.v2 import capability_manifest
 
 class WindProviderTests(unittest.TestCase):
     def setUp(self):
+        freeze_trading_clock(self)
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
@@ -296,9 +303,7 @@ class WindProviderTests(unittest.TestCase):
                             "low": 1388.0,
                             "volume": 1000.0,
                             "amount": 1400000.0,
-                            "quote_time": datetime.now().astimezone().isoformat(
-                                timespec="seconds"
-                            ),
+                            "quote_time": FIXED_NOW_ISO,
                         }
                     },
                     latency_ms=1,

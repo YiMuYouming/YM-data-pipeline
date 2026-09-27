@@ -313,7 +313,9 @@ def normalize_success(
     elif intent == "stock_kline":
         rows = data.get("bars", [])
         quality = assess_quality(
-            rows if isinstance(rows, list) else [], expected_count=params.get("count")
+            rows if isinstance(rows, list) else [],
+            expected_row_shape="kline_bars",
+            expected_count=params.get("count"),
         )
         missing_fields = []
         if provider == "tencent" and any(
@@ -327,6 +329,8 @@ def normalize_success(
             primary=primary,
             missing_fields=missing_fields,
         )
+    elif intent == "market_facts":
+        quality = assess_quality([data], expected_row_shape="market_fact_report")
     elif intent == "index_kline":
         rows = data.get("items") if isinstance(data.get("items"), list) else data.get("bars", [])
         quality = assess_quality(

@@ -14,6 +14,7 @@ import ym_stock_data.api as api
 from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from tests.fixed_clock import FIXED_NOW, FIXED_NOW_ISO, freeze_trading_clock
 
 try:
     import ym_stock_data.provider_policy as provider_policy
@@ -48,7 +49,7 @@ def outcome(provider: str, status: str, *, data=None, error_code=None) -> Provid
 
 
 def full_snapshot_data(code: str = "600519") -> dict:
-    now = datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds")
+    now = FIXED_NOW_ISO
     return {
         code: {
             "price": 1500.0,
@@ -69,12 +70,13 @@ def fresh_snapshot_outcome(provider: str, code: str = "600519") -> ProviderOutco
         status="success",
         data=full_snapshot_data(code),
         latency_ms=1,
-        fetched_at=datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds"),
+        fetched_at=FIXED_NOW_ISO,
     )
 
 
 class ProviderPolicyV3Tests(unittest.TestCase):
     def setUp(self):
+        freeze_trading_clock(self)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.state = ProviderState(Path(self.temp_dir.name) / "providers.sqlite3")
@@ -379,9 +381,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
                     "low": 1485.0,
                     "vol": 1000.0,
                     "amount": 1500000.0,
-                    "updated_at": datetime.now(TZ_SHANGHAI).isoformat(
-                        timespec="seconds"
-                    ),
+                    "updated_at": FIXED_NOW_ISO,
                 }
             ],
             "total": 1,
@@ -393,6 +393,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
             token_loader=lambda: "synthetic-policy-test-token",
             post=transport,
             budget_path=Path(self.temp_dir.name) / "stocktoday-budget.sqlite3",
+            clock=Mock(time=Mock(return_value=FIXED_NOW.timestamp()), monotonic=Mock(return_value=0.0)),
         )
         result = api._query_with(
             "stock_snapshot",

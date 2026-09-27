@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, Mock, patch
 from ym_stock_data import api
 from ym_stock_data.api import query
 from ym_stock_data.provider_state import ProviderState
+from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.providers.base import ProviderOutcome
+from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
 from ym_stock_data.providers.local import LocalProvider
 from ym_stock_data.providers.stocktoday import RequestBudget
 from ym_stock_data.routing import route_for
@@ -48,7 +50,7 @@ def _full_snapshot(*codes):
             "low": 9.7,
             "volume": 1000,
             "amount": 10000.0,
-            "quote_time": datetime.now().isoformat(timespec="seconds"),
+            "quote_time": FIXED_NOW_ISO,
             "change_pct": 1.0,
         }
         for code in codes
@@ -88,6 +90,13 @@ class _FakeProvider:
 
 
 class CoreRepairTests(unittest.TestCase):
+    def setUp(self):
+        freeze_trading_clock(self)
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
+
     def _run_with_fakes(self, intent, providers, **params):
         with tempfile.TemporaryDirectory() as tmp:
             state = ProviderState(Path(tmp) / "providers.sqlite3")
@@ -635,8 +644,9 @@ class CoreRepairTests(unittest.TestCase):
         self.assertTrue(result["上证15min"][-1]["_cum"])
 
     def test_query_northbound_realtime_profile_preserves_current_minute_shape(self):
+        today = datetime.now(api.TZ_SHANGHAI).strftime("%Y-%m-%d")
         raw = {
-            "date": "2026-09-23",
+            "date": today,
             "minutes": [{"time": "09:30", "hgt_yi": 1.0, "sgt_yi": 2.0}],
         }
         with patch(
@@ -650,12 +660,13 @@ class CoreRepairTests(unittest.TestCase):
             )
 
         self.assertEqual("northbound", result["_meta"]["provider_used"])
-        self.assertEqual("2026-09-23", result["data"]["trade_date"])
+        self.assertEqual(today, result["data"]["trade_date"])
         self.assertEqual(raw["minutes"], result["data"]["items"])
 
     def test_query_legacy_hot_realtime_profile_requires_old_hot_list_shape(self):
+        today = datetime.now(api.TZ_SHANGHAI).strftime("%Y-%m-%d")
         raw = {
-            "date": "2026-09-23",
+            "date": today,
             "stocks": [{"code": "600519"}],
             "reason_stats": {"涨停": 1},
             "zt_count": 3,
@@ -694,6 +705,47 @@ class CoreRepairTests(unittest.TestCase):
         self.assertTrue(quotes.get("error") or not quotes)
         self.assertTrue(index.get("error") or not index)
         self.assertTrue(bars.get("error") or not bars)
+
+    def test_pytdx_minute_bars_exclude_unfinished_future_slots(self):
+        now = datetime(2026, 9, 24, 11, 10, tzinfo=pytdx._SHANGHAI)
+        bars = [
+            {"datetime": stamp, "vol": 100, "amount": 1000}
+            for stamp in (
+                "2026-09-23 15:00", "2026-09-24 11:00",
+                "2026-09-24 11:15", "2026-09-24 13:00",
+            )
+        ]
+        with patch.object(pytdx, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            fifteen = pytdx._filter_direct_bars(bars, "15m")
+            hourly = pytdx._filter_direct_bars(bars, "60m")
+        expected = ["2026-09-23 15:00", "2026-09-24 11:00"]
+        self.assertEqual(expected, [bar["datetime"] for bar in fifteen])
+        self.assertEqual(expected, [bar["datetime"] for bar in hourly])
+
+    def test_pytdx_count_replaces_unfinished_daily_bar_with_older_completed_bar(self):
+        now = datetime(2026, 9, 24, 11, 35, tzinfo=pytdx._SHANGHAI)
+        bars = [
+            {"datetime": f"2026-09-{day} 15:00", "vol": 100, "amount": 1000}
+            for day in ("21", "22", "23", "24")
+        ]
+        calls = []
+
+        def fetch_page(start, count):
+            calls.append((start, count))
+            return bars[-count:]
+
+        with patch.object(pytdx, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = now
+            result = pytdx._paged_direct_bars(
+                fetch_page, period="daily", count=3,
+                start_date=None, end_date=None,
+            )
+        self.assertEqual([(0, 4)], calls)
+        self.assertEqual(
+            ["2026-09-21 15:00", "2026-09-22 15:00", "2026-09-23 15:00"],
+            [bar["datetime"] for bar in result],
+        )
 
     def test_pytdx_stock_minute_date_range_pages_beyond_recent_48_rows(self):
         calls = []
@@ -1115,8 +1167,9 @@ class CoreRepairTests(unittest.TestCase):
         self.assertIsNone(result.data["trade_date"])
 
     def test_legacy_northbound_flow_uses_raw_date_not_requested_date(self):
+        today = datetime.now(api.TZ_SHANGHAI).strftime("%Y-%m-%d")
         raw = {
-            "date": "2026-09-23",
+            "date": today,
             "minutes": [{"time": "09:30", "hgt_yi": 1.0, "sgt_yi": 2.0}],
         }
         with patch.object(
@@ -1129,7 +1182,7 @@ class CoreRepairTests(unittest.TestCase):
             )
 
         self.assertEqual("success", result.status)
-        self.assertEqual("2026-09-23", result.data["trade_date"])
+        self.assertEqual(today, result.data["trade_date"])
 
     def test_legacy_northbound_history_does_not_claim_a_mismatched_raw_date(self):
         raw = {
