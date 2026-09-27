@@ -103,7 +103,7 @@ PY
 Doctor 只运行一次并直接保存脱敏 JSON：
 
 ```bash
-./ym-data doctor --json > "$acceptance_tmp/doctor.json" 2>/dev/null
+./ym-data doctor --json --include-retired > "$acceptance_tmp/doctor.json" 2>/dev/null
 chmod 600 "$acceptance_tmp/doctor.json"
 ```
 

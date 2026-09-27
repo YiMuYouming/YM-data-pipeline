@@ -66,6 +66,8 @@ def _parser() -> argparse.ArgumentParser:
 
     doctor_parser = commands.add_parser("doctor", help="read-only provider diagnostics")
     doctor_parser.add_argument("--json", action="store_true", dest="as_json")
+    doctor_parser.add_argument("--include-retired", action="store_true",
+                               help="also list TDX adapters retired from every route on 2026-09-27")
 
     setup_parser = commands.add_parser("setup", help="explicit optional runtime setup")
     setup_commands = setup_parser.add_subparsers(dest="setup_command", required=True)
@@ -354,7 +356,14 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(result)
         return 0 if result.get("_meta", {}).get("status") != "error" else 1
     if args.command == "doctor":
-        report = collect_diagnostics()
+        from .providers.tdx_mcp import TDX_DIAGNOSTIC_NAMES
+
+        from . import api as _api
+
+        names = None if args.include_retired else tuple(
+            sorted(set(_api.PROVIDER_REGISTRY) - set(TDX_DIAGNOSTIC_NAMES))
+        )
+        report = collect_diagnostics(provider_names=names)
         if args.as_json:
             _print_json(report)
         else:

@@ -167,8 +167,9 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 数据时间为 `unknown`。休市日 StockToday 会把上一交易日行情盖成当天日期，管道按交易日历
 改回实际交易日。StockToday 个股快照缺的代码（003xxx 全部不在 `rt_k`）或超过 180 秒的
 代码逐只由腾讯补，行上 `source=tencent`，`_meta.filled_by_fallback` 列出代码，批次仍是
-StockToday。全市场指标只由 StockToday 快照计算，覆盖率 <98% 标缺口、<90% 不出数，不用
-腾讯拼全市场。指标定义以 Vault《交易指标术语表》为准，登记表
+StockToday。全市场指标只由 StockToday 快照计算，StockToday 整体失效时不换源；唯一例外是 `rt_k`
+固定不返回的 003xxx（≤200 只的结构性缺口），每轮用腾讯定点补齐并列入 `filled_by_fallback`。
+覆盖率 <98% 标缺口、<90% 不出数。盘中封板以卖一为空、封跌停以买一为空判断。指标定义以 Vault《交易指标术语表》为准，登记表
 `ym_stock_data/v3/indicators.v1.json`，实现只在 `ym_stock_data/indicators.py`。
 
 高频中文短语由仓库内 deterministic intent registry 固定映射，CLI 使用

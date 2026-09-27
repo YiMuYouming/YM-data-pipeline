@@ -485,7 +485,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
             module.compile_policy(unregistered, audit_receipt=receipt, now=NOW)
 
         for capability, too_new in (
-            ("stock_snapshot", 61),
+            ("stock_snapshot", 601),
             ("stock_kline_daily", 86401),
             ("stock_kline_60m", 301),
             ("sector_index", 301),
@@ -894,9 +894,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
         mutations.append(changed_order)
 
         changed_empty = copy.deepcopy(original)
-        changed_empty["capabilities"]["stock_snapshot"]["empty_policy"] = (
-            "continue_until_exhausted"
-        )
+        changed_empty["capabilities"]["stock_snapshot"]["empty_policy"] = "stop"
         mutations.append(changed_empty)
 
         changed_age = copy.deepcopy(original)

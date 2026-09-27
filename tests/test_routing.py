@@ -88,5 +88,35 @@ class RoutingTests(unittest.TestCase):
         self.assertNotEqual("PROVIDER_ADAPTER_MISSING", outcome.error_code)
 
 
+    def test_packaged_policy_lists_exactly_the_live_routes(self):
+        """The inactive policy file is read by people and agents; it must match routing.py."""
+        from ym_stock_data.provider_policy import load_policy
+        from ym_stock_data.routing import capability_for
+
+        samples = {
+            "stock_snapshot": ("stock_snapshot", {}),
+            "stock_kline_daily": ("stock_kline", {"period": "daily"}),
+            "stock_kline_weekly": ("stock_kline", {"period": "weekly"}),
+            "stock_kline_monthly": ("stock_kline", {"period": "monthly"}),
+            "stock_kline_60m": ("stock_kline", {"period": "60m"}),
+            "stock_kline_15m": ("stock_kline", {"period": "15m"}),
+            "stock_kline_5m": ("stock_kline", {"period": "5m"}),
+            "sector_index": ("sector_index", {}),
+            "review_sentiment": ("review_sentiment", {}),
+            "market_limit_state": ("market_limit_state", {}),
+            "stocktoday_data": ("stocktoday_data", {}),
+        }
+        policy = load_policy()
+        self.assertFalse(policy["active"])
+        for capability, config in policy["capabilities"].items():
+            with self.subTest(capability=capability):
+                intent, params = samples[capability]
+                self.assertEqual(capability, capability_for(intent, params))
+                spec = route_for(intent, params)
+                self.assertEqual(spec.providers, tuple(config["provider_order"]))
+                self.assertEqual(spec.empty_policy, config["empty_policy"])
+                self.assertEqual(spec.max_age_sec, config["max_age_sec"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -33,7 +33,7 @@ PIPELINE_VERSION = "3.0"
 ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
-PACKAGED_POLICY_SHA256 = "c2c8362d1914a97a499c6fd0c71553fe5bf090346183e7bfb7812ddcf759ca88"
+PACKAGED_POLICY_SHA256 = "56b4a0c61d96242d9034c793210ae699b61c527db2dbc7f684d11223867de7a8"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )
@@ -102,13 +102,13 @@ _CAPABILITY_PROVIDER_ALLOWLIST = {
     # This is the default breadth route.  A non-empty natural-language query
     # is handled by route_for() independently and never inherits this order.
     "review_sentiment": frozenset(
-        {"pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"}
+        {"stocktoday", "pytdx_breadth", "eastmoney_breadth", "eastmoney_limit_pool"}
     ),
-    "market_limit_state": frozenset({"eastmoney_limit_pool"}),
+    "market_limit_state": frozenset({"stocktoday", "eastmoney_limit_pool"}),
 }
 _BASE_MAX_AGE_SEC = {
     "stocktoday_data": 60,
-    "stock_snapshot": 60,
+    "stock_snapshot": 600,
     "stock_kline_daily": 86400,
     "stock_kline_weekly": 86400,
     "stock_kline_monthly": 86400,
