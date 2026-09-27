@@ -39,19 +39,21 @@
 | 能力/用途 | 固定顺序 |
 | --- | --- |
 | 个股 `stock_snapshot`（含 `realtime_poll`） | StockToday → 腾讯；缺票/超 180 秒的代码逐只由腾讯补 |
-| 大盘 `realtime_market`（含 `realtime_poll`） | StockToday → 腾讯（套餐不含 `rt_idx_k`，实际由腾讯提供） |
+| 大盘 `realtime_market`（含 `realtime_poll`） | 腾讯（首要源；StockToday 套餐不含指数实时，2026-09-28 确认暂不加购） |
 | 盘中宽度/情绪/涨跌停/炸板/连板 `market_intraday_state`、默认 `review_sentiment` | StockToday 全市场快照 → indicators；无后备 |
 | 股票日/周/月 K 线 | StockToday → 腾讯 |
 | 股票分钟 K 线 | StockToday；bar 时间约定未核实时标 degraded |
-| 指数 K 线 | StockToday → 东方财富指数 → Sina 指数（例外：腾讯无指数 K 线适配器） |
-| 三指数分钟比较 | StockToday（`idx_mins`，当前套餐不含）→ 腾讯分时累计量额按 5/15/60 分钟聚合 |
+| 指数 K 线 | 日/周/月：StockToday → 东方财富指数 → Sina 指数；分钟：东方财富指数 → Sina 指数（`idx_mins` 套餐不含） |
+| 三指数分钟比较 | 腾讯分时累计量额按 5/15/60 分钟聚合（首要源） |
 | 涨跌停池 `market_limit_state` / 明细 `market_limit_board` | StockToday；`limit_list_d` 三池 + `limit_step` 交叉核对板数，日期取实际交易日 |
-| 板块 `sector_index`、盘中行业资金流、北向、旧热榜 | 保留原链（例外：StockToday 无盘中等价接口，待国庆期间处理） |
+| 板块 `sector_index`、盘中行业资金流 | 同花顺 `ths_industry` 为首要源（`rt_sw_k` 套餐不含） |
+| 北向、旧热榜 | 保留原链 |
 | 同花顺/东财热榜 `market_hot_rank`、市场资金流 `fund_flow` | StockToday；当前无已验证的等价后备 |
 | 其他已开通接口 | 先查 catalog，再通过 `stocktoday_data` 直达；结果保留上游原生字段，不冒充标准化结果 |
 
-2026-09-27 起 StockToday 为唯一核心源、腾讯为唯一后备（REPAIR_PLAN v2）；上表“例外”行是当前
-套餐覆盖不到的能力。本地预算由运行环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、
+2026-09-27 起 StockToday 为个股与全市场指标的核心源、腾讯为个股后备（REPAIR_PLAN v2）；
+当前套餐只含个股实时（`rt_k`、`rt_min`、`stk_limit`），指数由腾讯、板块由同花顺作首要源（2026-09-28 正式口径，
+加购后再评估切回）。本地预算由运行环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、
 `YM_STOCKTODAY_PER_DAY=18000`，详见 StockToday 文档。
 
 ## 验收时必须读的字段

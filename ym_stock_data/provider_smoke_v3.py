@@ -100,6 +100,8 @@ _EXPLICIT_ONLY_CASE_PAIRS = frozenset({
     ("pytdx", "stock_kline"),
     ("pytdx_breadth", "review_sentiment"),
     ("pytdx_index", "index_kline"),
+    ("stocktoday", "realtime_market"),
+    ("stocktoday", "index_intraday_compare"),
     ("eastmoney_index", "index_intraday_compare"),
     ("sina_index", "index_intraday_compare"),
     ("sina", "stock_kline"),

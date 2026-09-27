@@ -63,8 +63,9 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 
 ## 来源、时效与降级
 
-StockToday 是唯一核心源，腾讯是唯一降级后备，其他来源不在默认路由；
-问财只服务显式 `query` 研究。判断时效读 `_meta.data_as_of` 与 `_meta.freshness`
+StockToday 是个股与全市场指标的核心源，腾讯是个股降级后备，其他来源不在默认路由；
+当前 StockToday 套餐只含个股实时，大盘 `realtime_market` 与 `index_intraday_compare`
+由腾讯作首要源、盘中板块由同花顺提供（正式口径，不是降级）。问财只服务显式 `query` 研究。判断时效读 `_meta.data_as_of` 与 `_meta.freshness`
 （盘中 ≤180 秒 fresh、180–600 秒 aging、>600 秒 stale），不要用 `fetched_at` 当行情时间；
 StockToday 一两分钟的延迟是正常值，带时间引用即可。个股行上 `source=tencent` 表示该代码
 由腾讯逐只补（见 `_meta.filled_by_fallback`）。指标定义只看 Vault《交易指标术语表》，

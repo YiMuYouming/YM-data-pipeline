@@ -22,8 +22,8 @@ _TRADE_USAGE = "辅助，不单独触发交易"
 
 _REALTIME_POLL = RouteSpec(
     intent="realtime_market",
-    providers=("stocktoday", "tencent"),
-    data_scope="A股三大指数、成交额与涨跌家数",
+    providers=("tencent",),
+    data_scope="A股三大指数、成交额与涨跌家数；当前 StockToday 套餐不含指数实时，腾讯为首要源",
     trade_usage=_TRADE_USAGE,
     max_age_sec=600,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -38,8 +38,8 @@ _STOCK_SNAPSHOT_POLL = RouteSpec(
 )
 _INDEX_INTRADAY_POLL = RouteSpec(
     intent="index_intraday_compare",
-    providers=("stocktoday", "tencent"),
-    data_scope="三大指数分钟量价与同时间段参考比较",
+    providers=("tencent",),
+    data_scope="三大指数分钟量价与同时间段参考比较；当前 StockToday 套餐不含指数分钟，腾讯为首要源",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -62,8 +62,8 @@ _ROUTES = {
     ),
     "realtime_market": RouteSpec(
         intent="realtime_market",
-        providers=("stocktoday", "tencent"),
-        data_scope="A股三大指数、成交额与涨跌家数",
+        providers=("tencent",),
+        data_scope="A股三大指数、成交额与涨跌家数；当前 StockToday 套餐不含指数实时，腾讯为首要源",
         trade_usage=_TRADE_USAGE,
         max_age_sec=600,
         empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -147,8 +147,8 @@ _ROUTES = {
     ),
     "index_intraday_compare": RouteSpec(
         intent="index_intraday_compare",
-        providers=("stocktoday", "tencent"),
-        data_scope="三大指数分钟量价与同时间段参考比较",
+        providers=("tencent",),
+        data_scope="三大指数分钟量价与同时间段参考比较；当前 StockToday 套餐不含指数分钟，腾讯为首要源",
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
         empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -290,6 +290,19 @@ def route_for(intent: str, params: dict) -> RouteSpec:
         if period in {"day", "daily", "week", "weekly", "month", "monthly"}:
             return _STOCK_KLINE_DAILY
         return _STOCK_KLINE_MINUTE
+    if intent == "index_kline":
+        period = str(params.get("period", "daily")).lower()
+        if period not in {"day", "daily", "week", "weekly", "month", "monthly"}:
+            # idx_mins is outside the current StockToday plan.
+            base = _ROUTES["index_kline"]
+            return RouteSpec(
+                intent=base.intent,
+                providers=("eastmoney_index", "sina_index"),
+                data_scope=base.data_scope,
+                trade_usage=base.trade_usage,
+                max_age_sec=base.max_age_sec,
+                empty_policy=base.empty_policy,
+            )
     try:
         return _ROUTES[intent]
     except KeyError as exc:

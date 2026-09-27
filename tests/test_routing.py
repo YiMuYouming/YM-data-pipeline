@@ -47,11 +47,18 @@ class RoutingTests(unittest.TestCase):
     def test_wind_is_not_a_realtime_market_fallback(self):
         self.assertNotIn("wind_mcp", route_for("realtime_market", {}).providers)
 
+    def test_index_minutes_skip_the_stocktoday_plan_gap(self):
+        self.assertEqual(("stocktoday", "eastmoney_index", "sina_index"),
+                         route_for("index_kline", {"index_code": "000001.SH"}).providers)
+        self.assertEqual(("eastmoney_index", "sina_index"),
+                         route_for("index_kline", {"index_code": "000001.SH", "period": "15m"}).providers)
+
     def test_stocktoday_first_and_tencent_is_the_only_quote_fallback(self):
         for params in ({}, {"use_case": "realtime_poll"}):
             with self.subTest(params=params):
+                # Index quotes are outside the StockToday plan: Tencent is primary.
                 self.assertEqual(
-                    ("stocktoday", "tencent"),
+                    ("tencent",),
                     route_for("realtime_market", params).providers,
                 )
                 self.assertEqual(

@@ -49,9 +49,9 @@ class TencentIndexMinuteTests(unittest.TestCase):
         self.assertTrue(rows[-1]["_cum"])
         self.assertEqual("tencent", result["source"])
 
-    def test_index_intraday_compare_route_is_stocktoday_then_tencent(self):
+    def test_index_intraday_compare_route_is_tencent_primary(self):
         for params in ({"period": "15m"}, {"period": "15m", "use_case": "realtime_poll"}):
-            self.assertEqual(("stocktoday", "tencent"), route_for("index_intraday_compare", params).providers)
+            self.assertEqual(("tencent",), route_for("index_intraday_compare", params).providers)
 
 
 if __name__ == "__main__":

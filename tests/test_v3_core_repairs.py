@@ -117,13 +117,11 @@ class CoreRepairTests(unittest.TestCase):
             ):
                 return query(intent, **params)
 
-    def test_realtime_poll_profile_is_stocktoday_then_tencent_without_exposing_provider_source(self):
+    def test_realtime_poll_profile_is_tencent_indices_and_stocktoday_stocks(self):
+        # Index quotes are outside the StockToday plan: Tencent is primary.
+        self.assertEqual(("tencent",), route_for("realtime_market", {}).providers)
         self.assertEqual(
-            ("stocktoday", "tencent"),
-            route_for("realtime_market", {}).providers,
-        )
-        self.assertEqual(
-            ("stocktoday", "tencent"),
+            ("tencent",),
             route_for("realtime_market", {"use_case": "realtime_poll"}).providers,
         )
         self.assertEqual(
@@ -208,7 +206,7 @@ class CoreRepairTests(unittest.TestCase):
             ).providers,
         )
         self.assertEqual(
-            ("stocktoday", "tencent"),
+            ("tencent",),
             route_for(
                 "index_intraday_compare",
                 {"period": "15m", "use_case": "realtime_poll"},
@@ -264,10 +262,10 @@ class CoreRepairTests(unittest.TestCase):
         self.assertEqual("000001.SH", provider.calls[0][1]["codes"][0])
         self.assertEqual("20260922", provider.calls[0][1]["start_date"])
 
-    def test_index_minute_stocktoday_failure_reaches_eastmoney_before_pytdx(self):
+    def test_index_minute_starts_at_eastmoney_and_never_reaches_pytdx(self):
         stocktoday = _FakeProvider(
             "stocktoday",
-            [_outcome("stocktoday", "provider_error", error_code="UPSTREAM")],
+            [_outcome("stocktoday", "provider_error", error_code="SHOULD_NOT_RUN")],
         )
         eastmoney = _FakeProvider(
             "eastmoney_index",
@@ -293,9 +291,10 @@ class CoreRepairTests(unittest.TestCase):
 
         self.assertEqual("eastmoney_index", result["_meta"]["provider_used"])
         self.assertEqual(
-            ["provider_error", "success"],
+            ["success"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
+        self.assertFalse(stocktoday.calls)
         self.assertFalse(pytdx_provider.calls)
 
     def test_index_minute_eastmoney_failure_reaches_sina_before_pytdx(self):
@@ -323,10 +322,10 @@ class CoreRepairTests(unittest.TestCase):
 
         self.assertEqual("sina_index", result["_meta"]["provider_used"])
         self.assertEqual(
-            ["provider_error", "provider_error", "success"],
+            ["provider_error", "success"],
             [attempt["status"] for attempt in result["_meta"]["attempts"]],
         )
-        self.assertEqual(1, len(stocktoday.calls))
+        self.assertFalse(stocktoday.calls)
 
     def test_eastmoney_index_minute_adapter_converts_hands_to_shares(self):
         response = Mock()
@@ -557,16 +556,15 @@ class CoreRepairTests(unittest.TestCase):
         self.assertEqual("ths_industry", result["_meta"]["provider_used"])
         self.assertEqual("success", result["_meta"]["status"])
 
-    def test_query_realtime_compare_rejects_incomplete_stocktoday_shape_then_tries_tencent(self):
+    def test_query_realtime_compare_rejects_incomplete_shape(self):
         compare_row = {"t": "09:35", "chg": 1.0, "vol": 100, "volRatio": 1.2,
                        "amount": 1000, "yesterdayAmt": 900}
-        primary = _FakeProvider("stocktoday", [_outcome("stocktoday", "success", {"items": [compare_row]})])
-        fallback = _FakeProvider("tencent", [_outcome("tencent", "provider_error", error_code="UPSTREAM")])
+        primary = _FakeProvider("tencent", [_outcome("tencent", "success", {"items": [compare_row]})])
         result = self._run_with_fakes(
-            "index_intraday_compare", {"stocktoday": primary, "tencent": fallback}, period="15m",
+            "index_intraday_compare", {"tencent": primary}, period="15m",
         )
         self.assertIsNone(result["_meta"]["provider_used"])
-        self.assertEqual(["quality_failure", "provider_error"],
+        self.assertEqual(["quality_failure"],
                          [attempt["status"] for attempt in result["_meta"]["attempts"]])
         self.assertEqual("QUALITY_COMPARE_INCOMPLETE", result["_meta"]["attempts"][0]["error_code"])
 
@@ -913,23 +911,16 @@ class CoreRepairTests(unittest.TestCase):
             self.assertEqual(7, configured_budget.per_day)
             self.assertEqual(9, configured_budget.per_minute)
 
-    def test_quality_gate_rejects_incomplete_three_index_result_and_falls_back(self):
+    def test_quality_gate_rejects_incomplete_three_index_result(self):
         primary = _FakeProvider(
-            "stocktoday",
-            [_outcome("stocktoday", "success", {"上证指数": 3200.0})],
-        )
-        fallback = _FakeProvider(
             "tencent",
-            [_outcome("tencent", "success", _full_index())],
+            [_outcome("tencent", "success", {"上证指数": 3200.0})],
         )
-        result = self._run_with_fakes(
-            "realtime_market",
-            {"stocktoday": primary, "tencent": fallback},
-        )
+        result = self._run_with_fakes("realtime_market", {"tencent": primary})
 
-        self.assertEqual("tencent", result["_meta"]["source"])
-        self.assertEqual("quality_failure", result["_meta"]["attempts"][0]["status"])
-        self.assertEqual("success", result["_meta"]["attempts"][1]["status"])
+        self.assertEqual("error", result["_meta"]["status"])
+        self.assertEqual(["quality_failure"],
+                         [attempt["status"] for attempt in result["_meta"]["attempts"]])
 
     def test_partial_stocktoday_snapshot_is_filled_per_code_from_tencent(self):
         # REPAIR_PLAN §3.2: 003026-style vendor gaps are filled code by code;

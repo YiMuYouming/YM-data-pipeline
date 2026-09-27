@@ -21,6 +21,15 @@ from ym_stock_data.provider_policy import CompiledPolicy
 SECRET = "synthetic-stocktoday-test-token"
 
 
+def _stocktoday_market_policy():
+    """The route used if the plan ever includes index quotes again."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    route = replace(route_for("realtime_market", {}), providers=("stocktoday", "tencent"))
+    return SimpleNamespace(route=lambda _intent, _params: route)
+
+
 class StockTodayTests(unittest.TestCase):
     def setUp(self):
         from ym_stock_data.providers.stocktoday import StockTodayProvider
@@ -147,11 +156,14 @@ class StockTodayTests(unittest.TestCase):
             ],
         }
         fallback = Mock()
+        # Index quotes default to Tencent (outside the StockToday plan); the
+        # adapter keeps its freshness rules for when the plan route returns.
         with patch.object(api, "_now_shanghai", return_value=now):
             result = api._query_with(
                 "realtime_market", {},
                 provider_loader=lambda name: self.provider if name == "stocktoday" else fallback,
                 state_loader=lambda: self.state,
+                policy_loader=_stocktoday_market_policy,
             )
         self.assertEqual("stocktoday", result["_meta"]["provider_used"], result["_meta"]["attempts"])
         self.assertEqual("fresh", result["data"]["_stocktoday"]["status"])
@@ -190,6 +202,7 @@ class StockTodayTests(unittest.TestCase):
                 "realtime_market", {},
                 provider_loader=lambda name: self.provider if name == "stocktoday" else fallback,
                 state_loader=lambda: self.state,
+                policy_loader=_stocktoday_market_policy,
             )
         self.assertEqual("tencent", result["_meta"]["provider_used"])
         self.assertEqual("QUALITY_STALE", result["_meta"]["attempts"][0]["error_code"])
@@ -380,7 +393,7 @@ class StockTodayTests(unittest.TestCase):
         item = capability_manifest()["providers"]["stocktoday"]
         self.assertTrue(item["registered"])
         self.assertTrue(item["default_route"])
-        self.assertIn("realtime_market", item["automatic_fallback_intents"])
+        self.assertNotIn("realtime_market", item["automatic_fallback_intents"])
         self.assertIn("stock_snapshot", item["automatic_fallback_intents"])
         self.assertIn("stock_kline", item["automatic_fallback_intents"])
 
@@ -565,7 +578,7 @@ class StockTodayTests(unittest.TestCase):
     def test_default_routes_stay_free_and_new_source_is_opt_in(self):
         self.assertEqual(("stocktoday",), route_for("stock_snapshot", {"source": "stocktoday"}).providers)
         self.assertEqual("stocktoday", route_for("stock_snapshot", {}).providers[0])
-        self.assertEqual("stocktoday", route_for("realtime_market", {}).providers[0])
+        self.assertEqual(("tencent",), route_for("realtime_market", {}).providers)
         self.assertEqual("stocktoday", route_for("stock_kline", {"period": "daily"}).providers[0])
         self.assertNotIn("stocktoday", route_for("review_sentiment", {"query": "筛选"}).providers)
         with self.assertRaises(ValueError):
@@ -635,13 +648,12 @@ class StockTodayTests(unittest.TestCase):
     def test_index_minute_date_range_uses_stocktoday_datetime_window(self):
         self.response.json.return_value = {"code": 0, "data": [], "total": 0}
 
-        query(
-            "index_kline",
-            index_code="000001.SH",
-            period="5m",
-            start_date="20260922",
-            end_date="20260922",
-        )
+        # Adapter check only: the default index-minute route skips idx_mins
+        # while it is outside the StockToday plan.
+        self.provider.call("index_kline", {
+            "index_code": "000001.SH", "period": "5m",
+            "start_date": "20260922", "end_date": "20260922",
+        })
 
         payload = self.transport.call_args.kwargs["json"]
         self.assertEqual("idx_mins", payload["api_name"])

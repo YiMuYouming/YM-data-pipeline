@@ -149,13 +149,15 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 选择 provider、拼接 fallback、调用 vendor SDK 或任意 URL。
 
 路由按用途固定（2026-09-27 起）：**StockToday 是唯一核心源，腾讯是唯一降级后备**。
-`realtime_market`、`stock_snapshot`（含 `use_case="realtime_poll"`）和日/周/月
+`stock_snapshot`（含 `use_case="realtime_poll"`）和日/周/月
 `stock_kline` 为 StockToday → 腾讯；分钟 K 线、`market_limit_state`、`market_limit_board`、
 `market_hot_rank`、`market_intraday_state` 和默认 `review_sentiment` 只有 StockToday。
 东方财富、新浪、PyTDX 与 TDX 退出默认路由，适配器只保留显式诊断；问财只服务带
-`query` 的显式研究查询。当前 StockToday 套餐不含 `rt_idx_k`、`rt_sw_k`、`idx_mins`
-（上游答复“龙虾套餐专属”），所以指数实时由腾讯提供；盘中板块（`sector_index`）、
-行业资金流、北向和旧热榜暂保留原链（三指数分钟比较已改 StockToday → 腾讯），见 [工作区总览](docs/README.md)。
+`query` 的显式研究查询。**当前 StockToday 套餐只含个股实时**（`rt_k`、`rt_min`、`stk_limit`），
+不含指数/板块实时（`rt_idx_k`、`rt_idx_min`、`rt_idx_tick`、`rt_sw_k`、`idx_mins`，上游答复“龙虾套餐专属”）。
+2026-09-28 弈沐确认暂不加购，正式口径：大盘 `realtime_market` 与三指数分钟比较
+`index_intraday_compare` 以腾讯为首要源，指数分钟 K 线从东方财富指数起，盘中板块/行业由同花顺
+（`ths_industry`）提供，路由不再尝试这些 StockToday 接口；北向和旧热榜暂保留原链，见 [工作区总览](docs/README.md)。
 异常、超时、质量不合格及允许继续的合法空集按对应 RouteSpec 尝试后备，并保留降级事实；
 消费者不得自行改序。
 
@@ -200,7 +202,7 @@ TDX 自 2026-09-27 起不在任何默认路由；此前 TDX route provider 只�
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`）；已退出默认路由 | 否 |
 | `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在 StockToday 后；`index_intraday_compare` 仅显式诊断 | 允许；只按对应 RouteSpec 次序 |
 | `eastmoney_stock` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（日/周/月 `stock_kline`，保持 `none` / `qfq` 复权语义）；已退出默认路由 | 否 |
-| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 唯一降级后备：`realtime_market`、`stock_snapshot`（含逐只补 StockToday 缺票）、日/周/月 `stock_kline`、`index_intraday_compare`（分时累计量额聚合） | 允许；只在 StockToday 失败、缺代码或超时后 |
+| `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 首要源：`realtime_market`、`index_intraday_compare`（分时累计量额聚合；StockToday 套餐不含指数实时）；降级后备：`stock_snapshot`（含逐只补 StockToday 缺票）、日/周/月 `stock_kline` | 个股只在 StockToday 失败、缺代码或超时后 |
 | `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（分钟 `stock_kline`）；已退出默认路由 | 否 |
 | `sina_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在东财指数之后；`index_intraday_compare` 仅显式诊断，仅支持分钟周期 | 允许；只按对应 RouteSpec 次序 |
 | `ths_industry` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `sector_index` 唯一源；`industry_flow` 默认链后备，保留价格/表现语义 | `industry_flow` 仅按对应 RouteSpec 次序 |
@@ -226,7 +228,7 @@ TDX 自 2026-09-27 起不在任何默认路由；此前 TDX route provider 只�
 | `wind_screener` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `review_sentiment` 第三源；仅 `stock_data.search_stocks` | 允许；前两个自然语言 screener 失败或合法空集后 |
 | `wind_mcp` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | 显式 `wind_enrichment` 唯一源 | 否；只响应显式调用 |
 | `wind_documents` | official CLI；由 CLI 管理配置 | `configured_unverified` 或 runtime 错误 | `filings` 第二源 | 允许；仅在 `cninfo` 失败后 |
-| `stocktoday` | 独立 API key；macOS Keychain；`./ym-data auth set-stocktoday --stdin` | `configured_unverified` / `auth_missing` / `unavailable` | 唯一核心源：`realtime_market`、`stock_snapshot`、日周月/分钟 `stock_kline`、`market_limit_state`、`market_limit_board`、`market_hot_rank`、`market_intraday_state`、默认 `review_sentiment`、`index_kline`、`index_intraday_compare`、`industry_flow`、`fund_flow`、`northbound_flow`、`legacy_hot_rank`、`stocktoday_data`；套餐不含的接口（`rt_idx_k` 等）30 分钟内不再调用（套餐升级后半小时内自动恢复） | 失败、缺代码或超时后只按 RouteSpec 交给腾讯；全市场指标无后备，见 [接入说明](docs/STOCKTODAY.md) |
+| `stocktoday` | 独立 API key；macOS Keychain；`./ym-data auth set-stocktoday --stdin` | `configured_unverified` / `auth_missing` / `unavailable` | 核心源（个股与全市场指标）：`stock_snapshot`、日周月/分钟 `stock_kline`、`market_limit_state`、`market_limit_board`、`market_hot_rank`、`market_intraday_state`、默认 `review_sentiment`、日/周/月 `index_kline`、`industry_flow`、`fund_flow`、`northbound_flow`、`legacy_hot_rank`、`stocktoday_data`；套餐不含的接口（`rt_idx_k` 等）30 分钟内不再调用（套餐升级后半小时内自动恢复） | 失败、缺代码或超时后只按 RouteSpec 交给腾讯；全市场指标无后备，见 [接入说明](docs/STOCKTODAY.md) |
 
 `setup pywencai` 只有显式执行时才写 `~/.ym-stock-data`，固定使用 Python 3.12 兼容环境。setup 返回的 `ready` 仅表示 runtime installed，不是 doctor 在线状态，也不证明在线。OpenAPI Key 的优先级为当前进程环境、管道专用 macOS Keychain、旧 profile 兼容读取；不得写入仓库或日志。TDX 首次默认把本管道自有凭据保存到 macOS Keychain；只有显式 `--store file` 才使用目录 `0700`、文件和锁 `0600` 的原子文件 fallback，`--file-path` 可指定自有文件位置。成功登录或弈沐明确授权的一次性受控迁入后，后续 canonical query、doctor、smoke 和无 override 的 `auth status-tdx` 只使用本管道安全存储；从 WorkBuddy 迁入时必须记录 `imported_from=workbuddy`。运行时代码不会扫描、读取或持续同步 WorkBuddy credential 目录。失败、取消或超时不会切换。selector 与凭据文件都拒绝 symlink、宽权限和非当前用户 ownership，任何输出都不包含自定义路径或凭据。Wind 鉴权由 official CLI 自行判断，管道只映射脱敏错误码。
 

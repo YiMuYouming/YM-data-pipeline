@@ -190,6 +190,9 @@ ENTITLEMENT_PROBES = (
     ("rt_min", {"ts_code": "600519.SH", "freq": "1MIN"}),
     ("stk_limit", {"ts_code": "600519.SH"}),
 )
+# The current plan covers stock realtime only; indices come from Tencent and
+# sectors from THS, so a refusal of the other probes is expected, not an error.
+REQUIRED_ENTITLEMENTS = frozenset({"rt_k", "rt_min", "stk_limit"})
 
 
 def entitlement_report(provider=None, *, refresh=False) -> dict:
@@ -204,14 +207,18 @@ def entitlement_report(provider=None, *, refresh=False) -> dict:
     for api_name, params in ENTITLEMENT_PROBES:
         outcome = provider._request_table(api_name, params)
         prov = outcome.provenance or {}
+        required = api_name in REQUIRED_ENTITLEMENTS
         state = ("entitled" if outcome.status in {"success", "empty"}
-                 else "not_entitled" if outcome.error_code == "PLAN_NOT_ENTITLED" else "error")
-        rows.append({"api_name": api_name, "state": state, "status": outcome.status,
+                 else "error" if outcome.error_code != "PLAN_NOT_ENTITLED"
+                 else "not_entitled" if required else "outside_plan")
+        rows.append({"api_name": api_name, "required": required, "state": state, "status": outcome.status,
                      "error_code": outcome.error_code, "http_status": prov.get("http_status"),
                      "upstream_code": prov.get("upstream_code"),
                      "rows": len((outcome.data or {}).get("items") or []) if isinstance(outcome.data, dict) else 0})
+    required_ok = all(row["state"] == "entitled" for row in rows if row["required"])
     return {"token_fingerprint": fp, "refreshed": bool(refresh), "checked_at":
-            datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds"), "apis": rows}
+            datetime.now(TZ_SHANGHAI).isoformat(timespec="seconds"), "required_ok": required_ok,
+            "apis": rows}
 
 
 def validate_dataset(params: dict) -> None:

@@ -26,9 +26,10 @@
 ## 公共查询入口
 
 标准化行情由 canonical RouteSpec 按用途自动选择来源。默认 Agent 查询的
-`realtime_market`、`stock_snapshot`、日/周/月/分钟 `stock_kline`、
+`stock_snapshot`、日/周/月/分钟 `stock_kline`、
 `market_limit_state`、`market_limit_board`、`market_hot_rank`、`market_intraday_state`
-和默认 `review_sentiment` 以 StockToday 为第一源（含 `realtime_poll`），腾讯是唯一后备；
+和默认 `review_sentiment` 以 StockToday 为第一源（含 `realtime_poll`），腾讯是个股后备；
+大盘 `realtime_market` 与 `index_intraday_compare` 由腾讯作首要源（套餐不含指数实时）；
 当前路由与发布边界见 [渠道工作区总览](README.md)。异常、超时或允许继续的合法空集时，
 只有存在语义等价后备的 intent 才按固定顺序降级。长尾接口使用
 `stocktoday_data`，保留 provider-native 字段：
@@ -78,9 +79,12 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 - `token_info` 在本网关返回 HTTP 404“接口不存在”，无法用它核对套餐和额度；
   额度按上段供应商文档执行，待弈沐确认实际购买档位。
 - `rt_idx_k`、`rt_idx_tick`、`rt_sw_k`、`idx_mins` 返回“该接口为龙虾套餐专属”，当前套餐不含；
-  适配器记为 `PLAN_NOT_ENTITLED`，30 分钟内不再调用，指数实时由腾讯提供。
+  2026-09-28 弈沐确认暂不加购：默认路由不再调用这些接口，指数由腾讯、板块由同花顺作首要源；
+  显式调用时适配器记为 `PLAN_NOT_ENTITLED`，30 分钟内不再调用。
   拒绝记录按 token 指纹（SHA-256 前 8 位）分键，换 token 自动失效；`./ym-data stocktoday entitlement --refresh`
   绕过缓存逐个探测 `rt_idx_k`、`rt_idx_min`、`rt_idx_tick`、`rt_sw_k`、`idx_mins`、`rt_k`、`rt_min`、`stk_limit`。
+  开通检查只要求 `rt_k`、`rt_min`、`stk_limit`（`required_ok`，决定退出码）；其余五个拒绝记为
+  `outside_plan`（套餐外，预期），若某天变成 `entitled` 说明已加购，可评估切回。
 - `rt_k` 通配 `6*.SH`、`0*.SZ`、`3*.SZ`、`*.BJ` 四批覆盖 5527 只，科创板每只重复一行（按
   `updated_at` 取最新）；003xxx 共 42 只任何写法都不返回，个股报价由腾讯逐只补。
 - 休市日 `rt_k` 把上一交易日行情盖成当天日期（9-25 行 = 9-24 收盘），管道按交易日历改回，

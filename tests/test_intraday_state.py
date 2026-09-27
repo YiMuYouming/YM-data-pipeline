@@ -256,12 +256,32 @@ class EntitlementScopeTests(unittest.TestCase):
         provider = self.provider("synthetic-plan-token", transport)
         provider._request_table("rt_idx_k", {"ts_code": "000001.SH"})
         cached = entitlement_report(provider)
-        self.assertEqual("not_entitled", cached["apis"][0]["state"])
+        # Index realtime is outside the current plan: expected, not a failure.
+        self.assertEqual("outside_plan", cached["apis"][0]["state"])
         calls_before = transport.call_count
         refreshed = entitlement_report(provider, refresh=True)
         self.assertEqual(calls_before + len(ENTITLEMENT_PROBES), transport.call_count)
         self.assertEqual(8, len(refreshed["token_fingerprint"]))
         self.assertNotIn("synthetic", str(refreshed))
+
+    def test_only_stock_realtime_apis_are_required(self):
+        from ym_stock_data.providers.stocktoday import entitlement_report
+
+        ok = Mock(status_code=200)
+        ok.json.return_value = {"code": 0, "data": [{"ts_code": "600519.SH", "close": 1.0}]}
+        transport = Mock(side_effect=lambda *a, **kw: ok if kw["json"]["api_name"] in {"rt_k", "rt_min", "stk_limit"}
+                         else self.refused)
+        report = entitlement_report(self.provider("synthetic-stock-plan", transport))
+        self.assertTrue(report["required_ok"])
+        states = {row["api_name"]: row["state"] for row in report["apis"]}
+        self.assertEqual("outside_plan", states["rt_idx_k"])
+        self.assertEqual("entitled", states["rt_k"])
+
+        transport.side_effect = None
+        transport.return_value = self.refused
+        report = entitlement_report(self.provider("synthetic-no-stock-plan", transport))
+        self.assertFalse(report["required_ok"])
+        self.assertEqual("not_entitled", {row["api_name"]: row["state"] for row in report["apis"]}["rt_k"])
 
 
 class PreviousLadderTests(unittest.TestCase):

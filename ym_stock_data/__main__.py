@@ -536,11 +536,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.as_json:
                 _print_json(report)
             else:
-                print(f'token={report["token_fingerprint"]} refreshed={report["refreshed"]} at={report["checked_at"]}')
+                print(f'token={report["token_fingerprint"]} refreshed={report["refreshed"]} '
+                      f'at={report["checked_at"]} required_ok={report["required_ok"]}')
                 for row in report["apis"]:
                     print(f'{row["api_name"]}: {row["state"]} ({row["error_code"] or row["status"]}, '
                           f'http={row["http_status"]}, upstream={row["upstream_code"]}, rows={row["rows"]})')
-            return 0 if all(row["state"] != "error" for row in report["apis"]) else 2
+            return 0 if report["required_ok"] else 2
         if args.stocktoday_command == "audit-status":
             try:
                 _print_json(audit_status(args.receipt))

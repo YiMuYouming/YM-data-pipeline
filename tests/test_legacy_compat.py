@@ -348,7 +348,7 @@ class LegacyCompatibilityTests(unittest.TestCase):
             "news": ("news", {}, {"items": [{"title": "新闻"}]}, "items"),
         }
         first_providers = {
-            "realtime_market": "stocktoday",
+            "realtime_market": "tencent",
             "stock_snapshot": "stocktoday",
             "stock_kline": "stocktoday",
             "research": "eastmoney_research",

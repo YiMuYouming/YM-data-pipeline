@@ -45,13 +45,6 @@ def outcome(
     )
 
 
-def full_index_data():
-    return {
-        "上证指数": 3200.0,
-        "深证指数": 10000.0,
-        "创业指数": 2000.0,
-    }
-
 
 def full_snapshot_data(*codes):
     return {
@@ -129,14 +122,14 @@ class PublicApiTests(unittest.TestCase):
     def test_success_stops_the_chain(self):
         first = FakeProvider(
             "stocktoday",
-            [outcome("stocktoday", "success", data=full_index_data())],
+            [outcome("stocktoday", "success", data=full_snapshot_data("600519"))],
         )
         second = FakeProvider(
             "tencent",
             [AssertionError("second provider must not run")],
         )
         with self.provider_patch({"stocktoday": first, "tencent": second}):
-            result = query("realtime_market")
+            result = query("stock_snapshot", codes=["600519"])
 
         self.assertEqual("success", result["_meta"]["status"])
         self.assertEqual("stocktoday", result["_meta"]["provider_used"])
@@ -145,11 +138,6 @@ class PublicApiTests(unittest.TestCase):
 
     def test_stocktoday_primary_success_is_reported_as_primary(self):
         cases = [
-            (
-                "realtime_market",
-                {},
-                {"上证指数": 3200, "深证指数": 10000, "创业指数": 2000},
-            ),
             (
                 "stock_snapshot",
                 {"codes": ["600519"]},
@@ -186,11 +174,6 @@ class PublicApiTests(unittest.TestCase):
 
     def test_stocktoday_error_or_empty_reaches_existing_source_as_degraded(self):
         cases = [
-            (
-                "realtime_market",
-                {},
-                full_index_data(),
-            ),
             (
                 "stock_snapshot",
                 {"codes": ["600519"]},
@@ -720,14 +703,14 @@ class PublicApiTests(unittest.TestCase):
     def test_route_external_provider_claim_is_rejected(self):
         stocktoday = FakeProvider(
             "stocktoday",
-            [outcome("wind_mcp", "success", data=full_index_data())],
+            [outcome("wind_mcp", "success", data=full_snapshot_data("600519"))],
         )
         fallback = FakeProvider(
             "tencent",
-            [outcome("tencent", "success", data=full_index_data())],
+            [outcome("tencent", "success", data=full_snapshot_data("600519"))],
         )
         with self.provider_patch({"stocktoday": stocktoday, "tencent": fallback}):
-            result = query("realtime_market")
+            result = query("stock_snapshot", codes=["600519"])
 
         self.assertEqual("degraded", result["_meta"]["status"])
         self.assertEqual("tencent", result["_meta"]["provider_used"])
@@ -809,10 +792,10 @@ class PublicApiTests(unittest.TestCase):
                 {
                     "stocktoday": FakeProvider(
                         "stocktoday",
-                        [outcome("stocktoday", "success", data=full_index_data())],
+                        [outcome("stocktoday", "success", data=full_snapshot_data("600519"))],
                     )
                 },
-                ("realtime_market", {}),
+                ("stock_snapshot", {"codes": ["600519"]}),
             ),
             (
                 "empty",
@@ -854,7 +837,7 @@ class PublicApiTests(unittest.TestCase):
         provider = FakeProvider("stocktoday", [KeyboardInterrupt()])
         with self.provider_patch({"stocktoday": provider}):
             with self.assertRaises(KeyboardInterrupt):
-                query("realtime_market")
+                query("stock_snapshot", codes=["600519"])
 
 
 if __name__ == "__main__":

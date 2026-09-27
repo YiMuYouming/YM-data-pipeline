@@ -3,12 +3,15 @@
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ym_stock_data import api
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.routing import route_for
 from ym_stock_data.sources import eastmoney_index
 
 
@@ -41,10 +44,16 @@ class CompareBudgetTests(unittest.TestCase):
         self.state = ProviderState(Path(self.tmp.name) / "providers.sqlite3")
 
     def _query(self, providers):
+        # The default route is Tencent-only while the StockToday plan lacks
+        # index minutes; the budget/breaker mechanics still apply to any chain.
+        route = replace(route_for("index_intraday_compare", {"period": "15m"}),
+                        providers=("stocktoday", "tencent"))
+        policy = SimpleNamespace(route=lambda _intent, _params: route)
         return api._query_with(
             "index_intraday_compare", {"period": "15m"},
             provider_loader=lambda name: providers[name],
             state_loader=lambda: self.state,
+            policy_loader=lambda: policy,
         )
 
     def test_total_budget_and_fixed_fallback(self):
