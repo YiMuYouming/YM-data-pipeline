@@ -241,7 +241,11 @@ def build(provider, *, now: datetime | None = None) -> dict:
         limit = limits.get(ts_code)
         state = None
         if limit and not indicators.is_st(row.get("name")):
-            state = indicators.limit_state(close, _number(row.get("high")), limit["up"], limit["down"])
+            state = indicators.limit_state(
+                close, _number(row.get("high")), limit["up"], limit["down"],
+                ask=(_number(row.get("ask_price1")), _number(row.get("ask_volume1"))),
+                bid=(_number(row.get("bid_price1")), _number(row.get("bid_volume1"))),
+            )
         if state:
             states[code] = state
             detail[code] = {"code": code, "name": str(row.get("name") or "").strip(),

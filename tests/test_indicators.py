@@ -46,6 +46,14 @@ class IndicatorFormulaTests(unittest.TestCase):
         self.assertIsNone(indicators.limit_state(10.8, 10.9, 11.0, 9.0))
         self.assertIsNone(indicators.limit_state(None, None, 11.0, 9.0))
 
+    def test_seal_needs_an_empty_opposite_side_when_the_book_is_known(self):
+        # 001317 on 2026-09-24: close at the limit but sell orders queued → broken.
+        self.assertEqual("broken", indicators.limit_state(65.3, 65.3, 65.3, 53.44, ask=(65.3, 1200), bid=(65.29, 300)))
+        self.assertEqual("up", indicators.limit_state(65.3, 65.3, 65.3, 53.44, ask=(0, 0), bid=(65.3, 90000)))
+        self.assertEqual("up", indicators.limit_state(65.3, 65.3, 65.3, 53.44, ask=(None, 0), bid=(65.3, 1)))
+        self.assertEqual("down", indicators.limit_state(9.0, 9.5, 11.0, 9.0, ask=(9.0, 500), bid=(0, 0)))
+        self.assertIsNone(indicators.limit_state(9.0, 9.5, 11.0, 9.0, ask=(9.0, 500), bid=(9.0, 10)))
+
     def test_tiered_promotion_counts_only_next_board_seals(self):
         previous = {"a": 1, "b": 1, "c": 2, "d": 2, "e": 3, "f": 5}
         current = {"a": 2, "c": 3, "e": 4, "f": 6, "x": 1}

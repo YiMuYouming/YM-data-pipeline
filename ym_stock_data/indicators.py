@@ -88,14 +88,32 @@ def emotion_band(score: float | None) -> str | None:
     return _band(score, "emotion")
 
 
-def limit_state(price, high, up_limit, down_limit) -> str | None:
-    """Intraday limit state from exchange limit prices: up / down / broken."""
+def _side_empty(price, volume) -> bool | None:
+    """True when one order-book side is empty; None when the book is not given."""
+
+    if price is None and volume is None:
+        return None
+    return not price or not volume
+
+
+def limit_state(price, high, up_limit, down_limit, *, ask=None, bid=None) -> str | None:
+    """Intraday limit state from exchange limit prices: up / down / broken.
+
+    ``ask`` / ``bid`` are (price1, volume1).  A stock at the limit price is
+    sealed only when the opposite side is empty (no ask at limit-up, no bid at
+    limit-down); at the limit with orders still queued it counts as broken.
+    Without an order book the price alone decides (post-close pools).
+    """
 
     if price is None:
         return None
-    if up_limit and abs(price - up_limit) <= _PRICE_TOLERANCE:
+    at_up = bool(up_limit) and abs(price - up_limit) <= _PRICE_TOLERANCE
+    at_down = bool(down_limit) and abs(price - down_limit) <= _PRICE_TOLERANCE
+    ask_empty = _side_empty(*ask) if ask is not None else None
+    bid_empty = _side_empty(*bid) if bid is not None else None
+    if at_up and ask_empty is not False:
         return "up"
-    if down_limit and abs(price - down_limit) <= _PRICE_TOLERANCE:
+    if at_down and bid_empty is not False:
         return "down"
     if up_limit and high is not None and high >= up_limit - _PRICE_TOLERANCE:
         return "broken"

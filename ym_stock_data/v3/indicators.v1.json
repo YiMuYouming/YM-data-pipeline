@@ -58,11 +58,16 @@
       "key": "limit_counts",
       "name": "涨停家数、跌停家数",
       "glossary_section": "1.4",
-      "formula": "盘中：现价等于 stk_limit 涨停价（跌停价）；盘后：limit_list_d 涨停（跌停）池",
+      "formula": "盘中：现价等于 stk_limit 涨停价且卖一为空（卖一价为 0/空或卖一量为 0）为封涨停；现价等于跌停价且买一为空为封跌停；最高价触及涨停价但未封住（含价在涨停价但仍有卖单）为炸板。盘后：limit_list_d 涨停（跌停、炸板）池",
       "inputs": [
         "close",
+        "high",
         "up_limit",
-        "down_limit"
+        "down_limit",
+        "ask_price1",
+        "ask_volume1",
+        "bid_price1",
+        "bid_volume1"
       ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
