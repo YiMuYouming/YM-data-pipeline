@@ -30,6 +30,10 @@ NORMAL_MAX_AGE_SEC = 180
 EXPIRED_AGE_SEC = 600
 COVERAGE_NORMAL = 98.0
 COVERAGE_MINIMUM = 90.0
+# rt_k never returns the 003000-003043 block (vendor gap, 42 codes on
+# 2026-09-27).  A gap this small is filled per code from Tencent each round;
+# a larger one means StockToday itself is failing and is not patched.
+STRUCTURAL_FILL_LIMIT = 200
 STK_LIMIT_CACHE = Path.home() / ".cache" / "ym-stock-data" / "stk_limit"
 BUCKETS = ("涨停", ">7%", "5~7%", "3~5%", "0~3%", "平盘",
            "-0~-3%", "-3~-5%", "-5~-7%", "<-7%", "跌停")
@@ -176,7 +180,30 @@ def _bucket(pct: float, state: str | None) -> str:
     return "<-7%"
 
 
-def build(provider, *, now: datetime | None = None) -> dict:
+def _tencent_rows(codes: list[str], quote_loader) -> dict[str, dict]:
+    """Tencent quotes shaped like rt_k rows for the fixed StockToday gap."""
+
+    rows = {}
+    for start in range(0, len(codes), 60):
+        chunk = codes[start:start + 60]
+        quotes = quote_loader([code.split(".")[0] for code in chunk]) or {}
+        for ts_code in chunk:
+            quote = quotes.get(ts_code.split(".")[0])
+            if not isinstance(quote, dict) or not quote.get("price"):
+                continue
+            rows[ts_code] = {
+                "ts_code": ts_code, "name": quote.get("name"), "close": quote.get("price"),
+                "pre_close": quote.get("last_close"), "high": quote.get("high"),
+                "vol": quote.get("volume"), "amount": quote.get("amount"),
+                "updated_at": quote.get("quote_time"),
+                "ask_price1": quote.get("ask_price1"), "ask_volume1": quote.get("ask_volume1"),
+                "bid_price1": quote.get("bid_price1"), "bid_volume1": quote.get("bid_volume1"),
+                "source": "tencent",
+            }
+    return rows
+
+
+def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     """Return the intraday state or raise IntradayStateError (no fallback)."""
 
     now = now or datetime.now(TZ_SHANGHAI)
@@ -220,6 +247,23 @@ def build(provider, *, now: datetime | None = None) -> dict:
     universe = {code for code in limits if not code.startswith(B_SHARE_PREFIXES)}
     if not universe:
         gaps.append("stk_limit_unavailable")
+    filled: list[str] = []
+    fill_ms = None
+    missing = sorted(universe - set(latest))
+    if missing and len(missing) <= STRUCTURAL_FILL_LIMIT:
+        if quote_loader is None:
+            from .sources.tencent import fetch_quotes as quote_loader
+        started = datetime.now()
+        try:
+            extra = _tencent_rows(missing, quote_loader)
+        except Exception:
+            extra = {}
+            gaps.append("structural_gap_fill_failed")
+        fill_ms = int((datetime.now() - started).total_seconds() * 1000)
+        latest.update(extra)
+        filled = sorted(code.split(".")[0] for code in extra)
+    elif missing:
+        gaps.append("snapshot_gap_too_large_to_fill")
     covered = len(universe & set(latest)) if universe else len(latest)
     coverage = round(covered / len(universe) * 100, 2) if universe else None
     if coverage is not None and coverage < COVERAGE_MINIMUM:
@@ -249,7 +293,8 @@ def build(provider, *, now: datetime | None = None) -> dict:
         if state:
             states[code] = state
             detail[code] = {"code": code, "name": str(row.get("name") or "").strip(),
-                            "price": close, "pct": pct, "amount": _number(row.get("amount"))}
+                            "price": close, "pct": pct, "amount": _number(row.get("amount")),
+                            "source": row.get("source") or "stocktoday"}
         buckets[_bucket(pct, state)] += 1
 
     previous_date = previous_trading_day(data_as_of.date()).strftime("%Y%m%d")
@@ -290,7 +335,8 @@ def build(provider, *, now: datetime | None = None) -> dict:
         "age_seconds": age,
         "freshness_tier": tier,
         "coverage": {"covered": covered, "universe": len(universe) or None, "pct": coverage},
-        "filled_by_fallback": [],
+        "filled_by_fallback": filled,
+        "fill_ms": fill_ms,
         "indicators": summary,
         "limit_up": listing("up"),
         "limit_down": listing("down"),

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -81,6 +82,9 @@ class BuildTests(unittest.TestCase):
         ladder.start()
         self.addCleanup(ladder.stop)
         self.now = at("2026-09-28T10:01:00")
+        self.quotes = patch("ym_stock_data.sources.tencent.fetch_quotes", return_value={})
+        self.quotes.start()
+        self.addCleanup(self.quotes.stop)
 
     def provider(self, extra=None):
         sh = [row("600001.SH", 11.0, 10.0), row("600001.SH", 11.0, 10.0, updated="2026-09-28T09:59:00"),
@@ -120,6 +124,30 @@ class BuildTests(unittest.TestCase):
         # B share 900901 is outside the A-share universe.
         self.assertEqual({"covered": 9, "universe": 9, "pct": 100.0}, state["coverage"])
         self.assertEqual(1, state["_stocktoday"]["deduplicated_rows"])
+
+    def test_structural_gap_is_filled_per_code_from_tencent(self):
+        provider = self.provider()
+        provider.limits["003026.SZ"] = (22.0, 18.0)
+        quotes = {"003026": {"name": "中晶科技", "price": 22.0, "last_close": 20.0, "high": 22.0,
+                             "volume": 5e6, "amount": 1e8, "quote_time": "2026-09-28T10:00:30+08:00",
+                             "ask_price1": 0, "ask_volume1": 0, "bid_price1": 22.0, "bid_volume1": 9e5}}
+        state = intraday_state.build(provider, now=self.now, quote_loader=lambda codes: quotes)
+        self.assertEqual(["003026"], state["filled_by_fallback"])
+        self.assertEqual(100.0, state["coverage"]["pct"])
+        sealed = {row["code"]: row for row in state["limit_up"]}
+        self.assertEqual("tencent", sealed["003026"]["source"])
+        self.assertEqual(3, state["indicators"]["limit_up_count"])
+        # the data time stays StockToday's own snapshot time
+        self.assertEqual("2026-09-28T10:00:00+08:00", state["data_as_of"])
+
+    def test_large_gap_is_not_patched_with_tencent(self):
+        provider = self.provider()
+        for i in range(250):
+            provider.limits[f"60{i + 1000:04d}.SH"] = (11.0, 9.0)
+        loader = unittest.mock.Mock()
+        with self.assertRaises(intraday_state.IntradayStateError):
+            intraday_state.build(provider, now=self.now, quote_loader=loader)
+        loader.assert_not_called()
 
     def test_expired_snapshot_raises_instead_of_serving_old_numbers(self):
         with self.assertRaises(intraday_state.IntradayStateError) as caught:

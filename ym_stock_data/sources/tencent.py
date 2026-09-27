@@ -98,6 +98,11 @@ def fetch_quotes(codes: list[str]) -> dict:
             "limit_down": float(vals[48]) if vals[48] else 0,
             "vol_ratio": float(vals[49]) if vals[49] else 0,
             "pe_static": float(vals[52]) if vals[52] else 0,
+            # Level-1 book: vals[9]/[10] bid1 price/lots, vals[19]/[20] ask1.
+            "bid_price1": float(vals[9]) if vals[9] else 0,
+            "bid_volume1": float(vals[10]) * 100 if vals[10] else 0,
+            "ask_price1": float(vals[19]) if vals[19] else 0,
+            "ask_volume1": float(vals[20]) * 100 if vals[20] else 0,
             "source": "tencent",
         }
 
