@@ -22,6 +22,10 @@ CURRENT_SMOKE_CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)
 CURRENT_SMOKE_SPECS = {
     spec.case_id: (spec.category, spec.intent, spec.safe_params()) for spec in CASE_SPECS
 }
+# Read-only legacy receipts (acceptance 1.0/1.1) still contain the retired TDX probe.
+CURRENT_SMOKE_SPECS.setdefault(
+    "tdx_probe", ("owned_oauth", "stock_snapshot", {"fixture_id": "large_cap_a"})
+)
 LEGACY_SMOKE_CASE_IDS = (
     "zero_realtime_market", "zero_sector_index", "zero_stock_snapshot",
     "zero_stock_kline", "zero_review_sentiment", "zero_market_limit_state",
@@ -200,7 +204,7 @@ class AcceptanceTests(unittest.TestCase):
             }
         )
         if current:
-            by_id["canonical_tdx_fallback"].update(
+            by_id["canonical_screener_fallback"].update(
                 status="degraded",
                 provider_used="wind_screener",
                 attempts=[
@@ -216,7 +220,7 @@ class AcceptanceTests(unittest.TestCase):
         for case in cases:
             counts[case["status"]] = counts.get(case["status"], 0) + 1
         report = {
-            "schema_version": "2" if current else "1",
+            "schema_version": "3" if current else "1",
             "live": True,
             "started_at": f"{date}T16:14:00+08:00",
             "completed_at": f"{date}T16:15:00+08:00",
@@ -225,10 +229,9 @@ class AcceptanceTests(unittest.TestCase):
         }
         if current:
             report.update(
-                baseline="four-source-capabilities-v1",
+                baseline="three-source-capabilities-v1",
                 source_status={
-                    "iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass",
-                    "wind": "pass",
+                    "iwencai_openapi": "pass", "pywencai": "pass", "wind": "pass",
                 },
                 chain_status="pass",
                 gate_status="pass",
@@ -524,16 +527,16 @@ class AcceptanceTests(unittest.TestCase):
         path = Path(built["path"])
         report = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual("1.3", report["schema_version"])
+        self.assertEqual("1.4", report["schema_version"])
         self.assertEqual("codex/test-acceptance", report["canonical_checkout"]["branch"])
         self.assertEqual(self.git_head(), report["canonical_checkout"]["head"])
         self.assertTrue(report["canonical_checkout"]["tracked_clean"])
         self.assertTrue(report["canonical_checkout"]["staged_clean"])
         self.assertEqual(sha256(self.smoke_path), report["smoke_evidence"]["sha256"])
-        self.assertEqual("four-source-capabilities-v1", report["smoke_evidence"]["baseline"])
-        self.assertEqual(21, report["smoke_evidence"]["total_cases"])
-        self.assertEqual(11, report["latency"]["p50"])
-        self.assertEqual(20, report["latency"]["p95"])
+        self.assertEqual("three-source-capabilities-v1", report["smoke_evidence"]["baseline"])
+        self.assertEqual(15, report["smoke_evidence"]["total_cases"])
+        self.assertEqual(8, report["latency"]["p50"])
+        self.assertEqual(15, report["latency"]["p95"])
         self.assertEqual(
             "configured_unverified",
             report["provider_acceptance"]["pytdx_screener"]["live_status"],
@@ -602,7 +605,7 @@ class AcceptanceTests(unittest.TestCase):
             "degraded": 1,
             "empty": 1,
             "error": 1,
-            "success": 17,
+            "success": 11,
         }
         smoke["source_status"]["wind"] = "fail"
         smoke["gate_status"] = "fail"
@@ -824,8 +827,8 @@ class AcceptanceTests(unittest.TestCase):
             (
                 "wind_provider",
                 lambda value: (
-                    value["cases"][10].update(provider_used="wind_documents"),
-                    value["cases"][10]["attempts"][0].update(
+                    value["cases"][9].update(provider_used="wind_documents"),
+                    value["cases"][9]["attempts"][0].update(
                         provider="wind_documents"
                     ),
                 ),
@@ -843,7 +846,7 @@ class AcceptanceTests(unittest.TestCase):
             ),
             (
                 "wind_configured_without_attempt",
-                lambda value: value["cases"][10].update(
+                lambda value: value["cases"][9].update(
                     status="configured_unverified",
                     provider_used=None,
                     attempts=[],
@@ -907,7 +910,7 @@ class AcceptanceTests(unittest.TestCase):
                 for case in smoke["cases"]:
                     counts[case["status"]] = counts.get(case["status"], 0) + 1
                 smoke["summary"]["status_counts"] = counts
-                smoke["source_status"]["tdx"] = "fail"
+                smoke["source_status"]["wind"] = "fail"
                 smoke["gate_status"] = "fail"
                 write_json(self.smoke_path, smoke)
 
@@ -1174,9 +1177,9 @@ class AcceptanceTests(unittest.TestCase):
         template = module.acceptance_template("2026-07-30")
         calendar = template["calendar"]
         downstream = template["downstream"]
-        self.assertEqual("2", template["template_meta"]["smoke_schema_version"])
+        self.assertEqual("3", template["template_meta"]["smoke_schema_version"])
         self.assertEqual(
-            "four-source-capabilities-v1",
+            "three-source-capabilities-v1",
             template["template_meta"]["smoke_baseline"],
         )
         self.assertEqual(

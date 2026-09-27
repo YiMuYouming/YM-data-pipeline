@@ -42,10 +42,10 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "zero_secret_scan",
             "shasum -a 256",
             "check-ignore",
-            "acceptance 1.3",
-            "smoke schema 2",
-            "four-source-capabilities-v1",
-            "21 个固定 case",
+            "acceptance 1.4",
+            "smoke schema 3",
+            "three-source-capabilities-v1",
+            "15 个固定 case",
             "canonical registry",
             "旧 10-case",
             "previous_trading_date",
@@ -53,7 +53,7 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "pass_day_count",
             "gate_status",
             "origin=injected|live",
-            "不授权 TDX 首次登录",
+            "不会自动安排后续五日",
         )
         for value in required:
             with self.subTest(value=value):

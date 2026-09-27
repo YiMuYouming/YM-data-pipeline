@@ -20,8 +20,10 @@ class SmokeCaseSpec:
             for key, value in self.params
         }
 
-CURRENT_SMOKE_SCHEMA_VERSION = "2"
-CURRENT_SMOKE_BASELINE = "four-source-capabilities-v1"
+# Schema 3 (2026-09-27): TDX left every route, so its six direct probes left
+# the baseline; the controlled chain ends at the Wind screener.
+CURRENT_SMOKE_SCHEMA_VERSION = "3"
+CURRENT_SMOKE_BASELINE = "three-source-capabilities-v1"
 CASE_SPECS = (
     SmokeCaseSpec("zero_realtime_market", "zero_auth", "realtime_market", (), capability="realtime_market"),
     SmokeCaseSpec(
@@ -80,16 +82,6 @@ CASE_SPECS = (
         capability="optional_structured_screener",
     ),
     SmokeCaseSpec(
-        "tdx_probe",
-        "owned_oauth",
-        "stock_snapshot",
-        (("fixture_id", "large_cap_a"),),
-        direct_provider="tdx_quotes",
-        allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result",
-        capability="quotes",
-    ),
-    SmokeCaseSpec(
         "wind_probe",
         "official_cli",
         "wind_enrichment",
@@ -112,35 +104,6 @@ CASE_SPECS = (
         evidence_kind="direct_provider_result", capability="screener",
     ),
     SmokeCaseSpec(
-        "tdx_screener_probe", "owned_oauth", "review_sentiment",
-        (("sample_id", "structured_hs_a"), ("limit", 3)),
-        direct_provider="tdx_screener", allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result", capability="screener",
-    ),
-    SmokeCaseSpec(
-        "tdx_kline_probe", "owned_oauth", "stock_kline",
-        (("fixture_id", "large_cap_a"), ("period", "daily"), ("count", 3)),
-        direct_provider="tdx_kline", allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result", capability="kline",
-    ),
-    SmokeCaseSpec(
-        "tdx_report_probe", "owned_oauth", "research",
-        (("fixture_id", "large_cap_a"), ("days", 365)),
-        direct_provider="tdx_report", allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result", capability="report",
-    ),
-    SmokeCaseSpec(
-        "tdx_notice_probe", "owned_oauth", "filings",
-        (("fixture_id", "large_cap_a"), ("days", 365)),
-        direct_provider="tdx_notice", allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result", capability="notice",
-    ),
-    SmokeCaseSpec(
-        "tdx_news_probe", "owned_oauth", "news", (("limit", 3),),
-        direct_provider="tdx_news", allow_unattempted_provider_state=True,
-        evidence_kind="tdx_protocol_result", capability="news",
-    ),
-    SmokeCaseSpec(
         "wind_screener_probe", "official_cli", "review_sentiment",
         (("sample_id", "structured_hs_a"), ("limit", 3)),
         direct_provider="wind_screener", allow_unattempted_provider_state=True,
@@ -153,9 +116,9 @@ CASE_SPECS = (
         evidence_kind="direct_provider_result", capability="filings",
     ),
     SmokeCaseSpec(
-        "canonical_tdx_fallback", "four_source_fallback", "review_sentiment",
+        "canonical_screener_fallback", "three_source_fallback", "review_sentiment",
         (("sample_id", "structured_hs_a"), ("limit", 3)),
-        evidence_kind="controlled_canonical_route", capability="tdx_fallback",
+        evidence_kind="controlled_canonical_route", capability="screener_fallback",
     ),
 )
 CURRENT_SMOKE_CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)

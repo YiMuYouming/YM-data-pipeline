@@ -19,10 +19,8 @@ EXPECTED_CASE_IDS = (
     "zero_realtime_market", "zero_sector_index", "zero_stock_snapshot",
     "zero_stock_kline", "zero_review_sentiment", "zero_market_limit_state",
     "zero_stock_event", "explicit_wencai", "optional_pytdx_screener_state",
-    "tdx_probe", "wind_probe", "direct_openapi_screener",
-    "direct_pywencai_screener", "tdx_screener_probe", "tdx_kline_probe",
-    "tdx_report_probe", "tdx_notice_probe", "tdx_news_probe",
-    "wind_screener_probe", "wind_filings_probe", "canonical_tdx_fallback",
+    "wind_probe", "direct_openapi_screener", "direct_pywencai_screener",
+    "wind_screener_probe", "wind_filings_probe", "canonical_screener_fallback",
 )
 
 TDX_PROTOCOL = {
@@ -115,10 +113,11 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         report = json.loads(Path(result["receipt"]).read_text(encoding="utf-8"))
         return report, calls
 
-    def test_contract_locks_twenty_one_cases_and_sanitized_metadata(self) -> None:
-        self.assertEqual("four-source-capabilities-v1", CURRENT_SMOKE_BASELINE)
+    def test_contract_locks_fifteen_cases_and_sanitized_metadata(self) -> None:
+        self.assertEqual("three-source-capabilities-v1", CURRENT_SMOKE_BASELINE)
         self.assertEqual(EXPECTED_CASE_IDS, CURRENT_SMOKE_CASE_IDS)
-        self.assertEqual(21, len(CASE_SPECS))
+        self.assertEqual(15, len(CASE_SPECS))
+        self.assertFalse([spec for spec in CASE_SPECS if spec.case_id.startswith("tdx_")])
         for spec in CASE_SPECS:
             self.assertTrue(spec.evidence_kind)
             self.assertTrue(spec.capability)
@@ -127,27 +126,22 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
 
     def test_live_matrix_probes_all_direct_capabilities_and_passes_gate(self) -> None:
         report, calls = self._run()
-        self.assertEqual(21, report["summary"]["total"])
-        self.assertEqual({"iwencai_openapi": "pass", "pywencai": "pass", "tdx": "pass", "wind": "pass"}, report["source_status"])
+        self.assertEqual(15, report["summary"]["total"])
+        self.assertEqual({"iwencai_openapi": "pass", "pywencai": "pass", "wind": "pass"}, report["source_status"])
         self.assertEqual("pass", report["chain_status"])
         self.assertEqual("pass", report["gate_status"])
-        tdx_ids = {"tdx_probe", "tdx_screener_probe", "tdx_kline_probe", "tdx_report_probe", "tdx_notice_probe", "tdx_news_probe"}
-        tdx_cases = [case for case in report["cases"] if case["case_id"] in tdx_ids]
-        self.assertEqual(6, len(tdx_cases))
-        for case in tdx_cases:
-            self.assertEqual(TDX_PROTOCOL, case["protocol_evidence"])
         counts = {name: sum(call[0] == name for call in calls) for name in {
             "iwencai_openapi", "pywencai", "tdx_screener", "wind_screener", "pytdx_screener",
         }}
         self.assertEqual(1, counts["iwencai_openapi"])
         self.assertEqual(1, counts["pywencai"])
-        self.assertEqual(1, counts["tdx_screener"])
+        self.assertEqual(0, counts["tdx_screener"])
         self.assertEqual(2, counts["wind_screener"])
         self.assertEqual(0, counts["pytdx_screener"])
 
     def test_controlled_fallback_uses_real_router_and_marks_injected_origins(self) -> None:
         report, _calls = self._run()
-        case = next(item for item in report["cases"] if item["case_id"] == "canonical_tdx_fallback")
+        case = next(item for item in report["cases"] if item["case_id"] == "canonical_screener_fallback")
         self.assertEqual("degraded", case["status"])
         self.assertEqual("wind_screener", case["provider_used"])
         self.assertEqual(["iwencai_openapi", "pywencai", "wind_screener"], [a["provider"] for a in case["attempts"]])
@@ -176,7 +170,7 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         controlled = next(
             case
             for case in report["cases"]
-            if case["case_id"] == "canonical_tdx_fallback"
+            if case["case_id"] == "canonical_screener_fallback"
         )
         called_names = [name for name, _intent, _params in calls]
         self.assertNotIn("unexpected_live_provider", called_names)
@@ -190,7 +184,7 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
         report, calls = self._run(empty_provider="wind_documents")
         self.assertEqual("fail", report["source_status"]["wind"])
         self.assertEqual("fail", report["gate_status"])
-        self.assertEqual(21, len(report["cases"]))
+        self.assertEqual(15, len(report["cases"]))
         self.assertFalse(any(name == "pytdx_screener" for name, _intent, _params in calls))
 
     def test_optional_pytdx_state_does_not_call_provider_or_block_gate(self) -> None:
@@ -229,8 +223,6 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
     def test_document_probes_use_stable_365_day_window_without_extra_calls(self) -> None:
         report, calls = self._run()
         by_id = {case["case_id"]: case for case in report["cases"]}
-        for case_id in ("tdx_report_probe", "tdx_notice_probe"):
-            self.assertEqual(365, by_id[case_id]["params"]["days"])
         self.assertEqual(365, by_id["wind_filings_probe"]["params"]["days"])
         self.assertEqual(1, by_id["wind_filings_probe"]["params"]["max_pages"])
 
@@ -239,26 +231,11 @@ class FiveSourceLiveMatrixTests(unittest.TestCase):
             for name, _intent, params in calls
             if name in {"tdx_report", "tdx_notice", "wind_documents"}
         ]
-        self.assertEqual(3, len(relevant))
+        self.assertEqual(1, len(relevant))
         for name, params in relevant:
             self.assertEqual(365, params["days"], name)
         wind = next(params for name, params in relevant if name == "wind_documents")
         self.assertEqual(1, wind["max_pages"])
-
-    def test_any_failed_or_zero_tdx_protocol_evidence_fails_tdx_gate(self) -> None:
-        for field, value in (("schema", "fail"), ("page_count", 0), ("session_count", 0), ("call_count", 0)):
-            with self.subTest(field=field):
-                report, _calls = self._run()
-                case = next(
-                    item for item in report["cases"] if item["case_id"] == "tdx_notice_probe"
-                )
-                case["protocol_evidence"][field] = value
-
-                sources, chain, gate = smoke_module._compute_smoke_gate(report["cases"])
-
-                self.assertEqual("fail", sources["tdx"])
-                self.assertEqual("pass", chain)
-                self.assertEqual("fail", gate)
 
 
 if __name__ == "__main__":

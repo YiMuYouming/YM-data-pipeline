@@ -24,7 +24,6 @@ CURRENT_CASE_METADATA = {
         "review_sentiment",
         {"sample_id": "structured_hs_a", "limit": 3},
     ),
-    "tdx_probe": ("owned_oauth", "stock_snapshot", {"fixture_id": "large_cap_a"}),
     "wind_probe": (
         "official_cli",
         "wind_enrichment",
@@ -194,18 +193,16 @@ class SmokeTests(unittest.TestCase):
         path = Path(receipt["receipt"])
         report = json.loads(path.read_text(encoding="utf-8"))
         serialized = json.dumps(report, ensure_ascii=False)
-        self.assertEqual("2", report["schema_version"])
-        self.assertEqual("four-source-capabilities-v1", report["baseline"])
-        self.assertEqual(21, len(report["cases"]))
+        self.assertEqual("3", report["schema_version"])
+        self.assertEqual("three-source-capabilities-v1", report["baseline"])
+        self.assertEqual(15, len(report["cases"]))
         self.assertEqual(CURRENT_CASE_IDS, tuple(case["case_id"] for case in report["cases"]))
         for case_id, (category, intent, params) in CURRENT_CASE_METADATA.items():
             case = next(item for item in report["cases"] if item["case_id"] == case_id)
             self.assertEqual(category, case["category"])
             self.assertEqual(intent, case["intent"])
             self.assertEqual(params, case["params"])
-        self.assertEqual("auth_missing", next(
-            case["status"] for case in report["cases"] if case["case_id"] == "tdx_probe"
-        ))
+        self.assertFalse([case for case in report["cases"] if case["case_id"].startswith("tdx_")])
         self.assertEqual("error", next(
             case["status"] for case in report["cases"] if case["case_id"] == "zero_sector_index"
         ))
@@ -295,7 +292,7 @@ class SmokeTests(unittest.TestCase):
 
         report = json.loads(Path(receipt["receipt"]).read_text(encoding="utf-8"))
         self.assertLess(elapsed, 0.15)
-        self.assertEqual(21, len(report["cases"]))
+        self.assertEqual(15, len(report["cases"]))
         self.assertEqual("fail", report["gate_status"])
         self.assertEqual("fail", receipt["gate_status"])
         self.assertTrue(all(case["status"] == "timeout" for case in report["cases"]))

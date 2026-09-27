@@ -268,17 +268,6 @@ def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
     source_status = {
         "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
         "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
-        "tdx": "pass" if all(
-            passed(case_id, provider, protocol=True)
-            for case_id, provider in (
-                ("tdx_probe", "tdx_quotes"),
-                ("tdx_screener_probe", "tdx_screener"),
-                ("tdx_kline_probe", "tdx_kline"),
-                ("tdx_report_probe", "tdx_report"),
-                ("tdx_notice_probe", "tdx_notice"),
-                ("tdx_news_probe", "tdx_news"),
-            )
-        ) else "fail",
         "wind": "pass" if all(
             passed(case_id, provider)
             for case_id, provider in (
@@ -288,7 +277,7 @@ def _compute_smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
             )
         ) else "fail",
     }
-    fallback = by_id["canonical_tdx_fallback"]
+    fallback = by_id["canonical_screener_fallback"]
     attempts = fallback["attempts"]
     chain_status = "pass" if (
         fallback["status"] == "degraded"
@@ -466,10 +455,6 @@ def run_live_smoke(
         "optional_pytdx_screener_state": lambda: _provider_state_payload(
             "pytdx_screener", lambda: diagnostics
         ),
-        "tdx_probe": lambda: direct_probe(
-            "tdx_quotes", "stock_snapshot", {"codes": ["600519"]},
-            diagnostic_name="tdx_mcp",
-        ),
         "wind_probe": lambda: direct_probe(
             "wind_mcp", "wind_enrichment",
             {"capability": "company_profile", "code": "600519"},
@@ -483,27 +468,6 @@ def run_live_smoke(
             "pywencai", "review_sentiment",
             {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
         ),
-        "tdx_screener_probe": lambda: direct_probe(
-            "tdx_screener", "review_sentiment",
-            {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
-            diagnostic_name="tdx_mcp",
-        ),
-        "tdx_kline_probe": lambda: direct_probe(
-            "tdx_kline", "stock_kline",
-            {"code": "600519", "period": "daily", "count": 3},
-            diagnostic_name="tdx_mcp",
-        ),
-        "tdx_report_probe": lambda: direct_probe(
-            "tdx_report", "research", {"code": "600519", "days": 365},
-            diagnostic_name="tdx_mcp",
-        ),
-        "tdx_notice_probe": lambda: direct_probe(
-            "tdx_notice", "filings", {"code": "600519", "days": 365},
-            diagnostic_name="tdx_mcp",
-        ),
-        "tdx_news_probe": lambda: direct_probe(
-            "tdx_news", "news", {"limit": 3}, diagnostic_name="tdx_mcp",
-        ),
         "wind_screener_probe": lambda: direct_probe(
             "wind_screener", "review_sentiment",
             {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
@@ -514,7 +478,7 @@ def run_live_smoke(
             {"code": "600519", "days": 365, "max_pages": 1},
             diagnostic_name="wind_mcp",
         ),
-        "canonical_tdx_fallback": controlled_fallback,
+        "canonical_screener_fallback": controlled_fallback,
     }
     if set(callbacks) != {spec.case_id for spec in CASE_SPECS}:
         raise RuntimeError("smoke case contract drift")

@@ -26,7 +26,7 @@ from .smoke_contract import (
 
 
 SCHEMA = "ym-stock-data.acceptance.daily"
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"  # 2026-09-27: three-source baseline, TDX retired
 PREVIOUS_SCHEMA_VERSION = "1.1"
 LEGACY_SCHEMA_VERSION = "1.0"
 UNPUBLISHED_SCHEMA_VERSION = "1.2"
@@ -553,7 +553,7 @@ def _project_smoke(path: Path, expected_date: str, *, current: bool) -> dict:
     if current:
         projected["baseline"] = CURRENT_SMOKE_BASELINE
         supplied_sources = _mapping(value["source_status"], "INVALID_SMOKE_GATE")
-        expected_source_keys = {"iwencai_openapi", "pywencai", "tdx", "wind"}
+        expected_source_keys = {"iwencai_openapi", "pywencai", "wind"}
         _exact_keys(
             supplied_sources,
             required=expected_source_keys,
@@ -614,17 +614,6 @@ def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
     source_status = {
         "iwencai_openapi": "pass" if passed("direct_openapi_screener", "iwencai_openapi") else "fail",
         "pywencai": "pass" if passed("direct_pywencai_screener", "pywencai") else "fail",
-        "tdx": "pass" if all(
-            passed(case_id, provider, protocol=True)
-            for case_id, provider in (
-                ("tdx_probe", "tdx_quotes"),
-                ("tdx_screener_probe", "tdx_screener"),
-                ("tdx_kline_probe", "tdx_kline"),
-                ("tdx_report_probe", "tdx_report"),
-                ("tdx_notice_probe", "tdx_notice"),
-                ("tdx_news_probe", "tdx_news"),
-            )
-        ) else "fail",
         "wind": "pass" if all(
             passed(case_id, provider)
             for case_id, provider in (
@@ -634,7 +623,7 @@ def _smoke_gate(cases: list[dict]) -> tuple[dict, str, str]:
             )
         ) else "fail",
     }
-    fallback = by_id.get("canonical_tdx_fallback", {})
+    fallback = by_id.get("canonical_screener_fallback", {})
     attempts = fallback.get("attempts", [])
     chain = "pass" if (
         fallback.get("status") == "degraded"
@@ -1109,7 +1098,6 @@ def _provider_acceptance(
     pywencai = [attempt for attempt in smoke_attempts if attempt["provider"] == "pywencai"]
     pywencai_successes = sum(attempt["status"] == "success" for attempt in pywencai)
     providers = doctor["providers"]
-    tdx_case = _case(cases, "tdx_probe")
     wind_case = _case(cases, "wind_probe")
     wind_state = providers.get("wind_mcp", {})
     result = {
@@ -1127,16 +1115,6 @@ def _provider_acceptance(
             ),
             "doctor_status": providers.get("pywencai", {}).get("status", "unavailable"),
         },
-        "tdx": {
-            "doctor_status": providers.get("tdx_mcp", {}).get("status", "unavailable"),
-            "capability_statuses": {
-                name: item["status"]
-                for name, item in providers.items()
-                if name.startswith("tdx_") and name != "tdx_mcp"
-            },
-            "smoke_probe_status": tdx_case.get("status", "unavailable"),
-            "smoke_probe_row_count": tdx_case.get("row_count", 0),
-        },
         "wind": {
             "doctor_status": wind_state.get("status", "unavailable"),
             "auth": wind_state.get("auth", {"required": True, "status": "unverified"}),
@@ -1147,6 +1125,19 @@ def _provider_acceptance(
             "latency_ms": wind_case.get("latency_ms", 0),
         },
     }
+    if not include_pytdx_screener:
+        # Read-only acceptance 1.1 history still carries its TDX summary.
+        tdx_case = _case(cases, "tdx_probe")
+        result["tdx"] = {
+            "doctor_status": providers.get("tdx_mcp", {}).get("status", "unavailable"),
+            "capability_statuses": {
+                name: item["status"]
+                for name, item in providers.items()
+                if name.startswith("tdx_") and name != "tdx_mcp"
+            },
+            "smoke_probe_status": tdx_case.get("status", "unavailable"),
+            "smoke_probe_row_count": tdx_case.get("row_count", 0),
+        }
     if include_pytdx_screener:
         pytdx_case = _case(cases, "optional_pytdx_screener_state")
         pytdx_state = providers.get("pytdx_screener", {})
@@ -1161,7 +1152,7 @@ def _provider_acceptance(
             "latency_ms": pytdx_case.get("latency_ms", 0),
             "error_code": pytdx_case.get("error_code"),
         }
-        controlled = _case(cases, "canonical_tdx_fallback")
+        controlled = _case(cases, "canonical_screener_fallback")
         controlled_attempts = controlled.get("attempts", [])
         result["controlled_fallback"] = {
             "case_status": controlled.get("status", "unavailable"),

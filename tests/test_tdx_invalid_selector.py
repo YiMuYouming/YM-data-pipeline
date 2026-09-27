@@ -125,7 +125,7 @@ class InvalidSelectorTests(unittest.TestCase):
             report["providers"]["tdx_mcp"]["auth"],
         )
 
-    def test_smoke_reports_the_same_expired_state_without_tdx_network(self):
+    def test_smoke_never_touches_retired_tdx(self):
         tdx_network = Mock(side_effect=AssertionError("TDX network must not run"))
 
         def provider_loader(name: str):
@@ -153,10 +153,8 @@ class InvalidSelectorTests(unittest.TestCase):
             )
 
         report = json.loads(Path(receipt["receipt"]).read_text(encoding="utf-8"))
-        tdx_case = next(
-            item for item in report["cases"] if item["case_id"] == "tdx_probe"
-        )
-        self.assertEqual("auth_expired", tdx_case["status"])
+        # TDX is retired from the smoke baseline (schema 3): no case, no call.
+        self.assertFalse([item for item in report["cases"] if item["case_id"].startswith("tdx_")])
         tdx_network.assert_not_called()
 
     def test_explicit_store_login_recovers_and_replaces_invalid_selector(self):
