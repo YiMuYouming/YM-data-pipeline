@@ -165,24 +165,45 @@ def cohort_return(codes: Iterable[str], changes: Mapping[str, float]) -> float |
     return round(sum(changes[code] for code in codes) / len(codes), 6)
 
 
-def money_effect(limit_up_return: float | None) -> str | None:
-    """§3.2 — registered as needs_vault_detail; legacy single-threshold rule."""
+def money_effect(
+    limit_up_return: float | None,
+    consecutive_return: float | None = None,
+    broken_return: float | None = None,
+    board_risk_value: float | None = None,
+) -> str | None:
+    """§3.2 赚钱效应 (confirmed 2026-09-27).
+
+    好 = all four pass; 差 = >=3 fail, or 涨停收益 <2% with >=2 fail;
+    otherwise 一般.  Missing inputs are judged on what is available, never
+    yield 好, and no verdict is given without 涨停收益.
+    """
 
     if limit_up_return is None:
         return None
-    if limit_up_return > 2:
-        return "好"
-    if limit_up_return < 0:
+    checks = [
+        limit_up_return > 3,
+        None if consecutive_return is None else consecutive_return > 0,
+        None if board_risk_value is None else board_risk_value < 0.5,
+        None if broken_return is None else broken_return > 0,
+    ]
+    failed = sum(check is False for check in checks)
+    if failed >= 3 or (limit_up_return < 2 and failed >= 2):
         return "差"
+    if all(check is True for check in checks):
+        return "好"
     return "一般"
 
 
-def board_risk(overall_promotion_pct: float | None) -> float | None:
-    """§3.3 — registered as needs_vault_detail; legacy promotion proxy."""
+BREAK_RISK_DROP_PCT = -5.0
 
-    if overall_promotion_pct is None:
+
+def board_risk(break_returns: Iterable[float]) -> float | None:
+    """§3.3 连板风险值: share of recent broken boards down >5% after 3 sessions."""
+
+    returns = list(break_returns)
+    if not returns:
         return None
-    return round(max(0.0, min(1.0, 1.0 - overall_promotion_pct / 100 * 1.8)), 2)
+    return round(sum(value < BREAK_RISK_DROP_PCT for value in returns) / len(returns), 4)
 
 
 def summarize(
@@ -192,6 +213,7 @@ def summarize(
     current_boards: Mapping[str, int],
     previous_boards: Mapping[str, int] | None,
     previous_broken: Iterable[str] | None,
+    board_risk_value: float | None = None,
 ) -> dict:
     """All registered indicators from one consistent set of inputs.
 
@@ -227,7 +249,7 @@ def summarize(
         "consecutive_return": None,
         "broken_return": None,
         "money_effect": None,
-        "board_risk": None,
+        "board_risk": board_risk_value,
     }
     if previous_boards:
         tiers = promotion(previous_boards, current_boards)
@@ -236,8 +258,10 @@ def summarize(
         result["consecutive_return"] = cohort_return(
             [code for code, board in previous_boards.items() if board >= 2], changes
         )
-        result["board_risk"] = board_risk(tiers["overall"]["pct"])
     if previous_broken is not None:
         result["broken_return"] = cohort_return(previous_broken, changes)
-    result["money_effect"] = money_effect(result["limit_up_return"])
+    result["money_effect"] = money_effect(
+        result["limit_up_return"], result["consecutive_return"],
+        result["broken_return"], result["board_risk"],
+    )
     return result

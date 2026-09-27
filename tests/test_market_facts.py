@@ -38,6 +38,29 @@ class MarketFactStoreTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.store = MarketFactStore(Path(self.temp.name) / "facts.sqlite3")
 
+    def _daily(self, day, closes):
+        closes = {**{f"3{i:05d}": 10.0 for i in range(4000)}, **closes}  # full-market coverage
+        items = [{"ts_code": f"{code}.SZ", "trade_date": day, "open": c, "high": c, "low": c,
+                  "close": c, "pre_close": c, "pct_chg": 0.0, "vol": 100.0, "amount": 1000.0}
+                 for code, c in closes.items()]
+        self.store.ingest_daily(day, {"data": {"items": items, "truncated": False, "total_present": False},
+                                      "_meta": {"status": "success", "provider_used": "stocktoday",
+                                                "fetched_at": f"{day[:4]}-{day[4:6]}-{day[6:]}T17:00:00+08:00"}})
+
+    def test_break_risk_counts_breaks_down_more_than_five_percent_after_three_sessions(self):
+        # 09-16: A(3 板) B(2 板) C(2 板, ST) D(1 板); 09-17: A 断板、B 继续、C/D 不计。
+        self.store.ingest_limits("20260916", limit_result("20260916", [
+            row("000001", 3), row("000002", 2), row("000003", 2, "*ST测试"), row("000004", 1)]))
+        self.store.ingest_limits("20260917", limit_result("20260917", [row("000002", 3), row("000009", 1)]))
+        self._daily("20260917", {"000001": 10.0, "000002": 11.0})
+        self._daily("20260922", {"000001": 9.4, "000002": 12.0})  # 09-17 + 3 sessions
+        risk = self.store.consecutive_break_risk("20260922", window=1)
+        self.assertEqual(1, risk["sample_count"])
+        self.assertEqual(1.0, risk["value"])          # -6% < -5%
+        self.assertEqual({"000001": -6.0}, risk["window_break_days"][0]["returns"])
+        self.assertEqual([], risk["source_gaps"])
+        self.assertEqual("20260922", risk["window_break_days"][0]["end_day"])
+
     def test_read_only_report_uses_existing_database(self):
         self.store.ingest_limits("20260923", limit_result("20260923", [row("000001", 1)]))
         reader = MarketFactStore(self.store.path, read_only=True)
@@ -185,7 +208,8 @@ class MarketFactStoreTests(unittest.TestCase):
         self.assertEqual(report["indicator_version"], "indicators.v1")
         self.assertIsNone(report["ths_emotion_equivalent"])
         self.assertNotIn("emotion_all_listed_denominator_unverified", report["source_gaps"])
-        self.assertIsNone(report["consecutive_break_risk"])
+        self.assertIsNone(report["consecutive_break_risk"]["value"])
+        self.assertIn("consecutive_break_risk_missing", report["source_gaps"])
         bad = {**result, "data": {**result["data"], "truncated": True}}
         with self.assertRaisesRegex(ValueError, "coverage"):
             self.store.ingest_daily("20260923", bad)

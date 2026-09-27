@@ -12,14 +12,32 @@
       "name": "情绪值",
       "glossary_section": "3.1",
       "formula": "上涨家数 ÷ (上涨家数 + 下跌家数) × 100",
-      "inputs": ["up_count", "down_count"],
+      "inputs": [
+        "up_count",
+        "down_count"
+      ],
       "universe": "traded_a_shares",
       "bands": [
-        {"below": 20, "label": "冰点"},
-        {"below": 40, "label": "低迷"},
-        {"below": 70, "label": "主升"},
-        {"through": 80, "label": "强势"},
-        {"above": 80, "label": "高潮"}
+        {
+          "below": 20,
+          "label": "冰点"
+        },
+        {
+          "below": 40,
+          "label": "低迷"
+        },
+        {
+          "below": 70,
+          "label": "主升"
+        },
+        {
+          "through": 80,
+          "label": "强势"
+        },
+        {
+          "above": 80,
+          "label": "高潮"
+        }
       ],
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -29,7 +47,9 @@
       "name": "上涨家数、下跌家数、平盘家数、涨跌比",
       "glossary_section": "3.1",
       "formula": "按当日涨跌幅 >0 / <0 / =0 计数；涨跌比 = 上涨 ÷ 下跌",
-      "inputs": ["pct_change"],
+      "inputs": [
+        "pct_change"
+      ],
       "universe": "traded_a_shares",
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -39,7 +59,11 @@
       "name": "涨停家数、跌停家数",
       "glossary_section": "1.4",
       "formula": "盘中：现价等于 stk_limit 涨停价（跌停价）；盘后：limit_list_d 涨停（跌停）池",
-      "inputs": ["close", "up_limit", "down_limit"],
+      "inputs": [
+        "close",
+        "up_limit",
+        "down_limit"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -49,15 +73,36 @@
       "name": "炸板率（封板率 = 100 − 炸板率）",
       "glossary_section": "1.4",
       "formula": "曾涨停未封死 ÷ 曾触及涨停 × 100；曾触及涨停 = 涨停 + 炸板",
-      "inputs": ["broken_count", "up_count"],
+      "inputs": [
+        "broken_count",
+        "up_count"
+      ],
       "universe": "non_st_a_shares",
       "bands": [
-        {"below": 16, "label": "一致性强"},
-        {"below": 25, "label": "正常偏强"},
-        {"below": 30, "label": "正常分歧"},
-        {"below": 35, "label": "分歧加大"},
-        {"through": 40, "label": "分歧严重"},
-        {"above": 40, "label": "退潮信号"}
+        {
+          "below": 16,
+          "label": "一致性强"
+        },
+        {
+          "below": 25,
+          "label": "正常偏强"
+        },
+        {
+          "below": 30,
+          "label": "正常分歧"
+        },
+        {
+          "below": 35,
+          "label": "分歧加大"
+        },
+        {
+          "through": 40,
+          "label": "分歧严重"
+        },
+        {
+          "above": 40,
+          "label": "退潮信号"
+        }
       ],
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -67,7 +112,10 @@
       "name": "晋级率（一进二、二进三、三进四+、整体）",
       "glossary_section": "1.1",
       "formula": "昨日 N 板今日封到 N+1 板的数量 ÷ 昨日 N 板总数 × 100；一进二 N=1、二进三 N=2、三进四+ N=3；整体 = 全部昨日涨停",
-      "inputs": ["previous_boards", "current_boards"],
+      "inputs": [
+        "previous_boards",
+        "current_boards"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -76,19 +124,24 @@
       "key": "board_heights",
       "name": "最高板、次高板",
       "glossary_section": "1.3",
-      "formula": "最高板 = 当日涨停股最大连板数；次高板 = 低于最高板的最大连板数",
-      "inputs": ["current_boards"],
+      "formula": "最高板 = 当日涨停股最大连板数；次高板 = 低于最高板的最大板数，只有一个板层时为空",
+      "inputs": [
+        "current_boards"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
-      "definition_status": "needs_vault_detail",
-      "detail_needed": "术语表只定义最高板；次高板按“低于最高板的最大板数”登记，待弈沐确认"
+      "definition_status": "defined"
     },
     {
       "key": "cohort_returns",
       "name": "涨停收益、连板收益、炸板收益",
       "glossary_section": "1.5",
       "formula": "昨日涨停池（连板池 = 昨日 ≥2 板，炸板池）全部股票今日涨跌幅的算术平均；缺任一只不出数",
-      "inputs": ["previous_up_codes", "previous_broken_codes", "pct_change"],
+      "inputs": [
+        "previous_up_codes",
+        "previous_broken_codes",
+        "pct_change"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
       "definition_status": "defined"
@@ -97,23 +150,39 @@
       "key": "money_effect",
       "name": "赚钱效应",
       "glossary_section": "3.2",
-      "formula": "现有实现：涨停收益 >2 为“好”，<0 为“差”，其余“一般”",
-      "inputs": ["limit_up_return"],
+      "formula": "好 = 涨停收益>3% 且 连板收益>0% 且 连板风险值<0.5 且 炸板收益>0%；差 = ≥3 项不达标，或 涨停收益<2% 且 ≥2 项不达标；其余一般；缺项按可得项判定、不判好，缺涨停收益不出结论",
+      "inputs": [
+        "limit_up_return",
+        "consecutive_return",
+        "broken_return",
+        "board_risk"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
-      "definition_status": "needs_vault_detail",
-      "detail_needed": "术语表 §3.2 为涨停收益、连板收益、炸板收益、连板风险值四项综合，未给出“差”的精确判定；当前仍用旧实现的单项阈值"
+      "definition_status": "defined"
     },
     {
       "key": "board_risk",
       "name": "连板风险值",
       "glossary_section": "3.3",
-      "formula": "现有实现：clamp(1 − 整体晋级率(0–1) × 1.8, 0, 1)",
-      "inputs": ["promotion_overall"],
+      "formula": "最近 5 个已满 3 日观察期的断板日（T-3 及更早）里，断板股（昨日≥2板、当日未封，非 ST）断板日收盘→第 3 个交易日收盘累计跌幅 >5% 的占比；未复权，停牌缺价不计入",
+      "inputs": [
+        "limit_runs",
+        "daily_rows.close"
+      ],
       "universe": "non_st_a_shares",
       "intraday_postclose_same": true,
-      "definition_status": "needs_vault_detail",
-      "detail_needed": "术语表 §3.3 为“断板后 3 日内跌幅 >50% 的个股占近期断板股比例”，需断板样本窗口与跌幅口径（累计还是单日）；当前仍用旧实现的晋级率代理值"
+      "definition_status": "defined",
+      "bands": [
+        {
+          "below": 0.5,
+          "label": "正常"
+        },
+        {
+          "through": 1,
+          "label": "高风险"
+        }
+      ]
     }
   ]
 }

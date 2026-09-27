@@ -39,7 +39,7 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 ## Provider 边界
 
-- 按用途执行 RouteSpec（2026-09-27 起）：StockToday 是唯一核心源，腾讯是唯一降级后备（个股逐只补、大盘整组切）；东方财富、新浪、PyTDX、TDX 退出默认路由，只作显式诊断；问财只服务带 `query` 的显式研究。StockToday 套餐不含的接口（`rt_idx_k`、`rt_sw_k`、`idx_mins`）记为 `PLAN_NOT_ENTITLED` 并 6 小时内不再调用。
+- 按用途执行 RouteSpec（2026-09-27 起）：StockToday 是唯一核心源，腾讯是唯一降级后备（个股逐只补、大盘整组切）；东方财富、新浪、PyTDX、TDX 退出默认路由，只作显式诊断；问财只服务带 `query` 的显式研究。StockToday 套餐不含的接口（`rt_idx_k`、`rt_sw_k`、`idx_mins`）记为 `PLAN_NOT_ENTITLED` 并 30 分钟内不再调用。
 - 时效以 `_meta.data_as_of` 计：盘中 ≤180 秒 fresh、180–600 秒 aging（个股逐只补腾讯）、>600 秒 stale（整组切腾讯）；全市场指标（`market_intraday_state`）不换源、不拼腾讯，失败即报错，由消费端停在最后正常值并标时间。
 - 指标（情绪、涨跌停、炸板率、晋级率、最高板、涨停/连板/炸板收益、赚钱效应、连板风险值）只在 `ym_stock_data/indicators.py` 实现，登记在 `v3/indicators.v1.json`，定义以 Vault《交易指标术语表》为准；`tests/test_indicators.py` 会拦截其他位置出现的公式。
 - TDX 不接任何默认路由，不调用任意 tool，不做交易写入。

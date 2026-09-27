@@ -149,6 +149,17 @@ def _previous_ladder(previous_date: str, db_path=None):
     return boards, broken, run.get("board_source")
 
 
+def _sealed_break_risk(as_of: str, db_path=None):
+    """§3.3 value from the sealed facts (break days need 3 completed sessions)."""
+
+    from .market_facts import DEFAULT_DB, MarketFactStore
+
+    try:
+        return MarketFactStore(db_path or DEFAULT_DB, read_only=True).consecutive_break_risk(as_of)
+    except Exception:
+        return {"value": None, "source_gaps": ["break_risk_unavailable"]}
+
+
 def _bucket(pct: float, state: str | None) -> str:
     if state == "up":
         return "涨停"
@@ -245,12 +256,16 @@ def build(provider, *, now: datetime | None = None) -> dict:
         gaps.append("previous_ladder_board_counts_unverified")
     limit_sets = {kind: [c for c, s in states.items() if s == kind] for kind in ("up", "down", "broken")}
     current_boards = {code: (previous_boards or {}).get(code, 0) + 1 for code in limit_sets["up"]}
+    break_risk = _sealed_break_risk(previous_date)
+    if break_risk.get("value") is None:
+        gaps.append("consecutive_break_risk_missing")
     summary = indicators.summarize(
         changes=changes,
         limit_sets=limit_sets if limits else {},
         current_boards=current_boards if limits else {},
         previous_boards=previous_boards if limits else None,
         previous_broken=previous_broken,
+        board_risk_value=break_risk.get("value"),
     )
     for code, board in current_boards.items():
         detail[code]["board"] = board

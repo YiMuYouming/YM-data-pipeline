@@ -64,13 +64,21 @@ class IndicatorFormulaTests(unittest.TestCase):
         self.assertIsNone(indicators.cohort_return(["a", "z"], changes))
         self.assertIsNone(indicators.cohort_return([], changes))
 
-    def test_legacy_money_effect_and_board_risk_are_registered_for_review(self):
-        self.assertEqual("好", indicators.money_effect(2.1))
-        self.assertEqual("一般", indicators.money_effect(2.0))
-        self.assertEqual("差", indicators.money_effect(-0.1))
-        self.assertEqual(0.64, indicators.board_risk(20.0))
-        pending = {item["key"] for item in indicators.needs_vault_detail()}
-        self.assertEqual({"money_effect", "board_risk", "board_heights"}, pending)
+    def test_money_effect_follows_the_confirmed_glossary_rule(self):
+        self.assertEqual("好", indicators.money_effect(3.5, 1.0, 0.5, 0.2))
+        # 涨停收益 2.5 fails only itself → 一般.
+        self.assertEqual("一般", indicators.money_effect(2.5, 1.0, 0.5, 0.2))
+        # 涨停收益 <2% with a second failure → 差 (2026-09-24: 0.55 / 1.40 / -1.66 / 0.18).
+        self.assertEqual("差", indicators.money_effect(0.553014, 1.399275, -1.658012, 0.1786))
+        self.assertEqual("差", indicators.money_effect(2.5, -1.0, -0.5, 0.6))
+        # Missing inputs never give 好; no 涨停收益 → no verdict.
+        self.assertEqual("一般", indicators.money_effect(3.5, 1.0, None, 0.2))
+        self.assertIsNone(indicators.money_effect(None, 1.0, 1.0, 0.1))
+
+    def test_board_risk_is_the_share_of_breaks_down_more_than_five_percent(self):
+        self.assertEqual(0.5, indicators.board_risk([-6.0, -5.0, 1.0, -12.3]))
+        self.assertIsNone(indicators.board_risk([]))
+        self.assertEqual([], indicators.needs_vault_detail())
 
     def test_summarize_uses_one_input_set(self):
         changes = {"a": 10.0, "b": 10.0, "c": 5.0, "d": -10.0, "e": 0.0}

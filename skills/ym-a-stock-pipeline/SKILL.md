@@ -55,7 +55,7 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 昨日炸板今日平均收益 | `yesterday_broken_return_pct` | 昨日炸板完整名单与今日全部报价覆盖 |
 | 次日晋级率 | `promotion_overall_by_code`；分层看 `promotion.rates` | 同源相邻日名单；板数冲突时分层为空 |
 | 市场情绪 | `yimu_emotion` | 上涨 ÷（上涨 + 下跌）× 100（术语表 §3.1，`indicator_version`）；`ths_emotion_equivalent` 仍为空 |
-| 连板股三日风险 | `consecutive_break_risk` | 当前为空；定义、复权价格和一年窗口尚未完成 |
+| 连板风险值 / 赚钱效应 | `consecutive_break_risk.value`、`money_effect` | 看 `sample_count` 与 `source_gaps`；收盘价未复权，除权样本可能偏差 |
 
 每项先看 `source_gaps`、`limit_daily_quality` 和原始 `fetched_at`；缺报价、停牌、
 历史榜单与日线冲突时只报告缺口，不补零。精确同花顺热榜仍用

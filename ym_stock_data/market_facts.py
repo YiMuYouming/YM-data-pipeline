@@ -421,6 +421,74 @@ class MarketFactStore:
                                "limit_days": row["board_count"]} for row in rows]},
         }
 
+    def consecutive_break_risk(self, as_of: str, *, window: int = 5, horizon: int = 3) -> dict:
+        """Glossary §3.3 inputs: break returns of the last ``window`` complete break days.
+
+        A break day D is complete when ``horizon`` sessions after it are sealed
+        (D <= as_of - horizon).  Break stock: previous-session board >= 2, not
+        in D's up pool, non-ST.  Return = D close -> D+horizon close (unadjusted).
+        """
+
+        from datetime import timedelta
+
+        def next_session(day):
+            day += timedelta(days=1)
+            while not is_trading_day(day):
+                day += timedelta(days=1)
+            return day
+
+        last = _day(as_of)
+        for _ in range(horizon):
+            last = previous_trading_day(last)
+        break_days = [last]
+        while len(break_days) < window:
+            break_days.append(previous_trading_day(break_days[-1]))
+        returns: list[float] = []
+        gaps: set[str] = set()
+        evidence = []
+        with self._connect() as conn:
+            def closes(day):
+                run = conn.execute(
+                    "SELECT id FROM daily_runs WHERE trade_date=? ORDER BY id DESC LIMIT 1",
+                    (day.strftime("%Y%m%d"),),
+                ).fetchone()
+                if run is None:
+                    return None
+                return {row["code"]: row["close"] for row in conn.execute(
+                    "SELECT code, close FROM daily_rows WHERE run_id=?", (run["id"],))}
+
+            for day in sorted(break_days):
+                key = day.strftime("%Y%m%d")
+                before = self.latest_limit_run(previous_trading_day(day).strftime("%Y%m%d"))
+                current = self.latest_limit_run(key)
+                end_day = day
+                for _ in range(horizon):
+                    end_day = next_session(end_day)
+                start_close, end_close = closes(day), closes(end_day)
+                if before is None or current is None or start_close is None or end_close is None:
+                    gaps.add("break_risk_window_day_missing")
+                    continue
+                if any(flag in before["board_source"] for flag in ("unverified", "disagreement", "repaired")):
+                    gaps.add("break_risk_board_counts_unverified")
+                multi = {row["code"] for row in self._events(before["id"], "up")
+                         if row["board_count"] >= 2 and not indicators.is_st(row["name"])}
+                sealed = {row["code"] for row in self._events(current["id"], "up")}
+                broken = sorted(multi - sealed)
+                day_returns = {}
+                for code in broken:
+                    if code in start_close and code in end_close and start_close[code] > 0:
+                        day_returns[code] = round((end_close[code] / start_close[code] - 1) * 100, 4)
+                    else:
+                        gaps.add("break_risk_price_missing")
+                returns.extend(day_returns.values())
+                evidence.append({"break_day": key, "end_day": end_day.strftime("%Y%m%d"),
+                                 "returns": day_returns})
+        value = indicators.board_risk(returns)
+        return {"value": value, "sample_count": len(returns),
+                "risky_count": sum(r < indicators.BREAK_RISK_DROP_PCT for r in returns),
+                "basis": "unadjusted_close", "window_break_days": evidence,
+                "source_gaps": sorted(gaps)}
+
     def report(self, trade_date: str) -> dict:
         previous_date = previous_trading_day(_day(trade_date)).strftime("%Y%m%d")
         current = self.latest_limit_run(trade_date)
@@ -576,7 +644,13 @@ class MarketFactStore:
                        "fetched_at": daily["fetched_at"], "run_id": daily["id"]}
         else:
             gaps.append("all_market_daily_breadth_missing")
-        gaps.append("consecutive_break_risk_definition_and_adjusted_history_missing")
+        try:
+            break_risk = self.consecutive_break_risk(trade_date)
+        except (ValueError, sqlite3.Error):
+            break_risk = {"value": None, "source_gaps": ["break_risk_unavailable"]}
+        gaps.extend(break_risk.get("source_gaps") or [])
+        if break_risk.get("value") is None:
+            gaps.append("consecutive_break_risk_missing")
         return {
             "trade_date": trade_date,
             "previous_trade_date": previous_date,
@@ -589,7 +663,13 @@ class MarketFactStore:
             "return_cohort_counts": return_counts,
             "yimu_emotion": emotion,
             "ths_emotion_equivalent": None,
-            "consecutive_break_risk": None,
+            "consecutive_break_risk": break_risk,
+            "money_effect": indicators.money_effect(
+                returns["yesterday_limit_up_return_pct"],
+                returns["yesterday_consecutive_return_pct"],
+                returns["yesterday_broken_return_pct"],
+                break_risk.get("value"),
+            ),
             "source_gaps": gaps,
             "limit_evidence": {
                 "current": ({key: current[key] for key in ("id", "provider", "fetched_at", "phase", "payload_sha256", "source_time_status", "board_source")} if current else None),

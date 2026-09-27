@@ -30,8 +30,9 @@ ENDPOINT = "https://tushare.citydata.club"
 DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-budget.sqlite3"
 MAX_ROWS = 10000
 # rt_idx_k / rt_idx_tick / rt_sw_k / idx_mins answer "该接口为龙虾套餐专属" on the
-# current plan; skip them for six hours instead of spending quota every poll.
-ENTITLEMENT_RETRY_SECONDS = 6 * 3600
+# current plan; skip them for 30 minutes instead of spending quota every poll,
+# and pick up a plan upgrade within half an hour without a restart.
+ENTITLEMENT_RETRY_SECONDS = 30 * 60
 _INDEX_CODES = (
     ("000001.SH", "上证指数"),
     ("399001.SZ", "深证指数"),
