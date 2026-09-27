@@ -1,0 +1,397 @@
+{
+  "cases": [
+    {
+      "case_identity": "8736766d65db3db283eab2a6a318e08e443b4af2cedd111de1f4bb2cceffde2f",
+      "category": "股票数据",
+      "classification": "semantic_fail",
+      "columns": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "change",
+        "pct_chg",
+        "vol",
+        "amount",
+        "ah_vol",
+        "ah_amount"
+      ],
+      "declared_filter_checks": [
+        {
+          "field": "ts_code",
+          "kind": "set_equal"
+        },
+        {
+          "field": "date_range",
+          "kind": "date_range",
+          "response_fields": [
+            "trade_date",
+            "date",
+            "end_date",
+            "ann_date",
+            "pub_date"
+          ]
+        }
+      ],
+      "duplicate_key_checks": {
+        "duplicate_count": 0,
+        "key_fields": [],
+        "reason": null,
+        "status": "not_applicable"
+      },
+      "duplicate_key_fields": [],
+      "end": "2026-09-24T11:07:36+08:00",
+      "expected_fields": [
+        "ts_code"
+      ],
+      "filter_checks": {
+        "checks": {
+          "date_range": {
+            "expected": {
+              "end_date": "20180718",
+              "start_date": "20180701"
+            },
+            "status": "pass"
+          },
+          "ts_code": {
+            "expected": [
+              "000001.SZ"
+            ],
+            "status": "pass"
+          }
+        },
+        "status": "pass"
+      },
+      "fixed_date": "20250930",
+      "latency_ms": 778,
+      "method": "daily",
+      "pagination": {
+        "limit_field": "limit",
+        "offset_field": "offset",
+        "total_field": "total",
+        "total_required": true,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "pagination_truncation_checks": {
+        "limit": null,
+        "offset": 0,
+        "reason": "total_missing",
+        "status": "unknown",
+        "total": null,
+        "total_present": false,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "payload_hash": "1249950da127da586170407a947afd915f2e305eaaac6884af4bd4e2ecd8ccb7",
+      "payload_sha256": "1249950da127da586170407a947afd915f2e305eaaac6884af4bd4e2ecd8ccb7",
+      "primary_declared": true,
+      "primary_eligible": false,
+      "probe_id": "vendor_example",
+      "provider_code": 0,
+      "requested_fields": [],
+      "row_count": 13,
+      "sanitized_params": {
+        "api_name": "daily",
+        "fields": "",
+        "params": {
+          "end_date": "20180718",
+          "start_date": "20180701",
+          "ts_code": "000001.SZ"
+        }
+      },
+      "start": "2026-09-24T11:07:35+08:00"
+    },
+    {
+      "case_identity": "1c8407ac57060e76ee0f81319e27f1ddb7d480b46a7873c0324709eecfc70905",
+      "category": "股票数据",
+      "classification": "provider_error",
+      "columns": [],
+      "declared_filter_checks": [
+        {
+          "field": "ts_code",
+          "kind": "set_equal"
+        },
+        {
+          "field": "date_range",
+          "kind": "date_range",
+          "response_fields": [
+            "trade_date",
+            "date",
+            "end_date",
+            "ann_date",
+            "pub_date"
+          ]
+        }
+      ],
+      "duplicate_key_checks": {
+        "duplicate_count": 0,
+        "key_fields": [],
+        "reason": null,
+        "status": "not_applicable"
+      },
+      "duplicate_key_fields": [],
+      "end": "2026-09-24T11:07:36+08:00",
+      "expected_fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount"
+      ],
+      "filter_checks": {
+        "checks": {},
+        "status": "not_applicable"
+      },
+      "fixed_date": "20250930",
+      "latency_ms": 283,
+      "method": "monthly",
+      "pagination": {
+        "limit_field": "limit",
+        "offset_field": "offset",
+        "total_field": "total",
+        "total_required": true,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "pagination_truncation_checks": {
+        "limit": null,
+        "offset": null,
+        "reason": null,
+        "status": "not_applicable",
+        "total": null,
+        "total_present": false,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "payload_hash": "af745e7f1bc645243332caca1bd3f0af7dbc3f53df0357fdf5cbf5af5bb9e0f2",
+      "payload_sha256": "af745e7f1bc645243332caca1bd3f0af7dbc3f53df0357fdf5cbf5af5bb9e0f2",
+      "primary_declared": true,
+      "primary_eligible": false,
+      "probe_id": "vendor_example",
+      "provider_code": 1,
+      "requested_fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount"
+      ],
+      "row_count": 0,
+      "sanitized_params": {
+        "api_name": "monthly",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "params": {
+          "end_date": "20181101",
+          "start_date": "20180101",
+          "ts_code": "000001.SZ"
+        }
+      },
+      "start": "2026-09-24T11:07:36+08:00"
+    },
+    {
+      "case_identity": "29bdfaa0285682acd15e7e316c1460f2879ad10ac62754b25bda46968562fd8f",
+      "category": "股票数据",
+      "classification": "schema_error",
+      "columns": [],
+      "declared_filter_checks": [
+        {
+          "field": "ts_code",
+          "kind": "pattern"
+        }
+      ],
+      "duplicate_key_checks": {
+        "duplicate_count": 0,
+        "key_fields": [],
+        "reason": null,
+        "status": "not_applicable"
+      },
+      "duplicate_key_fields": [],
+      "end": "2026-09-24T11:07:36+08:00",
+      "expected_fields": [
+        "ts_code"
+      ],
+      "filter_checks": {
+        "checks": {},
+        "status": "not_applicable"
+      },
+      "fixed_date": "20250930",
+      "latency_ms": 289,
+      "method": "rt_k",
+      "pagination": {
+        "limit_field": "limit",
+        "offset_field": "offset",
+        "total_field": "total",
+        "total_required": true,
+        "truncation_policy": "report_if_total_exceeds_rows"
+      },
+      "pagination_truncation_checks": {
+        "limit": null,
+        "offset": null,
+        "reason": null,
+        "status": "not_applicable",
+        "total": null,
+        "total_present": false,
+        "truncation_policy": "report_if_total_exceeds_rows"
+      },
+      "payload_hash": "89b336fbef341f4ece030601af60da7d1c6b9cc65d97ee88901cc33251c1f8c3",
+      "payload_sha256": "89b336fbef341f4ece030601af60da7d1c6b9cc65d97ee88901cc33251c1f8c3",
+      "primary_declared": true,
+      "primary_eligible": false,
+      "probe_id": "vendor_example",
+      "provider_code": 0,
+      "requested_fields": [],
+      "row_count": 0,
+      "sanitized_params": {
+        "api_name": "rt_k",
+        "fields": "",
+        "params": {
+          "ts_code": "3*.SZ"
+        }
+      },
+      "start": "2026-09-24T11:07:36+08:00"
+    },
+    {
+      "case_identity": "d29203848ea70f3cacb9b6bbe889c04953aa69dd2c90d945926ddc3a804a25fb",
+      "category": "股票数据",
+      "classification": "semantic_fail",
+      "columns": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount"
+      ],
+      "declared_filter_checks": [
+        {
+          "field": "ts_code",
+          "kind": "set_equal"
+        },
+        {
+          "field": "date_range",
+          "kind": "date_range",
+          "response_fields": [
+            "trade_date",
+            "date",
+            "end_date",
+            "ann_date",
+            "pub_date"
+          ]
+        }
+      ],
+      "duplicate_key_checks": {
+        "duplicate_count": 0,
+        "key_fields": [],
+        "reason": null,
+        "status": "not_applicable"
+      },
+      "duplicate_key_fields": [],
+      "end": "2026-09-24T11:07:37+08:00",
+      "expected_fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount"
+      ],
+      "filter_checks": {
+        "checks": {
+          "date_range": {
+            "expected": {
+              "end_date": "20181101",
+              "start_date": "20180101"
+            },
+            "status": "pass"
+          },
+          "ts_code": {
+            "expected": [
+              "000001.SZ"
+            ],
+            "status": "pass"
+          }
+        },
+        "status": "pass"
+      },
+      "fixed_date": "20250930",
+      "latency_ms": 787,
+      "method": "weekly",
+      "pagination": {
+        "limit_field": "limit",
+        "offset_field": "offset",
+        "total_field": "total",
+        "total_required": true,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "pagination_truncation_checks": {
+        "limit": null,
+        "offset": 0,
+        "reason": "total_missing",
+        "status": "unknown",
+        "total": null,
+        "total_present": false,
+        "truncation_policy": "fail_if_total_exceeds_rows"
+      },
+      "payload_hash": "9bc04408aa62b23fd7f13cd0f4d0364bd04be01d2664598bc74c36f035e1b717",
+      "payload_sha256": "9bc04408aa62b23fd7f13cd0f4d0364bd04be01d2664598bc74c36f035e1b717",
+      "primary_declared": true,
+      "primary_eligible": false,
+      "probe_id": "vendor_example",
+      "provider_code": 0,
+      "requested_fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount"
+      ],
+      "row_count": 42,
+      "sanitized_params": {
+        "api_name": "weekly",
+        "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+        "params": {
+          "end_date": "20181101",
+          "start_date": "20180101",
+          "ts_code": "000001.SZ"
+        }
+      },
+      "start": "2026-09-24T11:07:36+08:00"
+    }
+  ],
+  "classifications": [
+    "provider_error",
+    "schema_error",
+    "semantic_fail"
+  ],
+  "counts": {
+    "auth_denied": 0,
+    "invalid_params": 0,
+    "not_run": 0,
+    "pass_nonempty": 0,
+    "provider_error": 1,
+    "rate_limited": 0,
+    "reachable_empty": 0,
+    "schema_error": 1,
+    "semantic_fail": 2,
+    "timeout": 0
+  },
+  "ended": "2026-09-24T11:07:37+08:00",
+  "inventory_sha256": "eed063e91d066e1180c6f15e7355f886e8d33937e31c5333fcf5fcc709693ff1",
+  "probe_manifest_sha256": "8778ddb7a9ddec43641d3f68a553a415e44c73a7b218e21d95a83d4f40a542a1",
+  "receipt_sha256": "67b70db2df4144962ab2a21ef9aaf028a57c691750503ef9f79925d782c5b9df",
+  "schema_version": "3.1",
+  "started": "2026-09-24T11:07:35+08:00"
+}

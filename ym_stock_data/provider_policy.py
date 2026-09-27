@@ -33,7 +33,7 @@ PIPELINE_VERSION = "3.0"
 ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
-PACKAGED_POLICY_SHA256 = "c2c8362d1914a97a499c6fd0c71553fe5bf090346183e7bfb7812ddcf759ca88"
+PACKAGED_POLICY_SHA256 = "e133191ec2d65c260cbe138369cc5008f8c0e6a31819202370fcfd412338451f"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )

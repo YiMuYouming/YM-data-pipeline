@@ -10,6 +10,7 @@ import ym_stock_data.api as api
 from ym_stock_data.doctor import collect_diagnostics
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.providers.wind_mcp import (
     WIND_ENRICHMENT_CAPABILITIES,
     WIND_EVENT_ALLOWLIST,
@@ -23,6 +24,10 @@ from ym_stock_data.v2 import capability_manifest
 
 class WindProviderTests(unittest.TestCase):
     def setUp(self):
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)

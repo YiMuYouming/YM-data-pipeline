@@ -39,7 +39,7 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 ## Provider 边界
 
-- 按用途执行 RouteSpec：默认行情/历史查询优先 StockToday；高频个股轮询优先腾讯、大盘轮询优先 PyTDX。TDX owned OAuth 仅按对应路由作为后备，调用固定六项只读能力。
+- 按用途执行 RouteSpec：激活的 V3 默认个股快照优先腾讯，日/周/月 K 线优先东方财富，分钟 K 线优先 PyTDX；StockToday 当前审计未通过主源晋级，保留显式查询。高频个股轮询优先腾讯，大盘轮询优先 PyTDX。TDX owned OAuth 仅按对应路由作为后备，调用固定六项只读能力。
 - TDX 不接 realtime/default breadth/sector，不调用任意 tool，不做交易写入。
 - TDX 登录优先走本仓库 `./ym-data auth login-tdx`；状态只走离线
   `./ym-data auth status-tdx`。默认 macOS Keychain，文件 fallback 必须显式

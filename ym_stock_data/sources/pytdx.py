@@ -845,19 +845,23 @@ def _all_share_codes(api):
 def _filter_direct_bars(bars, period: str) -> list[dict]:
     """Keep completed, numerically meaningful direct bars only."""
 
-    now = datetime.now()
+    now = datetime.now(_SHANGHAI).replace(tzinfo=None)
     result = []
     for bar in bars or []:
         if not isinstance(bar, dict):
             continue
         stamp = str(bar.get("datetime", ""))
         try:
-            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00")).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(_SHANGHAI).replace(tzinfo=None)
         except ValueError:
             continue
         volume = _number(bar.get("vol"), 0.0)
         amount = _number(bar.get("amount"), 0.0)
         if volume < 1 or amount < 1:
+            continue
+        if period in {"1m", "5m", "15m", "60m"} and parsed > now:
             continue
         if (
             period in {"daily", "weekly", "monthly"}
@@ -893,15 +897,29 @@ def _paged_direct_bars(fetch_page, *, period, count, start_date, end_date):
     PyTDX's small ``count`` reads are relative to the newest bars, so they
     cannot serve historical intraday backfills.  Date-bounded requests use
     the public 800-row page size and stop only after the lower date boundary
-    has been reached.  The caller still applies the final exact date filter.
+    has been reached.  Unbounded counts read an extra bar to replace an
+    unfinished current bar.  The caller still applies the final date filter.
     """
 
     start_date = _normalize_date_bound(start_date)
     end_date = _normalize_date_bound(end_date)
     has_range = start_date is not None or end_date is not None
     if not has_range:
-        page = fetch_page(0, count or (30 if period in {"daily", "60m"} else 48))
-        return _filter_direct_bars(page or [], period)
+        target = count or (30 if period in {"daily", "60m"} else 48)
+        page_size = min(_BAR_PAGE_SIZE, target + 1) if count else target
+        rows = []
+        offset = 0
+        for _ in range(_MAX_RANGE_PAGES):
+            page = fetch_page(offset, page_size)
+            if not page:
+                break
+            rows.extend(_filter_direct_bars(page, period))
+            if count is None or len(rows) >= count or len(page) < page_size:
+                break
+            offset += page_size
+            page_size = min(_BAR_PAGE_SIZE, count - len(rows) + 1)
+        rows.sort(key=lambda row: str(row.get("datetime", "")))
+        return rows[-count:] if count else rows
 
     rows = []
     lower_bound = start_date or end_date

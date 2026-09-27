@@ -9,6 +9,7 @@ from ym_stock_data import query
 from ym_stock_data.contracts import build_result as real_build_result
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_policy import CompiledPolicy
 
 
 class FakeProvider:
@@ -88,6 +89,10 @@ def full_kline_data(adjustment="none"):
 
 class PublicApiTests(unittest.TestCase):
     def setUp(self):
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.state = ProviderState(Path(self.temp_dir.name) / "providers.sqlite3")

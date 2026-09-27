@@ -11,6 +11,7 @@ from ym_stock_data import fetch, list_supported, query
 from ym_stock_data.contracts import validate_result
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.providers.local import LocalProvider
 from ym_stock_data.v2.resolve import resolve
 
@@ -85,6 +86,10 @@ def business_rows(result):
 
 class LegacyCompatibilityTests(unittest.TestCase):
     def setUp(self):
+        legacy_policy = CompiledPolicy(None, "inactive", None)
+        policy_patch = patch.object(api, "load_compiled_policy", return_value=legacy_policy)
+        policy_patch.start()
+        self.addCleanup(policy_patch.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.state = ProviderState(Path(self.temp_dir.name) / "providers.sqlite3")

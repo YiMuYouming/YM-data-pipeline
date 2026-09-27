@@ -54,6 +54,26 @@ class LimitPromotionTests(unittest.TestCase):
         self.assertIsNone(result["rates"]["one_to_two"]["pct"])
         self.assertEqual(result["rates"]["overall"]["pct"], 100.0)
 
+    def test_per_stock_sets_include_denominators_st_and_high_board_promotions(self):
+        previous = state("20260922", [
+            row("000001", 1), row("000002", 1, "*ST测试"),
+            row("000003", 4), row("000004", 5),
+        ])
+        current = state("20260923", [
+            row("000001", 2), row("000002", 2, "*ST测试"),
+            row("000003", 5), row("000004", 5),
+        ])
+
+        result = derive_limit_promotion(previous, current)
+
+        self.assertEqual(result["rates"]["one_to_two"]["denominator_codes"], ["000001"])
+        self.assertEqual(result["rates"]["one_to_two"]["promoted_codes"], ["000001"])
+        self.assertEqual(result["excluded_st_previous_codes"], ["000002"])
+        self.assertEqual(result["previous_high_board_codes"], ["000003", "000004"])
+        self.assertEqual(result["promoted_high_board_codes"], ["000003"])
+        self.assertEqual(result["previous_consecutive_codes"], ["000003", "000004"])
+        self.assertEqual(result["current_consecutive_codes"], ["000001", "000003", "000004"])
+
     def test_incomplete_or_inconsistent_pools_fail_closed(self):
         for bad in (
             state("20260922", []),

@@ -299,7 +299,7 @@ class ProviderSmokeV3Tests(unittest.TestCase):
                     _test_only_output_root=True,
                 )
 
-    def test_source_binding_includes_baseline_adapter_and_inactive_policy(self):
+    def test_source_binding_includes_baseline_adapter_and_active_policy(self):
         _result, receipt, _providers = self._run_fake()
         binding = receipt["source_binding"]
         self.assertEqual(
@@ -310,7 +310,7 @@ class ProviderSmokeV3Tests(unittest.TestCase):
         self.assertEqual("ym_stock_data/api.py", binding["registry_source"]["logical_path"])
         self.assertTrue(any(item["logical_path"] == "ym_stock_data/providers/local.py" for item in binding["adapter_sources"]))
         self.assertEqual("ym_stock_data/v3/provider-policy.v3.json", binding["policy"]["logical_path"])
-        self.assertIs(binding["policy"]["active"], False)
+        self.assertIs(binding["policy"]["active"], True)
 
     def test_statuses_and_timeout_are_explicit_and_case_bounds_are_hard(self):
         outcomes = {

@@ -175,11 +175,16 @@ def _policy_binding() -> dict[str, Any]:
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("provider-smoke policy binding is unreadable") from error
-    if not isinstance(policy, dict) or policy.get("active") is not False:
-        raise ValueError("provider-smoke requires inactive provider policy")
+    if not isinstance(policy, dict) or type(policy.get("active")) is not bool:
+        raise ValueError("provider-smoke policy activation flag is invalid")
+    from .provider_policy import load_compiled_policy
+
+    compiled = load_compiled_policy()
+    if policy["active"] and not compiled.active:
+        raise ValueError("provider-smoke active policy evidence is invalid")
     return {
         **_source_file_binding(POLICY_LOGICAL_PATH),
-        "active": False,
+        "active": policy["active"],
     }
 
 

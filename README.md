@@ -146,10 +146,12 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 旧消费者；它们不是 Agent 推荐入口，也不是查询失败后的手工降级步骤。调用方不得直接
 选择 provider、拼接 fallback、调用 vendor SDK 或任意 URL。
 
-路由按用途固定：默认 Agent 查询的 `realtime_market`、`stock_snapshot` 与
-日/周/月/分钟 `stock_kline` 以 StockToday 为第一源。`use_case="realtime_poll"`
-个股轮询使用腾讯 → PyTDX → TDX，大盘轮询使用 PyTDX → 腾讯 → 东方财富。
-分钟 K 线使用 StockToday → PyTDX → Sina → TDX。异常、超时、质量不合格及
+路由按用途固定：当前激活的 V3 策略使默认 `stock_snapshot` 使用腾讯 → PyTDX → TDX，
+日/周/月 `stock_kline` 使用东方财富优先并保留后备，分钟 K 线使用
+PyTDX → Sina → TDX。`use_case="realtime_poll"` 个股轮询仍使用腾讯 → PyTDX →
+TDX，大盘轮询使用 PyTDX → 腾讯 → 东方财富。`realtime_market` 等未列入 V3
+capability policy 的意图沿用原 RouteSpec。StockToday 可显式查询；其当前审计回执
+没有主源晋级证据，因此不进入 V3 自动路由。异常、超时、质量不合格及
 允许继续的合法空集按对应 RouteSpec 尝试后备，并保留降级事实；消费者不得自行改序。
 完整常用路由及适用边界见 [工作区总览](docs/README.md)。
 
@@ -176,13 +178,13 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
 | `market_facts` | 本环境独立 SQLite 事实库；只读查询 | `configured_unverified` 或 `unavailable` | `market_facts` 唯一源；缺日期/缺库显式失败 | 否；不能以旧缓存冒充当日事实 |
-| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 看板 `realtime_market` 第一源；`stock_snapshot`、`stock_kline` 后备，默认 `realtime_market` 链也按 RouteSpec 后备 | 允许；只按对应 RouteSpec 次序 |
+| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 看板 `realtime_market` 与默认分钟 `stock_kline` 第一源；`stock_snapshot`、日/周/月 `stock_kline` 后备 | 允许；只按对应 RouteSpec 次序 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 日/周/月末级后备；不提供指数分钟 K 线 | 允许；仅在 StockToday、东财指数与新浪指数失败或合法空集后 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `realtime_market` 后备末级 | 允许；仅在前置源失败或合法空集后 |
 | `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第一源；`index_kline` 在 StockToday 后 | 允许；只按对应 RouteSpec 次序 |
-| `eastmoney_stock` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 日/周/月 `stock_kline` 第二源；明确保持 `none` / `qfq` 复权语义 | 允许；仅在 StockToday 失败或合法空集后 |
+| `eastmoney_stock` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 默认日/周/月 `stock_kline` 第一源；明确保持 `none` / `qfq` 复权语义 | 允许；失败后进入后备 |
 | `tencent` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 看板 `stock_snapshot` 第一源；`realtime_market`、`stock_kline` 后备，默认 `stock_snapshot` 链也按 RouteSpec 后备 | 允许；只按对应 RouteSpec 次序 |
-| `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 分钟 `stock_kline` 第三源 | 允许；只按上述 RouteSpec 次序 |
+| `sina` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 默认分钟 `stock_kline` 第二源 | 允许；只按上述 RouteSpec 次序 |
 | `sina_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_intraday_compare` 第二源；`index_kline` 在东财指数之后，仅支持分钟周期 | 允许；只按对应 RouteSpec 次序 |
 | `ths_industry` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `sector_index` 唯一源；`industry_flow` 默认链后备，保留价格/表现语义 | `industry_flow` 仅按对应 RouteSpec 次序 |
 | `pytdx_breadth` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 默认 `review_sentiment` 第一源 | 允许；失败后进入 `eastmoney_breadth` |
@@ -200,7 +202,7 @@ TDX route provider 只在所有排在其前的语义兼容源失败或合法空�
 | `tdx_mcp` | owned OAuth；`./ym-data auth login-tdx`，`./ym-data auth status-tdx` | TDX 总状态 `configured_unverified` / `auth_missing` / `auth_expired` | 诊断聚合，无 RouteSpec | 否；不执行业务查询 |
 | `tdx_screener` | owned OAuth；同上 | 独立能力状态 | 显式 `review_sentiment` 第三源 | 允许；仅在 `iwencai_openapi`、`pywencai` 失败或合法空集后 |
 | `tdx_quotes` | owned OAuth；同上 | 独立能力状态 | `stock_snapshot` 后备末级 | 允许；仅在前置源失败或合法空集后 |
-| `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日周月及分钟 `stock_kline` 第三源 | 允许；仅在对应周期前置兼容源失败后 |
+| `tdx_kline` | owned OAuth；同上 | 独立能力状态 | 日/周/月及分钟 `stock_kline` 末级后备 | 允许；仅在对应周期前置兼容源失败后 |
 | `tdx_report` | owned OAuth；同上 | 独立能力状态 | `research` 第二源 | 允许；仅在 `eastmoney_research` 失败后 |
 | `tdx_notice` | owned OAuth；同上 | 独立能力状态 | `filings` 第二源 | 允许；仅在 `cninfo` 失败后 |
 | `tdx_news` | owned OAuth；同上 | 独立能力状态 | `news` 第二源 | 允许；仅在 `cls` 失败后 |

@@ -116,7 +116,7 @@ def derive_limit_promotion(
     board four, even though the published tiered rates stop at 3→4.
     """
 
-    def stock_set(snapshot: dict, day: str | None) -> tuple[dict[str, int], int]:
+    def stock_set(snapshot: dict, day: str | None) -> tuple[dict[str, int], list[str]]:
         if not isinstance(snapshot, dict) or snapshot.get("error"):
             raise ValueError("LIMIT_PROMOTION_SOURCE_UNAVAILABLE")
         if day and snapshot.get("date") != day:
@@ -131,7 +131,7 @@ def derive_limit_promotion(
         ):
             raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
         stocks: dict[str, int] = {}
-        excluded_st = 0
+        excluded_st_codes: list[str] = []
         seen: set[str] = set()
         for row in rows:
             if not isinstance(row, dict):
@@ -142,15 +142,15 @@ def derive_limit_promotion(
                 raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
             seen.add(code)
             if "ST" in str(row.get("name") or "").upper():
-                excluded_st += 1
+                excluded_st_codes.append(code)
                 continue
             stocks[code] = board
         if not stocks:
             raise ValueError("LIMIT_PROMOTION_INCOMPLETE")
-        return stocks, excluded_st
+        return stocks, sorted(excluded_st_codes)
 
-    previous_stocks, excluded_previous = stock_set(previous, previous_date)
-    current_stocks, excluded_current = stock_set(current, current_date)
+    previous_stocks, excluded_previous_codes = stock_set(previous, previous_date)
+    current_stocks, excluded_current_codes = stock_set(current, current_date)
     promoted = {
         code: (board, current_stocks[code])
         for code, board in previous_stocks.items()
@@ -169,7 +169,21 @@ def derive_limit_promotion(
             "denominator": len(universe),
             "pct": round(len(winners) / len(universe) * 100, 6) if universe else None,
             "promoted_codes": winners,
+            "denominator_codes": sorted(universe),
         }
+
+    previous_high_board_codes = sorted(
+        code for code, board in previous_stocks.items() if board >= 4
+    )
+    promoted_high_board_codes = sorted(
+        code for code in previous_high_board_codes if code in promoted
+    )
+    previous_consecutive_codes = sorted(
+        code for code, board in previous_stocks.items() if board >= 2
+    )
+    current_consecutive_codes = sorted(
+        code for code, board in current_stocks.items() if board >= 2
+    )
 
     return {
         "previous_date": previous.get("date"),
@@ -178,8 +192,14 @@ def derive_limit_promotion(
         "current_non_st_count": len(current_stocks),
         "current_consecutive_count": sum(board >= 2 for board in current_stocks.values()),
         "highest_board": max(current_stocks.values()),
-        "excluded_st_previous": excluded_previous,
-        "excluded_st_current": excluded_current,
+        "excluded_st_previous": len(excluded_previous_codes),
+        "excluded_st_current": len(excluded_current_codes),
+        "excluded_st_previous_codes": excluded_previous_codes,
+        "excluded_st_current_codes": excluded_current_codes,
+        "previous_high_board_codes": previous_high_board_codes,
+        "promoted_high_board_codes": promoted_high_board_codes,
+        "previous_consecutive_codes": previous_consecutive_codes,
+        "current_consecutive_codes": current_consecutive_codes,
         "rates": {
             "one_to_two": rate(1),
             "two_to_three": rate(2),

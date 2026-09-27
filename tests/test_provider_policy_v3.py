@@ -895,7 +895,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
 
         changed_empty = copy.deepcopy(original)
         changed_empty["capabilities"]["stock_snapshot"]["empty_policy"] = (
-            "continue_until_exhausted"
+            "stop"
         )
         mutations.append(changed_empty)
 
@@ -930,7 +930,7 @@ class ProviderPolicyV3Tests(unittest.TestCase):
         mutations.append(changed_receipt_hash)
 
         changed_active = copy.deepcopy(original)
-        changed_active["active"] = True
+        changed_active["active"] = False
         mutations.append(changed_active)
 
         for tampered in mutations:
@@ -1249,17 +1249,45 @@ class ProviderPolicyV3Tests(unittest.TestCase):
         self.assertEqual("continue_until_exhausted", minute.empty_policy)
         self.assertEqual(300, minute.max_age_sec)
 
-    def test_packaged_policy_is_canonical_inactive_and_does_not_auto_promote(self):
+    def test_packaged_policy_is_active_without_unverified_stocktoday_promotion(self):
         module = self.policy_module()
         expected_path = Path(module.__file__).resolve().parent / "v3" / "provider-policy.v3.json"
         self.assertEqual(expected_path, module.POLICY_PATH.resolve())
         policy = module.load_policy()
-        self.assertFalse(policy["active"])
+        self.assertTrue(policy["active"])
         compiled = module.load_compiled_policy(now=NOW)
-        self.assertEqual("inactive", compiled.policy_status)
+        self.assertEqual("active", compiled.policy_status)
+        self.assertEqual(set(module.CAPABILITIES), set(policy["capabilities"]))
+        for capability, config in policy["capabilities"].items():
+            if capability != "stocktoday_data":
+                self.assertNotIn("stocktoday", config["provider_order"])
+                self.assertEqual([], config["audit_evidence"])
+        self.assertEqual("tencent", compiled.route("stock_snapshot", {}).providers[0])
         self.assertEqual(
-            "stocktoday", compiled.route("stock_snapshot", {}).providers[0]
+            "eastmoney_stock",
+            compiled.route("stock_kline", {"period": "daily"}).providers[0],
         )
+        self.assertEqual(
+            "pytdx", compiled.route("stock_kline", {"period": "15m"}).providers[0]
+        )
+        self.assertEqual(
+            ("stocktoday",),
+            compiled.route("stock_kline", {"period": "daily", "source": "stocktoday"}).providers,
+        )
+
+        snapshot = FakeProvider("tencent", [fresh_snapshot_outcome("tencent")])
+        result = api._query_with(
+            "stock_snapshot",
+            {"codes": ["600519"]},
+            provider_loader=lambda name: snapshot,
+            state_loader=lambda: self.state,
+            policy_loader=lambda: compiled,
+        )
+        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("active", result["_meta"]["policy_status"])
+        self.assertEqual("tencent", result["_meta"]["provider_used"])
+        self.assertEqual("primary", result["_meta"]["source_tier"])
+        self.assertEqual(1, len(result["_meta"]["attempts"]))
 
 
 if __name__ == "__main__":
