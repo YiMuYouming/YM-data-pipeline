@@ -18,8 +18,8 @@ class IndicatorFormulaTests(unittest.TestCase):
         self.assertIsNone(indicators.emotion(0, 0))
 
     def test_emotion_bands_follow_glossary_boundaries(self):
-        cases = {19.99: "冰点", 20: "低迷", 39.99: "低迷", 40: "正常",
-                 69.99: "正常", 70: "强势", 80: "强势", 80.01: "高潮", None: None}
+        cases = {19.99: "冰点", 20: "低迷", 39.99: "低迷", 40: "主升",
+                 69.99: "主升", 70: "强势", 80: "强势", 80.01: "高潮", None: None}
         for score, label in cases.items():
             with self.subTest(score=score):
                 self.assertEqual(label, indicators.emotion_band(score))

@@ -178,7 +178,7 @@ class MarketFactStoreTests(unittest.TestCase):
         report = self.store.report("20260923")
         # 2000 up, 1000 flat, 1000 down: glossary §3.1 excludes flat stocks.
         self.assertAlmostEqual(report["yimu_emotion"]["score"], 66.666667, places=6)
-        self.assertEqual(report["yimu_emotion"]["band"], "正常")
+        self.assertEqual(report["yimu_emotion"]["band"], "主升")
         self.assertEqual(report["yimu_emotion"]["denominator"], 3000)
         self.assertEqual(report["yimu_emotion"]["flat"], 1000)
         self.assertEqual(report["yimu_emotion"]["legacy_score_up_over_all_rows"], 50.0)

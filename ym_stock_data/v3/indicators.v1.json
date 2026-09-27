@@ -17,7 +17,7 @@
       "bands": [
         {"below": 20, "label": "冰点"},
         {"below": 40, "label": "低迷"},
-        {"below": 70, "label": "正常"},
+        {"below": 70, "label": "主升"},
         {"through": 80, "label": "强势"},
         {"above": 80, "label": "高潮"}
       ],
