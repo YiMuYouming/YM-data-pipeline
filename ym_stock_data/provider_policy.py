@@ -33,7 +33,8 @@ PIPELINE_VERSION = "3.0"
 ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
-PACKAGED_POLICY_SHA256 = "56b4a0c61d96242d9034c793210ae699b61c527db2dbc7f684d11223867de7a8"
+# 2026-09-28（A4）：分钟级 stock_kline 增加 tencent 后备，重算逻辑锚。
+PACKAGED_POLICY_SHA256 = "9e6e248a752dfc561341899b2eefd05093d5f1e6c9ead12a5f38be70ceff93c6"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )
@@ -95,9 +96,11 @@ _CAPABILITY_PROVIDER_ALLOWLIST = {
     "stock_kline_monthly": frozenset(
         {"stocktoday", "eastmoney_stock", "pytdx", "tencent", "tdx_kline"}
     ),
-    "stock_kline_60m": frozenset({"stocktoday", "pytdx", "sina", "tdx_kline"}),
-    "stock_kline_15m": frozenset({"stocktoday", "pytdx", "sina", "tdx_kline"}),
-    "stock_kline_5m": frozenset({"stocktoday", "pytdx", "sina", "tdx_kline"}),
+    # 2026-09-28（A4）：`stk_mins` 不在 StockToday 套餐内，分钟级必须能降级到
+    # 已注册的腾讯分钟 K（daily/weekly/monthly 早已允许 tencent）。
+    "stock_kline_60m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
+    "stock_kline_15m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
+    "stock_kline_5m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
     "sector_index": frozenset({"ths_industry"}),
     # This is the default breadth route.  A non-empty natural-language query
     # is handled by route_for() independently and never inherits this order.

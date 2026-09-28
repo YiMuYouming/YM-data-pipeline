@@ -207,7 +207,12 @@ _STOCK_KLINE_DAILY = RouteSpec(
 )
 _STOCK_KLINE_MINUTE = RouteSpec(
     intent="stock_kline",
-    providers=("stocktoday",),
+    # 2026-09-28（A4）：`stk_mins` 不在 StockToday 套餐内，未授权时返回
+    # PLAN_NOT_ENTITLED；原链只有 stocktoday 一个源，整条 minute K 直接判死，
+    # 9-28 自选池五节点因此走了 TDX 直连。腾讯分钟 K 早已实现
+    #（pytdx._fetch_tencent_kline），这里接上后备，口径与 index_kline 的
+    # 分钟级降级一致：计划内源失败后走已注册的后备源，不新增旁路。
+    providers=("stocktoday", "tencent"),
     data_scope="A股个股分钟K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,

@@ -59,7 +59,8 @@
     },
     "stock_kline_60m": {
       "provider_order": [
-        "stocktoday"
+        "stocktoday",
+        "tencent"
       ],
       "empty_policy": "continue_until_exhausted",
       "max_age_sec": 300,
@@ -68,7 +69,8 @@
     },
     "stock_kline_15m": {
       "provider_order": [
-        "stocktoday"
+        "stocktoday",
+        "tencent"
       ],
       "empty_policy": "continue_until_exhausted",
       "max_age_sec": 300,
@@ -77,7 +79,8 @@
     },
     "stock_kline_5m": {
       "provider_order": [
-        "stocktoday"
+        "stocktoday",
+        "tencent"
       ],
       "empty_policy": "continue_until_exhausted",
       "max_age_sec": 300,
