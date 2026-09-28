@@ -140,10 +140,22 @@ def _parser() -> argparse.ArgumentParser:
     stocktoday_status.add_argument("receipt", type=Path)
     facts_parser = commands.add_parser("market-facts", help="dated limit facts and derived short-term indicators")
     facts_commands = facts_parser.add_subparsers(dest="facts_command", required=True)
+    facts_refresh_action = None
     for name in ("collect-limits", "collect-history", "collect-daily", "collect-returns", "refresh", "report"):
         action = facts_commands.add_parser(name)
         action.add_argument("--date", required=name not in {"report", "refresh"}, help="exchange trade date YYYYMMDD")
         action.add_argument("--db", type=Path, help="separate market-facts SQLite path")
+        if name == "refresh":
+            facts_refresh_action = action
+    facts_refresh_action.add_argument(
+        "--force-provider",
+        help=(
+            "append one extra limit-events run from this provider even when the day "
+            "already has one. The store is append-only: the earlier run stays and the "
+            "new run becomes the latest. Only providers served by the "
+            "market_limit_state route are accepted; anything else is refused with a gap"
+        ),
+    )
     for name in ("backfill-history", "backfill-daily"):
         backfill = facts_commands.add_parser(name)
         backfill.add_argument("--start", required=True, help="first exchange date YYYYMMDD")
@@ -243,11 +255,33 @@ def main(argv: list[str] | None = None) -> int:
             if args.facts_command == "refresh":
                 trade_date = args.date or latest_completed_trade_date(datetime.now(TZ_SHANGHAI))
                 receipt = {"trade_date": trade_date, "limit_events": None, "daily_ohlc": None, "gaps": []}
-                if store.latest_limit_run(trade_date):
+                forced_provider = getattr(args, "force_provider", None)
+                if forced_provider:
+                    routed = _ROUTES["market_limit_state"]
+                    if forced_provider not in routed.providers:
+                        receipt["gaps"].append({
+                            "dataset": "limit_events",
+                            "error_code": "force_provider_not_routable",
+                            "requested_provider": forced_provider,
+                            "routable_providers": list(routed.providers),
+                        })
+                        _print_json(receipt)
+                        return 2
+                    receipt["forced_provider"] = forced_provider
+                if store.latest_limit_run(trade_date) and not forced_provider:
                     receipt["limit_events"] = "already_present"
                 else:
                     try:
                         source = canonical_query("market_limit_state", date=trade_date)
+                        if forced_provider and (source.get("_meta") or {}).get("provider_used") != forced_provider:
+                            receipt["gaps"].append({
+                                "dataset": "limit_events",
+                                "error_code": "force_provider_provider_mismatch",
+                                "requested_provider": forced_provider,
+                                "returned_provider": (source.get("_meta") or {}).get("provider_used"),
+                            })
+                            _print_json(receipt)
+                            return 2
                         receipt["limit_events"] = store.ingest_limits(trade_date, source)
                     except (ValueError, OSError) as error:
                         receipt["gaps"].append({"dataset": "limit_events", "error_code": type(error).__name__})
