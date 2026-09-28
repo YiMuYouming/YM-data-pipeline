@@ -61,6 +61,15 @@ def previous_trading_day(day: date) -> date:
     raise TradeCalendarUnavailable("CALENDAR_UNAVAILABLE: no prior trading day")
 
 
+def next_trading_day(day: date) -> date:
+    candidate = day + timedelta(days=1)
+    for _ in range(366):
+        if is_trading_day(candidate):
+            return candidate
+        candidate += timedelta(days=1)
+    raise TradeCalendarUnavailable("CALENDAR_UNAVAILABLE: no next trading day")
+
+
 def latest_completed_trade_date(now: datetime) -> str:
     candidate = now.date()
     if not is_trading_day(candidate) or now.hour < 15:

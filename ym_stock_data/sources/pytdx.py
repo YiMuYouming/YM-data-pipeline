@@ -1168,9 +1168,75 @@ def _fetch_tencent_kline(
 ) -> list[dict]:
     period_map = {"daily": "day", "weekly": "week", "monthly": "month"}
     remote_period = period_map.get(period)
-    if not remote_period or adjustment not in {"none", "qfq"}:
-        return []
     symbol = ("sh" if str(code).startswith(("6", "9")) else "bj" if str(code).startswith("8") else "sz") + str(code)
+    if not remote_period:
+        minute_sizes = {"1m": 1, "5m": 5, "15m": 15, "60m": 60}
+        size = minute_sizes.get(period)
+        if not size or adjustment not in {"none", "qfq"}:
+            return []
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/day/query?code={symbol}"
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://gu.qq.com/",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            days = ((payload or {}).get("data") or {}).get(symbol, {}).get("data") or []
+        except Exception:
+            return []
+        bars = []
+        for day in days:
+            date_str = str(day.get("date") or "")
+            if len(date_str) != 8:
+                continue
+            date_fmt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+            slots: dict[int, dict] = {}
+            previous_vol = previous_amt = 0.0
+            for raw in day.get("data") or []:
+                parts = str(raw).split()
+                if len(parts) < 4:
+                    continue
+                minute_str = parts[0]
+                if len(minute_str) < 4:
+                    continue
+                hour = int(minute_str[:2])
+                minute = int(minute_str[2:])
+                minute_of_day = hour * 60 + minute
+                price = _number(parts[1])
+                cum_vol = _number(parts[2]) * 100.0
+                cum_amt = _number(parts[3])
+                bucket = (minute_of_day // size) * size
+                bar = slots.setdefault(bucket, {
+                    "time": f"{date_fmt} {minute_str[:2]}:{minute_str[2:]}",
+                    "open": price, "high": price, "low": price, "close": price,
+                    "start_vol": previous_vol, "start_amt": previous_amt,
+                })
+                bar["close"] = price
+                bar["high"] = max(bar["high"], price)
+                bar["low"] = min(bar["low"], price)
+                bar["end_vol"] = cum_vol
+                bar["end_amt"] = cum_amt
+                previous_vol, previous_amt = cum_vol, cum_amt
+            for bucket in sorted(slots):
+                b = slots[bucket]
+                vol = max(0.0, (b["end_vol"] - b["start_vol"]))
+                amt = max(0.0, (b["end_amt"] - b["start_amt"]))
+                if vol <= 0 or amt <= 0:
+                    continue
+                bars.append({
+                    "time": f"{b['time']}:00",
+                    "open": b["open"],
+                    "high": b["high"],
+                    "low": b["low"],
+                    "close": b["close"],
+                    "vol": vol,
+                    "amount": amt,
+                })
+        return bars[-count:]
+
+    if adjustment not in {"none", "qfq"}:
+        return []
     remote_key = f"{adjustment}{remote_period}" if adjustment == "qfq" else remote_period
     url = (
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"

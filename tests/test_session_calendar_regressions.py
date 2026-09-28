@@ -240,3 +240,10 @@ class SessionCalendarRegressions(unittest.TestCase):
                 86400,
             ),
         )
+
+    def test_next_trading_day_resolves_holidays_and_weekends(self):
+        from datetime import date
+        from ym_stock_data.trading_calendar import next_trading_day
+        self.assertEqual(date(2026, 9, 28), next_trading_day(date(2026, 9, 24)))
+        self.assertEqual(date(2026, 9, 29), next_trading_day(date(2026, 9, 28)))
+        self.assertEqual(date(2026, 10, 8), next_trading_day(date(2026, 9, 30)))
