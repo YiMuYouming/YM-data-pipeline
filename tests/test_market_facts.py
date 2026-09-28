@@ -215,6 +215,36 @@ class MarketFactStoreTests(unittest.TestCase):
             self.store.ingest_daily("20260923", bad)
         self.assertEqual(self.store.report("20260923")["yimu_emotion"]["run_id"], receipt["run_id"])
 
+    def test_board_ladder_exposes_heights_and_tiers_from_the_sealed_run(self):
+        """2026-09-28：收盘节点以 market_facts 为主源，report 必须给出最高板/梯队。
+
+        下游此前只能退回节点快照手写的 lianban 块，而 9-22/23/24 正是那块为空
+        导致复盘链断掉。数值取自 limit_events.board_count，经 indicators.board_heights。
+        """
+        self.store.ingest_limits("20260928", limit_result(
+            "20260928",
+            [row("600001", 5), row("600002", 3), row("600003", 3), row("600004", 2),
+             row("600005", 1), row("600006", 2, name="ST风险")],
+            down=[row("000001", 0)], broken=[row("000002", 0)],
+        ))
+
+        report = self.store.report("20260928")
+        boards = report["boards"]
+
+        self.assertEqual(5, boards["highest"])
+        self.assertEqual(3, boards["second_highest"])
+        # ST 股不进连板梯队，与 promotion 的处理一致（若计入则 2 板为 2 家、连板 5 只）。
+        self.assertEqual(4, boards["consecutive_count"])
+        self.assertEqual({"5": 1, "3": 2, "2": 1, "1": 1}, boards["ladder"])
+        self.assertEqual("indicators.v1", boards["indicator_version"])
+        self.assertNotIn("board_ladder_up_pool_empty", report["source_gaps"])
+
+    def test_board_ladder_reports_a_gap_when_there_is_no_limit_run(self):
+        report = self.store.report("20260928")
+
+        self.assertIsNone(report["boards"])
+        self.assertIn("board_ladder_limit_run_missing", report["source_gaps"])
+
     def test_missing_today_up_stock_does_not_hide_complete_broken_return(self):
         self.store.ingest_limits("20260922", limit_result("20260922", [row("999999", 2)], broken=[row("000001", 0)]))
         items = [

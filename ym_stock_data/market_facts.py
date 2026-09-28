@@ -421,6 +421,47 @@ class MarketFactStore:
                                "limit_days": row["board_count"]} for row in rows]},
         }
 
+    def _board_ladder(self, run: dict | None, gaps: list[str]) -> dict | None:
+        """Board heights and the tier ladder of one sealed limit run.
+
+        2026-09-28：复盘链的收盘节点以 market_facts 为主源，但 report 此前没有
+        暴露 最高板/次高板/连板股数/梯队，下游只能退回节点快照手写的 lianban
+        块（9-22/23/24 正是那块为空导致整条链断掉）。`limit_events.board_count`
+        本来就存着连板高度，这里用 indicators 的单一实现（术语表 §1.3）算出。
+
+        ST 股不在连板梯队里，与 promotion 的处理一致。
+        封板率/炸板率不放在这里：它们的分母在本管道是 up+broken（33/44），
+        而盘中 market_intraday_state 用的是另一个分母（9-28 为 33/48），两者不是
+        同一口径；与其发布一个会与节点快照打架的数字，不如让调用方按缺口处理。
+        """
+        if run is None:
+            gaps.append("board_ladder_limit_run_missing")
+            return None
+        boards = {
+            row["code"]: int(row["board_count"] or 0)
+            for row in self._events(run["id"], "up")
+            if "ST" not in (row["name"] or "").upper()
+        }
+        if not boards:
+            gaps.append("board_ladder_up_pool_empty")
+            return None
+        heights = indicators.board_heights(boards)
+        ladder: dict[str, int] = {}
+        for board in boards.values():
+            key = str(int(board))
+            ladder[key] = ladder.get(key, 0) + 1
+        return {
+            "highest": heights["highest"],
+            "second_highest": heights["second_highest"],
+            "consecutive_count": sum(board >= 2 for board in boards.values()),
+            "ladder": dict(sorted(ladder.items(), key=lambda item: -int(item[0]))),
+            "formula": "indicators.board_heights（术语表 §1.3）",
+            "indicator_version": indicators.INDICATOR_VERSION,
+            "provider": run["provider"],
+            "run_id": run["id"],
+            "board_source": run["board_source"],
+        }
+
     def consecutive_break_risk(self, as_of: str, *, window: int = 5, horizon: int = 3) -> dict:
         """Glossary §3.3 inputs: break returns of the last ``window`` complete break days.
 
@@ -651,12 +692,14 @@ class MarketFactStore:
         gaps.extend(break_risk.get("source_gaps") or [])
         if break_risk.get("value") is None:
             gaps.append("consecutive_break_risk_missing")
+        boards = self._board_ladder(current, gaps)
         return {
             "trade_date": trade_date,
             "previous_trade_date": previous_date,
             "indicator_version": indicators.INDICATOR_VERSION,
             "counts": ({"up": current["up_count"], "down": current["down_count"],
                         "broken": current["broken_count"]} if current else None),
+            "boards": boards,
             "promotion": promotion,
             "promotion_overall_by_code": overall_promotion,
             **returns,
