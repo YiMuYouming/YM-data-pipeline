@@ -232,11 +232,17 @@ def summarize(
     previous_boards: Mapping[str, int] | None,
     previous_broken: Iterable[str] | None,
     board_risk_value: float | None = None,
+    ladder_available: bool = True,
 ) -> dict:
     """All registered indicators from one consistent set of inputs.
 
     ``changes`` covers the traded universe (emotion/breadth); ``limit_sets``,
     boards and cohorts are already restricted to non-ST stocks.
+
+    ``ladder_available=False`` means the sealed previous-session ladder could
+    not be read (§1.3 连板 derivation).  Board heights and the consecutive
+    count would then read every limit-up as a first board — a precise error.
+    They fail closed to ``None`` instead; the caller records a typed gap.
     """
 
     counts = breadth(changes.values())
@@ -245,6 +251,10 @@ def summarize(
     down_codes = sorted(limit_sets.get("down") or [])
     broken_codes = sorted(limit_sets.get("broken") or [])
     rate = broken_rate(len(broken_codes), len(up_codes))
+    # Without the sealed previous ladder every limit-up would count as a first
+    # board; fail closed instead of reporting that precise error (§1.3).
+    heights = (board_heights(current_boards) if ladder_available
+               else {"highest": None, "second_highest": None})
     result = {
         "indicator_version": INDICATOR_VERSION,
         "emotion": score,
@@ -260,8 +270,9 @@ def summarize(
         "broken_rate": rate,
         "broken_rate_band": broken_rate_band(rate),
         "seal_rate": seal_rate(len(broken_codes), len(up_codes)),
-        **{f"board_{key}": value for key, value in board_heights(current_boards).items()},
-        "consecutive_count": sum(board >= 2 for board in current_boards.values()),
+        **{f"board_{key}": value for key, value in heights.items()},
+        "consecutive_count": (sum(board >= 2 for board in current_boards.values())
+                             if ladder_available else None),
         "promotion": None,
         "limit_up_return": None,
         "consecutive_return": None,

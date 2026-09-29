@@ -125,6 +125,26 @@ class BuildTests(unittest.TestCase):
         self.assertEqual({"covered": 9, "universe": 9, "pct": 100.0}, state["coverage"])
         self.assertEqual(1, state["_stocktoday"]["deduplicated_rows"])
 
+    def test_missing_previous_ladder_fails_closed_with_a_typed_gap(self):
+        # 2026-09-29 audit (谷米补修一.1): no sealed previous-session ladder
+        # must not fabricate 最高板 1 / 连板 0 — nulls plus a side-scoped gap.
+        with patch.object(intraday_state, "_previous_ladder",
+                          return_value=(None, None, None)):
+            state = intraday_state.build(self.provider(), now=self.now)
+        ind = state["indicators"]
+        self.assertIsNone(ind["board_highest"])
+        self.assertIsNone(ind["board_second_highest"])
+        self.assertIsNone(ind["consecutive_count"])
+        self.assertIsNone(ind["promotion"])
+        self.assertIn("side_hard:lianban:previous_ladder_missing", state["source_gaps"])
+        # breadth / limit counts are snapshot facts and still reported.
+        self.assertEqual(2, ind["limit_up_count"])
+
+    def test_sealed_previous_ladder_keeps_real_board_numbers(self):
+        state = intraday_state.build(self.provider(), now=self.now)
+        self.assertEqual(2, state["indicators"]["board_highest"])
+        self.assertNotIn("side_hard:lianban:previous_ladder_missing", state["source_gaps"])
+
     def test_structural_gap_is_filled_per_code_from_tencent(self):
         provider = self.provider()
         provider.limits["003026.SZ"] = (22.0, 18.0)

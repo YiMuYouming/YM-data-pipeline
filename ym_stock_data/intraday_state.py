@@ -300,7 +300,10 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     previous_date = previous_trading_day(data_as_of.date()).strftime("%Y%m%d")
     previous_boards, previous_broken, board_source = _previous_ladder(previous_date)
     if previous_boards is None:
-        gaps.append("previous_ladder_missing")
+        # No sealed previous-session ladder: board heights and the consecutive
+        # count fail closed to null (2026-09-29 audit, 谷米补修一.1).  The gap
+        # is typed so the lianban side closes instead of reading 1 板 / 0 连板.
+        gaps.append("side_hard:lianban:previous_ladder_missing")
     elif board_source and any(flag in board_source for flag in ("unverified", "disagreement", "repaired")):
         gaps.append("previous_ladder_board_counts_unverified")
     limit_sets = {kind: [c for c, s in states.items() if s == kind] for kind in ("up", "down", "broken")}
@@ -315,6 +318,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         previous_boards=previous_boards if limits else None,
         previous_broken=previous_broken,
         board_risk_value=break_risk.get("value"),
+        ladder_available=previous_boards is not None,
     )
     for code, board in current_boards.items():
         detail[code]["board"] = board
