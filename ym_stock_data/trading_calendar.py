@@ -43,7 +43,19 @@ def _calendar() -> tuple[frozenset[int], frozenset[date]]:
         raise TradeCalendarUnavailable("CALENDAR_UNAVAILABLE: exchange calendar invalid") from exc
 
 
-def is_trading_day(day: date) -> bool:
+def is_trading_day(day: date | str) -> bool:
+    if isinstance(day, str):
+        cleaned = day.strip()
+        if len(cleaned) == 8 and cleaned.isdigit():
+            day = date(int(cleaned[:4]), int(cleaned[4:6]), int(cleaned[6:]))
+        elif len(cleaned) == 10 and cleaned[4] == "-" and cleaned[7] == "-":
+            day = date.fromisoformat(cleaned)
+        else:
+            raise ValueError(f"invalid date format: {day!r}")
+    elif isinstance(day, datetime):
+        day = day.date()
+    elif not isinstance(day, date):
+        raise TypeError(f"expected date or str, got {type(day).__name__}")
     years, holidays = _calendar()
     if day.year not in years:
         raise TradeCalendarUnavailable(

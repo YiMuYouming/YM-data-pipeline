@@ -12,6 +12,7 @@ import json
 import math
 import re
 import sqlite3
+import statistics
 from datetime import date, datetime, time
 from pathlib import Path
 
@@ -530,6 +531,114 @@ class MarketFactStore:
                 "basis": "unadjusted_close", "window_break_days": evidence,
                 "source_gaps": sorted(gaps)}
 
+    def style_inputs(self, trade_date: str) -> dict:
+        day_str = _day(trade_date).strftime("%Y%m%d")
+        with self._connect() as conn:
+            t_rows = conn.execute(
+                """
+                SELECT r.trade_date, SUM(d.amount_thousand_cny) / 100000.0 as amount_yi
+                FROM daily_runs r
+                JOIN daily_rows d ON r.id = d.run_id
+                WHERE r.trade_date <= ?
+                GROUP BY r.trade_date
+                ORDER BY r.trade_date DESC
+                LIMIT 20
+                """,
+                (day_str,),
+            ).fetchall()
+            turnover_trend = None
+            volume_volatility = None
+            market_volume = None
+            if len(t_rows) >= 1:
+                amounts = [r["amount_yi"] for r in reversed(t_rows)]
+                market_volume = f"{amounts[-1] / 10000.0:.2f}万亿"
+                if len(t_rows) >= 5:
+                    w5 = amounts[-5:]
+                    volume_volatility = round((max(w5) - min(w5)) / statistics.fmean(w5) * 100.0, 4)
+                    if len(amounts) >= 20:
+                        ma5 = statistics.fmean(amounts[-5:])
+                        ma20 = statistics.fmean(amounts)
+                        ratio = ma5 / ma20
+                        turnover_trend = "放量向上" if ratio > 1.03 else ("缩量" if ratio < 0.97 else "持平")
+
+            zt_rows = conn.execute(
+                """
+                SELECT trade_date, up_count
+                FROM limit_runs
+                WHERE trade_date < ?
+                GROUP BY trade_date
+                HAVING id = MAX(id)
+                ORDER BY trade_date DESC
+                LIMIT 3
+                """,
+                (day_str,),
+            ).fetchall()
+            limit_up_count_avg_3d = (
+                round(sum(r["up_count"] for r in zt_rows) / 3.0, 6)
+                if len(zt_rows) == 3
+                else None
+            )
+
+            recent_days = [
+                r["trade_date"]
+                for r in conn.execute(
+                    """
+                    SELECT DISTINCT trade_date
+                    FROM daily_runs
+                    WHERE trade_date <= ?
+                    ORDER BY trade_date DESC
+                    LIMIT 5
+                    """,
+                    (day_str,),
+                ).fetchall()
+            ]
+            top50 = conn.execute(
+                """
+                SELECT d.code
+                FROM daily_runs r
+                JOIN daily_rows d ON r.id = d.run_id
+                WHERE r.trade_date = ?
+                ORDER BY d.amount_thousand_cny DESC
+                LIMIT 50
+                """,
+                (day_str,),
+            ).fetchall()
+            large_cap_profit_pct = None
+            if top50 and len(recent_days) == 5:
+                top_codes = [r["code"] for r in top50]
+                placeholders = ",".join("?" * len(recent_days))
+                pos_count = 0
+                for code in top_codes:
+                    stock_rows = conn.execute(
+                        f"""
+                        SELECT r.trade_date, d.pct_change
+                        FROM daily_runs r
+                        JOIN daily_rows d ON r.id = d.run_id
+                        WHERE d.code = ? AND r.trade_date IN ({placeholders})
+                        ORDER BY r.trade_date ASC
+                        """,
+                        (code, *recent_days),
+                    ).fetchall()
+                    cum = 1.0
+                    for sr in stock_rows:
+                        cum *= 1.0 + (sr["pct_change"] or 0.0) / 100.0
+                    if (cum - 1.0) * 100.0 > 0:
+                        pos_count += 1
+                large_cap_profit_pct = round(pos_count / len(top_codes) * 100.0, 4)
+
+        return {
+            "市场量能": market_volume,
+            "成交额趋势": turnover_trend,
+            "量能波动率": volume_volatility,
+            "昨日涨停家数3日均值": limit_up_count_avg_3d,
+            "大市值赚钱比例": large_cap_profit_pct,
+            "market_volume": market_volume,
+            "turnover_trend": turnover_trend,
+            "volume_volatility": volume_volatility,
+            "limit_up_count_avg_3d": limit_up_count_avg_3d,
+            "large_cap_profit_pct": large_cap_profit_pct,
+        }
+
     def report(self, trade_date: str) -> dict:
         previous_date = previous_trading_day(_day(trade_date)).strftime("%Y%m%d")
         current = self.latest_limit_run(trade_date)
@@ -693,10 +802,12 @@ class MarketFactStore:
         if break_risk.get("value") is None:
             gaps.append("consecutive_break_risk_missing")
         boards = self._board_ladder(current, gaps)
+        style_inputs = self.style_inputs(trade_date)
         return {
             "trade_date": trade_date,
             "previous_trade_date": previous_date,
             "indicator_version": indicators.INDICATOR_VERSION,
+            "style_inputs": style_inputs,
             "counts": ({"up": current["up_count"], "down": current["down_count"],
                         "broken": current["broken_count"]} if current else None),
             "boards": boards,

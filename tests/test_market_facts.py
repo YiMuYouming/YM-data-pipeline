@@ -287,6 +287,44 @@ class MarketFactStoreTests(unittest.TestCase):
         self.assertIsNone(report["promotion_overall_by_code"])
         self.assertIn("current_limit_daily_universe_conflict", report["source_gaps"])
 
+    def test_style_inputs_calculation(self):
+        # 3 prior days of limits
+        for d, count in [("20260921", 10), ("20260922", 20), ("20260923", 30)]:
+            self.store.ingest_limits(d, limit_result(d, [row(f"{i:06d}", 1) for i in range(count)]))
+        # 5 days of daily
+        for d in ["20260918", "20260921", "20260922", "20260923", "20260924"]:
+            items = [
+                {"ts_code": f"3{i:05d}.SZ", "trade_date": d, "open": 10.0,
+                 "high": 11.0 if d == "20260924" and i < 25 else 10.0,
+                 "low": 10.0,
+                 "close": 11.0 if d == "20260924" and i < 25 else 10.0,
+                 "pre_close": 10.0, "pct_chg": 10.0 if d == "20260924" and i < 25 else 0.0,
+                 "vol": 100.0, "amount": 10000.0 - i * 2.0}
+                for i in range(4000)
+            ]
+            self.store.ingest_daily(d, {
+                "data": {"items": items, "truncated": False, "total_present": False},
+                "_meta": {"status": "success", "provider_used": "stocktoday",
+                          "fetched_at": f"{d[:4]}-{d[4:6]}-{d[6:]}T17:00:00+08:00"},
+            })
+        inputs = self.store.style_inputs("20260924")
+        self.assertEqual(inputs["昨日涨停家数3日均值"], 20.0)
+        self.assertIsNotNone(inputs["量能波动率"])
+        self.assertEqual(inputs["大市值赚钱比例"], 50.0)
+        report = self.store.report("20260924")
+        self.assertIn("style_inputs", report)
+        self.assertEqual(report["style_inputs"]["昨日涨停家数3日均值"], 20.0)
+
+    def test_is_trading_day_formats(self):
+        from datetime import date
+        from ym_stock_data.trading_calendar import is_trading_day
+        self.assertTrue(is_trading_day(date(2026, 9, 29)))
+        self.assertTrue(is_trading_day("20260929"))
+        self.assertTrue(is_trading_day("2026-09-29"))
+        self.assertFalse(is_trading_day(date(2026, 9, 27)))
+        self.assertFalse(is_trading_day("20260927"))
+        self.assertFalse(is_trading_day("2026-09-27"))
+
 
 if __name__ == "__main__":
     unittest.main()
