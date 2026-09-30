@@ -63,11 +63,11 @@ def full_snapshot_data(*codes):
     }
 
 
-def full_kline_data(adjustment="none"):
+def full_kline_data(adjustment="none", bar_datetime="2026-09-22 15:00:00"):
     return {
         "bars": [
             {
-                "datetime": "2026-09-22 15:00:00",
+                "datetime": bar_datetime,
                 "open": 1395.0,
                 "high": 1410.0,
                 "low": 1385.0,
@@ -151,7 +151,7 @@ class PublicApiTests(unittest.TestCase):
             (
                 "stock_kline",
                 {"code": "600519", "period": "15m", "count": 1},
-                full_kline_data(),
+                full_kline_data(bar_datetime="2026-09-24 09:45:00"),
             ),
         ]
         for intent, params, data in cases:

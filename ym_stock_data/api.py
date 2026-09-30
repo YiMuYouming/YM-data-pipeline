@@ -838,6 +838,16 @@ def _data_freshness(
         return {**result, "status": status, "age_sec": age}
     if any(params.get(key) for key in _EXPLICIT_DATE_PARAMS):
         return {**result, "status": "historical"}
+    is_minute_kline = intent == "stock_kline" and params.get("period") in {
+        "1m", "5m", "15m", "30m", "60m"
+    }
+    if is_minute_kline:
+        try:
+            in_session = is_trading_day(now.date()) and now.time() >= datetime_time(9, 15)
+        except TradeCalendarUnavailable:
+            return unknown_freshness(max_age_sec)
+        if in_session and stamp.strftime("%Y%m%d") < now.strftime("%Y%m%d"):
+            return {**result, "status": "stale"}
     try:
         expected = latest_completed_trade_date(now)
     except TradeCalendarUnavailable:
@@ -1376,6 +1386,25 @@ def _query_with(
             result["_meta"]["status"] = "degraded"
             result["_meta"]["quality"]["status"] = "partial"
             result["_meta"]["quality"]["reason_codes"] = gaps
+    if (
+        intent == "stock_kline"
+        and call_params.get("period") in {"1m", "5m", "15m", "30m", "60m"}
+        and not any(call_params.get(key) for key in _EXPLICIT_DATE_PARAMS)
+    ):
+        now = _now_shanghai()
+        try:
+            in_session = is_trading_day(now.date()) and now.time() >= datetime_time(9, 15)
+        except TradeCalendarUnavailable:
+            in_session = False
+        if in_session and stamp and stamp.strftime("%Y%m%d") < now.strftime("%Y%m%d"):
+            result["_meta"]["freshness"]["status"] = "stale"
+            reasons = result["_meta"]["quality"]["reason_codes"]
+            if "intraday_bars_missing" not in reasons:
+                reasons.append("intraday_bars_missing")
+            if result["_meta"]["status"] == "success":
+                result["_meta"]["status"] = "degraded"
+            if result["_meta"]["quality"]["status"] == "normal":
+                result["_meta"]["quality"]["status"] = "semantic_degraded"
     return result
 
 

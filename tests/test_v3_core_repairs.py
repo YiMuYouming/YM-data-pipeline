@@ -1187,6 +1187,39 @@ class CoreRepairTests(unittest.TestCase):
         self.assertEqual("incompatible", result.status)
         self.assertEqual("DATE_UNVERIFIED", result.error_code)
 
+    def test_minute_stock_kline_during_session_with_previous_day_bars_is_stale(self):
+        bars_data = {
+            "bars": [
+                {
+                    "datetime": "2026-09-23 14:45:00",
+                    "open": 10.0, "high": 10.5, "low": 9.8, "close": 10.2,
+                    "volume": 500, "amount": 5100.0,
+                },
+                {
+                    "datetime": "2026-09-23 15:00:00",
+                    "open": 10.2, "high": 10.6, "low": 10.1, "close": 10.5,
+                    "volume": 600, "amount": 6300.0,
+                },
+            ],
+            "adjustment": "none",
+            "volume_unit": "share",
+            "amount_unit": "CNY",
+        }
+        provider = _FakeProvider(
+            "stocktoday",
+            [_outcome("stocktoday", "success", bars_data)],
+        )
+        result = self._run_with_fakes(
+            "stock_kline",
+            {"stocktoday": provider},
+            code="300442",
+            period="15m",
+        )
+        self.assertEqual("stale", result["_meta"]["freshness"]["status"])
+        self.assertIn("intraday_bars_missing", result["_meta"]["quality"]["reason_codes"])
+        self.assertNotEqual("success", result["_meta"]["status"])
+        self.assertEqual("degraded", result["_meta"]["status"])
+
 
 if __name__ == "__main__":
     unittest.main()
