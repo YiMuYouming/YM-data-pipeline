@@ -764,19 +764,42 @@ class MarketFactStore:
                 if not codes:
                     gaps.append(f"{key}_cohort_empty")
                     continue
-                if all(code in daily_changes for code in codes):
+                # 2026-09-30 口径（弈沐）：队列收益**不得因个别成员缺当日日线行而整队作废**。
+                # 实测：9-29 封存涨停队列 57 只中 002813（路畅科技）当日停牌、无 daily_rows，
+                # 旧判据 `all(code in daily_changes ...)` 把整队判为不可用 →
+                # `yesterday_limit_up_return_pct = null` → 收盘节点 audit 与 D0 各多一条阻断缺口。
+                # 现行约定：剔除缺数据成员、用其余可用成员计算；分母取实际参与数（不得把停牌股
+                # 按 0% 混入）；并落 row_count / cohort_size / missing_codes / coverage 让"少算了谁"可见。
+                # 一个可用成员都没有时仍 fail closed（记 `_cohort_incomplete`，不静默近似）。
+                daily_available = [code for code in codes if code in daily_changes]
+                quote_available = [code for code in codes if code in quote_changes]
+                if len(daily_available) >= len(quote_available) and daily_available:
+                    basis = "unadjusted_daily_pct_chg"
                     changes = daily_changes
-                    return_evidence[key] = {"provider": daily["provider"], "run_id": daily["id"],
-                                            "row_count": len(codes), "trade_date": trade_date,
-                                            "fetched_at": daily["fetched_at"], "basis": "unadjusted_daily_pct_chg"}
-                elif all(code in quote_changes for code in codes):
+                    available = daily_available
+                    evidence = {"provider": daily["provider"], "run_id": daily["id"],
+                                "fetched_at": daily["fetched_at"]}
+                elif quote_available:
+                    basis = "same_day_snapshot_change_pct"
                     changes = quote_changes
-                    return_evidence[key] = {**quote_evidence, "row_count": len(codes),
-                                            "basis": "same_day_snapshot_change_pct"}
+                    available = quote_available
+                    evidence = dict(quote_evidence or {})
                 else:
                     gaps.append(f"{key}_return_cohort_incomplete")
                     continue
-                returns[f"{key}_return_pct"] = round(sum(changes[code] for code in codes) / len(codes), 6)
+                missing = sorted(set(codes) - set(available))
+                returns[f"{key}_return_pct"] = round(
+                    sum(changes[code] for code in available) / len(available), 6
+                )
+                return_evidence[key] = {
+                    **evidence,
+                    "row_count": len(available),
+                    "cohort_size": len(codes),
+                    "missing_codes": missing,
+                    "coverage": round(len(available) / len(codes), 6),
+                    "trade_date": trade_date,
+                    "basis": basis,
+                }
         emotion = None
         if daily:
             score = indicators.emotion(daily["up_count"], daily["down_count"])

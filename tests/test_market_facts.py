@@ -287,6 +287,40 @@ class MarketFactStoreTests(unittest.TestCase):
         self.assertIsNone(report["promotion_overall_by_code"])
         self.assertIn("current_limit_daily_universe_conflict", report["source_gaps"])
 
+    def test_suspended_member_is_dropped_instead_of_voiding_the_whole_cohort(self):
+        """2026-09-30 口径：队列收益不得因个别成员缺当日日线行而整队作废。
+
+        实测背景：9-29 封存涨停队列 57 只中 002813（路畅科技）当日停牌、无 daily_rows，
+        旧判据 `all(code in daily_changes ...)` 把整队收益判为不可用 →
+        `yesterday_limit_up_return_pct = null` → 收盘节点 audit 与 D0 各多一条阻断缺口。
+        约定：剔除缺数据成员、用其余可用成员计算，并落 row_count / missing_codes / coverage。
+        """
+        self.store.ingest_limits("20260922", limit_result(
+            "20260922", [row("000001", 1), row("000002", 1), row("999999", 1)]))
+        items = [
+            {"ts_code": f"{i:06d}.SZ", "trade_date": "20260923",
+             "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.0, "pre_close": 10.0,
+             "pct_chg": 10.0 if i == 1 else (-2.0 if i == 2 else 0.0),
+             "vol": 100.0, "amount": 1000.0}
+            for i in range(4000)
+        ]
+        self.store.ingest_daily("20260923", {
+            "data": {"items": items, "truncated": False},
+            "_meta": {"status": "success", "provider_used": "stocktoday",
+                      "fetched_at": "2026-09-23T17:00:00+08:00"},
+        })
+
+        report = self.store.report("20260923")
+
+        # 用其余可用成员计算：(+10.0 + -2.0) / 2，而不是整队作废
+        self.assertEqual(4.0, report["yesterday_limit_up_return_pct"])
+        evidence = report["return_evidence"]["yesterday_limit_up"]
+        self.assertEqual(2, evidence["row_count"])
+        self.assertEqual(3, evidence["cohort_size"])
+        self.assertEqual(["999999"], evidence["missing_codes"])
+        self.assertEqual(round(2 / 3, 6), evidence["coverage"])
+        self.assertNotIn("yesterday_limit_up_return_cohort_incomplete", report["source_gaps"])
+
     def test_style_inputs_calculation(self):
         # 3 prior days of limits
         for d, count in [("20260921", 10), ("20260922", 20), ("20260923", 30)]:
