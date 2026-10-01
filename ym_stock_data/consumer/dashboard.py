@@ -135,7 +135,8 @@ def build_live(include_extras: bool = True) -> dict:
     _add_index_derived(data["live_index"], k15)
 
     if sectors:
-        data["live_sectors"] = fetch_sector(sectors)
+        # 板块事实只由 sector_inflow 提供（S5，K1）；live_sectors 已删除
+        data["sector_inflow"] = fetch_sector(sectors)
 
     # --- L3: 新增数据 ---
     if include_extras:
@@ -183,7 +184,7 @@ def write_live(path: Path = None):
     data = build_live()
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"→ {out.name}: {len(data.get('live_quotes',{}))}股 {len(data.get('live_sectors',{}))}板块")
+    print(f"→ {out.name}: {len(data.get('live_quotes',{}))}股 {len(data.get('sector_inflow',{}))}板块")
 
 
 if __name__ == "__main__":
