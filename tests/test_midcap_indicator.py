@@ -2,6 +2,7 @@
 
 import unittest
 from ym_stock_data import indicators
+from ym_stock_data.indicators import MIN_COVERAGE_FOR_PCT
 from ym_stock_data.market_facts import MarketFactStore
 
 
@@ -76,7 +77,13 @@ class TestMidcapIndicator(unittest.TestCase):
         self.assertEqual(ev["cohort_size"], 100)
         self.assertEqual(ev["row_count"], 85)
         self.assertEqual(ev["above_count"], 30)
-        self.assertEqual(len(ev["missing_codes"]), 15)
+        # N2：这 15 只全是"按规则剔除"（ST / 停牌新股 / 上市不足 20 期 / 除权 / 北交所），
+        # 没有一只是"读不到数据"。以前两档混在一栏，看覆盖率时说不清代表什么。
+        self.assertEqual(len(ev["missing_codes"]), 0, "真缺数据的应当为 0")
+        self.assertEqual(len(ev["excluded_codes"]), 15)
+        self.assertGreaterEqual(ev["coverage"], MIN_COVERAGE_FOR_PCT,
+                                "真实样本的覆盖率达到下限，比例才给得出 35.2941")
+        self.assertEqual(ev["source_gaps"], [])
 
 
 if __name__ == "__main__":
