@@ -325,8 +325,18 @@ class MarketFactStoreTests(unittest.TestCase):
         # 3 prior days of limits
         for d, count in [("20260921", 10), ("20260922", 20), ("20260923", 30)]:
             self.store.ingest_limits(d, limit_result(d, [row(f"{i:06d}", 1) for i in range(count)]))
-        # 5 days of daily
-        for d in ["20260918", "20260921", "20260922", "20260923", "20260924"]:
+        # 20 days of daily
+        from ym_stock_data.trading_calendar import previous_trading_day
+        from datetime import date
+        cur = date(2026, 9, 24)
+        twenty_days = [cur]
+        while len(twenty_days) < 20:
+            cur = previous_trading_day(cur)
+            twenty_days.append(cur)
+        twenty_days.reverse()
+        twenty_days_str = [x.strftime("%Y%m%d") for x in twenty_days]
+
+        for d in twenty_days_str:
             items = [
                 {"ts_code": f"3{i:05d}.SZ", "trade_date": d, "open": 10.0,
                  "high": 11.0 if d == "20260924" and i < 25 else 10.0,
@@ -344,10 +354,13 @@ class MarketFactStoreTests(unittest.TestCase):
         inputs = self.store.style_inputs("20260924")
         self.assertEqual(inputs["昨日涨停家数3日均值"], 20.0)
         self.assertIsNotNone(inputs["量能波动率"])
-        self.assertEqual(inputs["大市值赚钱比例"], 50.0)
+        self.assertNotIn("大市值赚钱比例", inputs)
+        self.assertEqual(inputs["midcap_above_ma20_pct"], 25.0)
+        self.assertEqual(inputs["中军站上20日线比例"], 25.0)
         report = self.store.report("20260924")
         self.assertIn("style_inputs", report)
         self.assertEqual(report["style_inputs"]["昨日涨停家数3日均值"], 20.0)
+        self.assertEqual(report["style_inputs"]["midcap_above_ma20_pct"], 25.0)
 
     def test_is_trading_day_formats(self):
         from datetime import date

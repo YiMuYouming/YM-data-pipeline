@@ -294,3 +294,87 @@ def summarize(
         result["broken_return"], result["board_risk"],
     )
     return result
+
+
+def midcap_score(pct: float | None) -> int | None:
+    """§2.6 中军站上 20 日线得分.
+
+    >60% 得 10 分，45–60% 得 7 分，30–45% 得 4 分，<30% 得 0 分。
+    """
+    if pct is None:
+        return None
+    if pct > 60.0:
+        return 10
+    if pct >= 45.0:
+        return 7
+    if pct >= 30.0:
+        return 4
+    return 0
+
+
+def midcap_above_ma20_pct(
+    bars_by_code: Mapping[str, list[tuple[float, float]]],
+    *,
+    st_codes: Iterable[str] | None = None,
+    min_bars: int = 20,
+) -> dict:
+    """§2.6 中军站上 20 日线比例.
+
+    取当日成交额前 100 名的 A 股（剔除 ST、北交所、停牌股、上市不满 20 个交易日的新股及除权股），
+    计算收盘价站上自身 20 日均线的比例。分母为实际参与计算的只数。
+    bars_by_code: code -> chronological list of (close, pre_close)
+    """
+    st_set = set(st_codes or [])
+    cohort_codes = list(bars_by_code.keys())
+    missing_codes: list[str] = []
+    above_codes: list[str] = []
+    available_codes: list[str] = []
+
+    for code in cohort_codes:
+        # 1. 剔除北交所 (8*, 43*, 920*)
+        if code.startswith(("8", "43", "920")):
+            missing_codes.append(code)
+            continue
+        # 2. 剔除 ST
+        if code in st_set:
+            missing_codes.append(code)
+            continue
+        bars = bars_by_code[code]
+        # 3. 剔除停牌/新股 (bars < min_bars)
+        if len(bars) < min_bars:
+            missing_codes.append(code)
+            continue
+        # 4. 剔除除权日 (abs(curr_pre - prev_close) > 0.01)
+        has_xr = False
+        for i in range(1, len(bars)):
+            prev_close = bars[i - 1][0]
+            curr_pre = bars[i][1]
+            if abs(curr_pre - prev_close) > 0.01:
+                has_xr = True
+                missing_codes.append(code)
+                break
+        if has_xr:
+            continue
+
+        available_codes.append(code)
+        today_close = bars[-1][0]
+        ma20 = sum(b[0] for b in bars[-min_bars:]) / float(min_bars)
+        if today_close > ma20:
+            above_codes.append(code)
+
+    row_count = len(available_codes)
+    cohort_size = len(cohort_codes)
+    pct = round(len(above_codes) / row_count * 100.0, 4) if row_count else None
+    coverage = round(row_count / cohort_size, 6) if cohort_size else 0.0
+
+    return {
+        "pct": pct,
+        "score": midcap_score(pct),
+        "above_count": len(above_codes),
+        "row_count": row_count,
+        "cohort_size": cohort_size,
+        "missing_codes": sorted(missing_codes),
+        "coverage": coverage,
+        "above_codes": sorted(above_codes),
+    }
+

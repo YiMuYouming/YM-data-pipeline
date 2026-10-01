@@ -579,7 +579,7 @@ class MarketFactStore:
                 else None
             )
 
-            recent_days = [
+            recent_20_days = [
                 r["trade_date"]
                 for r in conn.execute(
                     """
@@ -587,56 +587,82 @@ class MarketFactStore:
                     FROM daily_runs
                     WHERE trade_date <= ?
                     ORDER BY trade_date DESC
-                    LIMIT 5
+                    LIMIT 20
                     """,
                     (day_str,),
                 ).fetchall()
             ]
-            top50 = conn.execute(
+            recent_20_days.reverse()
+
+            top100 = conn.execute(
                 """
                 SELECT d.code
                 FROM daily_runs r
                 JOIN daily_rows d ON r.id = d.run_id
                 WHERE r.trade_date = ?
                 ORDER BY d.amount_thousand_cny DESC
-                LIMIT 50
+                LIMIT 100
                 """,
                 (day_str,),
             ).fetchall()
-            large_cap_profit_pct = None
-            if top50 and len(recent_days) == 5:
-                top_codes = [r["code"] for r in top50]
-                placeholders = ",".join("?" * len(recent_days))
-                pos_count = 0
-                for code in top_codes:
-                    stock_rows = conn.execute(
-                        f"""
-                        SELECT r.trade_date, d.pct_change
-                        FROM daily_runs r
-                        JOIN daily_rows d ON r.id = d.run_id
-                        WHERE d.code = ? AND r.trade_date IN ({placeholders})
-                        ORDER BY r.trade_date ASC
-                        """,
-                        (code, *recent_days),
-                    ).fetchall()
-                    cum = 1.0
-                    for sr in stock_rows:
-                        cum *= 1.0 + (sr["pct_change"] or 0.0) / 100.0
-                    if (cum - 1.0) * 100.0 > 0:
-                        pos_count += 1
-                large_cap_profit_pct = round(pos_count / len(top_codes) * 100.0, 4)
+
+            midcap_above_ma20_pct = None
+            midcap_evidence = None
+            if top100 and len(recent_20_days) == 20:
+                cohort_codes = [r["code"] for r in top100]
+                placeholders_w = ",".join("?" * len(recent_20_days))
+                placeholders_c = ",".join("?" * len(cohort_codes))
+                bar_rows = conn.execute(
+                    f"""
+                    SELECT d.code, r.trade_date, d.close, d.pre_close
+                    FROM daily_runs r
+                    JOIN daily_rows d ON r.id = d.run_id
+                    WHERE r.trade_date IN ({placeholders_w}) AND d.code IN ({placeholders_c})
+                    ORDER BY r.trade_date ASC
+                    """,
+                    (*recent_20_days, *cohort_codes),
+                ).fetchall()
+                bars_by_code = {c: [] for c in cohort_codes}
+                for code, _t_date, close, pre_close in bar_rows:
+                    bars_by_code[code].append((close, pre_close))
+
+                st_rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT code, name FROM limit_events WHERE code IN ({placeholders_c})
+                    """,
+                    cohort_codes,
+                ).fetchall()
+                st_codes = {r["code"] for r in st_rows if indicators.is_st(r["name"])}
+
+                res = indicators.midcap_above_ma20_pct(
+                    bars_by_code,
+                    st_codes=st_codes,
+                    min_bars=20,
+                )
+                midcap_above_ma20_pct = res["pct"]
+                midcap_evidence = {
+                    "row_count": res["row_count"],
+                    "cohort_size": res["cohort_size"],
+                    "missing_codes": res["missing_codes"],
+                    "coverage": res["coverage"],
+                    "above_count": res["above_count"],
+                    "score": res["score"],
+                    "trade_date": day_str,
+                    "basis": "unadjusted_daily_close_ma20",
+                }
 
         return {
             "市场量能": market_volume,
             "成交额趋势": turnover_trend,
             "量能波动率": volume_volatility,
             "昨日涨停家数3日均值": limit_up_count_avg_3d,
-            "大市值赚钱比例": large_cap_profit_pct,
+            "中军站上20日线比例": midcap_above_ma20_pct,
             "market_volume": market_volume,
             "turnover_trend": turnover_trend,
             "volume_volatility": volume_volatility,
             "limit_up_count_avg_3d": limit_up_count_avg_3d,
-            "large_cap_profit_pct": large_cap_profit_pct,
+            "midcap_above_ma20_pct": midcap_above_ma20_pct,
+            "midcap_evidence": midcap_evidence,
         }
 
     def report(self, trade_date: str) -> dict:

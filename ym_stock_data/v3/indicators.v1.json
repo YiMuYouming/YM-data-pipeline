@@ -188,6 +188,38 @@
           "label": "高风险"
         }
       ]
+    },
+    {
+      "key": "midcap_above_ma20_pct",
+      "name": "中军站上20日线比例",
+      "glossary_section": "2.6",
+      "formula": "当日成交额前 100 名的 A 股（剔除 ST、北交所、停牌股、上市不满 20 个交易日的新股及 20 日内除权股），收盘价站上自身 20 日均线的比例",
+      "inputs": [
+        "amount_thousand_cny",
+        "close",
+        "pre_close"
+      ],
+      "universe": "traded_a_shares",
+      "intraday_postclose_same": false,
+      "definition_status": "defined",
+      "bands": [
+        {
+          "below": 30,
+          "label": "<30%"
+        },
+        {
+          "below": 45,
+          "label": "30-45%"
+        },
+        {
+          "through": 60,
+          "label": "45-60%"
+        },
+        {
+          "above": 60,
+          "label": ">60%"
+        }
+      ]
     }
   ]
 }
