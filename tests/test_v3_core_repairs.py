@@ -9,6 +9,7 @@ from ym_stock_data import api
 from ym_stock_data.api import query
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.provider_policy import CompiledPolicy
+from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.providers.base import ProviderOutcome
 from tests.fixed_clock import FIXED_NOW_ISO, freeze_trading_clock
 from ym_stock_data.providers.local import LocalProvider
@@ -1219,6 +1220,35 @@ class CoreRepairTests(unittest.TestCase):
         self.assertIn("intraday_bars_missing", result["_meta"]["quality"]["reason_codes"])
         self.assertNotEqual("success", result["_meta"]["status"])
         self.assertEqual("degraded", result["_meta"]["status"])
+
+    def test_minute_stock_kline_before_continuous_session_not_stale(self):
+        bars_data = {
+            "bars": [
+                {
+                    "datetime": "2026-09-23 15:00:00",
+                    "open": 10.2, "high": 10.6, "low": 10.1, "close": 10.5,
+                    "volume": 600, "amount": 6300.0,
+                },
+            ],
+            "adjustment": "none",
+            "volume_unit": "share",
+            "amount_unit": "CNY",
+        }
+        provider = _FakeProvider(
+            "stocktoday",
+            [_outcome("stocktoday", "success", bars_data)],
+        )
+        auction_now = datetime(2026, 9, 24, 9, 25, 0, tzinfo=TZ_SHANGHAI)
+        with patch("ym_stock_data.api._now_shanghai", return_value=auction_now):
+            result = self._run_with_fakes(
+                "stock_kline",
+                {"stocktoday": provider},
+                code="300442",
+                period="15m",
+            )
+        self.assertEqual("fresh", result["_meta"]["freshness"]["status"])
+        self.assertNotIn("intraday_bars_missing", result["_meta"]["quality"]["reason_codes"])
+        self.assertEqual("success", result["_meta"]["status"])
 
 
 if __name__ == "__main__":
