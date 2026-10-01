@@ -117,3 +117,47 @@ def market_fact_age_seconds(stamp: datetime, now: datetime) -> float | None:
         return age
     close = stamp.replace(hour=15, minute=0, second=0, microsecond=0)
     return session_seconds(close) - session_seconds(stamp)
+
+
+def week_info(day: date | str) -> dict[str, object]:
+    """Everything a weekly report or a "next trade date" decision needs, in one call.
+
+    看板的周分组、周报页、下一交易日判断以前各有一份本地实现，三份可能互相对不上。
+    这里只给一份；调用方不再自己数星期。
+    """
+    if isinstance(day, str):
+        if not (len(day) == 10 and day[4] == "-" and day[7] == "-"):
+            raise ValueError(f"invalid date format: {day!r}")
+        target = date.fromisoformat(day)
+    elif isinstance(day, datetime):
+        target = day.date()
+    elif isinstance(day, date):
+        target = day
+    else:
+        raise TypeError(f"expected date or str, got {type(day).__name__}")
+
+    iso_year, iso_week, _weekday = target.isocalendar()
+    monday = target - timedelta(days=target.weekday())
+    trading_days: list[str] = []
+    for offset in range(7):
+        candidate = monday + timedelta(days=offset)
+        if is_trading_day(candidate) and candidate <= target:
+            trading_days.append(candidate.isoformat())
+    previous_monday = monday - timedelta(days=7)
+    prev_week_last = None
+    for offset in range(6, -1, -1):
+        candidate = previous_monday + timedelta(days=offset)
+        if is_trading_day(candidate):
+            prev_week_last = candidate
+            break
+    if prev_week_last is None:
+        prev_week_last = previous_trading_day(monday)
+    return {
+        "week_label": f"{iso_year:04d}-W{iso_week:02d}",
+        "iso_year": iso_year,
+        "iso_week": iso_week,
+        "trading_days": trading_days,
+        "prev_trading_day": previous_trading_day(target).isoformat(),
+        "next_trading_day": next_trading_day(target).isoformat(),
+        "prev_week_last_trading_day": prev_week_last.isoformat(),
+    }
