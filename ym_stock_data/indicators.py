@@ -296,6 +296,11 @@ def summarize(
     return result
 
 
+# 覆盖率下限：可参与计算的只数 / 样本数 低于它，中军比例就不给数（N2）。
+# 初始值 0.8；覆盖不足时给 null 与 typed gap，比给一个没意义的比例诚实。
+MIN_COVERAGE_FOR_PCT = 0.8
+
+
 def midcap_score(pct: float | None) -> int | None:
     """§2.6 中军站上 20 日线得分.
 
@@ -320,40 +325,41 @@ def midcap_above_ma20_pct(
 ) -> dict:
     """§2.6 中军站上 20 日线比例.
 
-    取当日成交额前 100 名的 A 股（剔除 ST、北交所、停牌股、上市不满 20 个交易日的新股及除权股），
-    计算收盘价站上自身 20 日均线的比例。分母为实际参与计算的只数。
-    bars_by_code: code -> chronological list of (close, pre_close)
+    取当日成交额前 100 名的 A 股，计算收盘价站上自身 20 日均线的比例。
+    ``st_codes`` 由调用方从股票基础信息（StockToday 股票列表与名称变更）给出，
+    不依赖当日 ``limit_events`` —— 从没涨跌停过的 ST 也要剔得掉。
+
+    剔除与缺数据分两栏（N2）：``excluded_codes`` 是按规则剔掉的（附原因），
+    ``missing_codes`` 是真没有数据的。覆盖率低于 :data:`MIN_COVERAGE_FOR_PCT`
+    时比例不给数，只给 null 与一条 typed gap。
     """
-    st_set = set(st_codes or [])
+    st_set = set(st_codes or {})
     cohort_codes = list(bars_by_code.keys())
+    excluded_codes: dict[str, str] = {}
     missing_codes: list[str] = []
     above_codes: list[str] = []
     available_codes: list[str] = []
 
     for code in cohort_codes:
-        # 1. 剔除北交所 (8*, 43*, 920*)
+        bars = bars_by_code.get(code) or []
+        if not bars:
+            missing_codes.append(code)          # 真缺数据，不是按规则剔除
+            continue
+        # 1. 北交所 (8*, 43*, 920*)
         if code.startswith(("8", "43", "920")):
-            missing_codes.append(code)
+            excluded_codes[code] = "beijing"
             continue
-        # 2. 剔除 ST
+        # 2. ST（名单来自股票基础信息）
         if code in st_set:
-            missing_codes.append(code)
+            excluded_codes[code] = "st"
             continue
-        bars = bars_by_code[code]
-        # 3. 剔除停牌/新股 (bars < min_bars)
+        # 3. 停牌/新股 (bars < min_bars)
         if len(bars) < min_bars:
-            missing_codes.append(code)
+            excluded_codes[code] = "suspended_or_new"
             continue
-        # 4. 剔除除权日 (abs(curr_pre - prev_close) > 0.01)
-        has_xr = False
-        for i in range(1, len(bars)):
-            prev_close = bars[i - 1][0]
-            curr_pre = bars[i][1]
-            if abs(curr_pre - prev_close) > 0.01:
-                has_xr = True
-                missing_codes.append(code)
-                break
-        if has_xr:
+        # 4. 除权日 (abs(curr_pre - prev_close) > 0.01)
+        if any(abs(bars[i][1] - bars[i - 1][0]) > 0.01 for i in range(1, len(bars))):
+            excluded_codes[code] = "ex_right"
             continue
 
         available_codes.append(code)
@@ -364,8 +370,24 @@ def midcap_above_ma20_pct(
 
     row_count = len(available_codes)
     cohort_size = len(cohort_codes)
-    pct = round(len(above_codes) / row_count * 100.0, 4) if row_count else None
     coverage = round(row_count / cohort_size, 6) if cohort_size else 0.0
+    source_gaps: list[dict] = []
+    pct = round(len(above_codes) / row_count * 100.0, 4) if row_count else None
+    if coverage < MIN_COVERAGE_FOR_PCT:
+        pct = None
+        source_gaps.append({
+            "gap_code": f"midcap_coverage_below_floor:{coverage:.4f}<{MIN_COVERAGE_FOR_PCT}",
+            "scope": "advisory",
+            "severity": "advisory",
+            "affected_actions": [],
+            "affected_side": "",
+            "affected_candidates": [],
+            "evidence_time": None,
+            "affected_review_cells": ["表2 中军站上20日线比例"],
+            "coverage": coverage,
+            "row_count": row_count,
+            "cohort_size": cohort_size,
+        })
 
     return {
         "pct": pct,
@@ -373,8 +395,10 @@ def midcap_above_ma20_pct(
         "above_count": len(above_codes),
         "row_count": row_count,
         "cohort_size": cohort_size,
+        "excluded_codes": dict(sorted(excluded_codes.items())),
         "missing_codes": sorted(missing_codes),
         "coverage": coverage,
+        "coverage_floor": MIN_COVERAGE_FOR_PCT,
         "above_codes": sorted(above_codes),
+        "source_gaps": source_gaps,
     }
-

@@ -34,9 +34,21 @@ class TestMidcapIndicator(unittest.TestCase):
         self.assertEqual(res["row_count"], 2)  # only 000001 and 000002 valid
         self.assertEqual(res["above_count"], 1)
         self.assertEqual(res["above_codes"], ["000001"])
-        self.assertEqual(res["missing_codes"], ["000003", "000004", "000006", "920001"])
-        self.assertAlmostEqual(res["pct"], 50.0, places=4)
+        # 覆盖率 2/6 低于下限 → 比例不给数（N2）；纯计算本身由 test_midcap_cohort
+        # 里覆盖率达标的那组夹具验证
+        # N2：按规则剔除的进 excluded_codes（带原因），真缺数据的才叫 missing
+        self.assertEqual(res["excluded_codes"], {
+            "000003": "suspended_or_new",
+            "000004": "ex_right",
+            "000006": "st",
+            "920001": "beijing",
+        })
+        self.assertEqual(res["missing_codes"], [])
+        self.assertIsNone(res["pct"])
+        self.assertIsNone(res["score"])
         self.assertAlmostEqual(res["coverage"], 2 / 6, places=4)
+        self.assertTrue(any("midcap_coverage_below_floor" in gap["gap_code"]
+                            for gap in res["source_gaps"]))
 
     def test_midcap_scoring(self):
         self.assertEqual(indicators.midcap_score(65.0), 10)

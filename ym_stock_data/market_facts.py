@@ -130,6 +130,31 @@ def normalize_stocktoday_limits(trade_date: str, results: dict[str, dict]) -> di
                       "quality": {"status": "normal", "reason_codes": []}}}
 
 
+def st_codes_for_cohort(snapshot_names, limit_events=None, *, with_source=False):
+    """ST 名单来自全市场快照自带的名称（N3）。
+
+    以前只从 ``limit_events`` 的名字里挑，于是**从没涨跌停过的 ST 剔不掉**——
+    它当天根本不会出现在 limit_events 里。快照的名字与涨跌停无关，属于股票基础
+    信息；只有在快照没带名称时才退回 limit_events，并把来源标出来。
+    """
+    from . import indicators as _indicators
+
+    limit_events = limit_events or {}
+    snapshot_names = snapshot_names or {}
+    named = {
+        code: str(row.get("name") or "")
+        for code, row in snapshot_names.items()
+        if isinstance(row, dict) and str(row.get("name") or "").strip()
+    }
+    if named:
+        codes = {code for code, name in named.items() if _indicators.is_st(name)}
+        return (codes, "stock_snapshot_names") if with_source else codes
+    codes = {code for code, name in limit_events.items() if _indicators.is_st(name)}
+    if with_source:
+        return codes, ("limit_events_fallback" if limit_events else "none")
+    return codes
+
+
 class MarketFactStore:
     def __init__(self, path: str | Path = DEFAULT_DB, *, read_only: bool = False):
         self.path = Path(path)
@@ -199,6 +224,14 @@ class MarketFactStore:
                     universe TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS daily_runs_day ON daily_runs(trade_date, id);
+                CREATE TABLE IF NOT EXISTS stock_names (
+                    code TEXT PRIMARY KEY,
+                    name TEXT,
+                    updated_at TEXT
+                );
+            """)
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS daily_rows (
                     run_id INTEGER NOT NULL REFERENCES daily_runs(id),
                     code TEXT NOT NULL,
@@ -632,7 +665,25 @@ class MarketFactStore:
                     """,
                     cohort_codes,
                 ).fetchall()
-                st_codes = {r["code"] for r in st_rows if indicators.is_st(r["name"])}
+                # ST 名单：股票基础信息的名称优先，limit_events 只作退路（N3）。
+                # stock_names 表由全市场快照落名而来；它还没落库时退回 limit_events，
+                # 并把来源记进证据——这样"剔得掉哪些 ST"是可见的，不是一句假设。
+                snapshot_names = {}
+                try:
+                    name_rows = conn.execute(
+                        f"""
+                        SELECT code, name FROM stock_names WHERE code IN ({placeholders_c})
+                        """,
+                        cohort_codes,
+                    ).fetchall()
+                    snapshot_names = {r["code"]: {"name": r["name"]} for r in name_rows}
+                except Exception:  # 表还不存在：用退路，来源会标成 limit_events_fallback
+                    snapshot_names = {}
+                st_codes, st_source = st_codes_for_cohort(
+                    snapshot_names,
+                    {r["code"]: r["name"] for r in st_rows},
+                    with_source=True,
+                )
 
                 res = indicators.midcap_above_ma20_pct(
                     bars_by_code,
@@ -649,6 +700,11 @@ class MarketFactStore:
                     "score": res["score"],
                     "trade_date": day_str,
                     "basis": "unadjusted_daily_close_ma20",
+                    "excluded_codes": res["excluded_codes"],
+                    "missing_codes": res["missing_codes"],
+                    "coverage_floor": res["coverage_floor"],
+                    "source_gaps": res["source_gaps"],
+                    "st_source": st_source,
                 }
 
         return {
