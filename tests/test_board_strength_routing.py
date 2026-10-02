@@ -210,3 +210,24 @@ class ConceptTypeGateTests(unittest.TestCase):
         ])
         out = provider.call("concept_index", {})
         self.assertEqual([], out.data["items"])
+
+
+class BoardRowCountTests(unittest.TestCase):
+    """板块行数必须被算出来，否则 provider 报 empty、整次查询被拒。
+
+    在线烟测（trade_date=20260930）时发现的：三个板块查得出来，
+    attempts 里却是 STATUS_DATA_MISMATCH——`_row_count` 不认识 boards 键，
+    provider 因此报 status=empty，而上层发现数据其实不空。
+    """
+
+    def test_boards_key_counts_as_rows(self):
+        from ym_stock_data.providers import local
+
+        raw = {"boards": [{"board_id": "881121"}, {"board_id": "881155"}],
+               "quality": {"returned_count": 2}}
+        self.assertEqual(2, local._row_count("market_board_strength", raw))
+
+    def test_empty_boards_is_zero(self):
+        from ym_stock_data.providers import local
+
+        self.assertEqual(0, local._row_count("market_board_strength", {"boards": []}))

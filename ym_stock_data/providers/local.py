@@ -130,7 +130,10 @@ def _row_count(intent: str, raw: dict) -> int:
             return max(0, int(raw.get("_total") or 0))
         except (TypeError, ValueError):
             return 0
-    for key in ("datas", "items", "bars", "reports", "filings"):
+    # boards 是 market_board_strength 的行容器（一个板块一行）。
+    # 少了它，provider 会把「有板块」报成 status=empty，上层按
+    # STATUS_DATA_MISMATCH 拒掉整次查询——在线烟测就是这么发现的。
+    for key in ("datas", "items", "bars", "reports", "filings", "boards"):
         value = raw.get(key)
         if isinstance(value, list):
             return len(value)
