@@ -37,6 +37,10 @@ LOCAL_PROVIDER_NAMES = frozenset(
         "tencent",
         "sina",
         "ths_industry",
+        # 板块强度是本地合成的（输入来自 market_facts / sector_index /
+        # industry_flow），但它确实是一个被路由直接调起的适配器，
+        # 与 ths_industry、market_facts 同一性质，所以登记在这里。
+        "board_strength",
         "northbound",
         "ths_hot",
         "pytdx_index",

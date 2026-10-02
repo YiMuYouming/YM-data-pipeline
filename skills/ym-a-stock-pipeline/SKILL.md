@@ -18,6 +18,8 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | --- | --- | --- |
 | 市场全景、指数、涨跌家数 | `realtime_market` | 无 |
 | 行业/板块 | `sector_index` | `names` 或 881 `codes` |
+| 概念板块 | `concept_index` | `names` 或 885 `codes`（与 881 行业不是一回事，不混排） |
+| 逐板块强度 | `market_board_strength` | `trade_date`；可选 `board_ids`、`definitions`、`member_coverage` |
 | 个股当前快照 | `stock_snapshot` | `codes` |
 | 日/周/月/分钟 K 线 | `stock_kline` | `code`、`period`；可选日期范围与复权方式 |
 | 指数历史 K 线 | `index_kline` | `index_code` 或 `codes`、`period`；可选日期范围 |
@@ -114,6 +116,8 @@ K 线检查 `datetime`、`volume_unit=share`、`amount_unit=CNY` 和 `adjustment
 | `查前复权日K` | `stock_kline`，固定 `period=daily`、`adjustment=qfq` | `code` |
 | `查分钟K` | `stock_kline` | `code`、`period=5m/15m/60m` |
 | `查板块` / `查行业` | `sector_index` | `names` 或 881 `codes` |
+| `查概念板块` / `查概念` | `concept_index` | `names` 或 885 `codes` |
+| `查板块强度` / `板块强度` | `market_board_strength` | `trade_date` |
 
 ```bash
 ./ym-data intent "查涨停板" 'trade_date="20260923"'
