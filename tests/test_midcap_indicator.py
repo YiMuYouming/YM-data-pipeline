@@ -2,6 +2,7 @@
 
 import unittest
 from ym_stock_data import indicators
+from ym_stock_data.indicators import MIN_COVERAGE_FOR_PCT
 from ym_stock_data.market_facts import MarketFactStore
 
 
@@ -34,9 +35,21 @@ class TestMidcapIndicator(unittest.TestCase):
         self.assertEqual(res["row_count"], 2)  # only 000001 and 000002 valid
         self.assertEqual(res["above_count"], 1)
         self.assertEqual(res["above_codes"], ["000001"])
-        self.assertEqual(res["missing_codes"], ["000003", "000004", "000006", "920001"])
-        self.assertAlmostEqual(res["pct"], 50.0, places=4)
+        # 覆盖率 2/6 低于下限 → 比例不给数（N2）；纯计算本身由 test_midcap_cohort
+        # 里覆盖率达标的那组夹具验证
+        # N2：按规则剔除的进 excluded_codes（带原因），真缺数据的才叫 missing
+        self.assertEqual(res["excluded_codes"], {
+            "000003": "suspended_or_new",
+            "000004": "ex_right",
+            "000006": "st",
+            "920001": "beijing",
+        })
+        self.assertEqual(res["missing_codes"], [])
+        self.assertIsNone(res["pct"])
+        self.assertIsNone(res["score"])
         self.assertAlmostEqual(res["coverage"], 2 / 6, places=4)
+        self.assertTrue(any("midcap_coverage_below_floor" in gap["gap_code"]
+                            for gap in res["source_gaps"]))
 
     def test_midcap_scoring(self):
         self.assertEqual(indicators.midcap_score(65.0), 10)
@@ -64,7 +77,13 @@ class TestMidcapIndicator(unittest.TestCase):
         self.assertEqual(ev["cohort_size"], 100)
         self.assertEqual(ev["row_count"], 85)
         self.assertEqual(ev["above_count"], 30)
-        self.assertEqual(len(ev["missing_codes"]), 15)
+        # N2：这 15 只全是"按规则剔除"（ST / 停牌新股 / 上市不足 20 期 / 除权 / 北交所），
+        # 没有一只是"读不到数据"。以前两档混在一栏，看覆盖率时说不清代表什么。
+        self.assertEqual(len(ev["missing_codes"]), 0, "真缺数据的应当为 0")
+        self.assertEqual(len(ev["excluded_codes"]), 15)
+        self.assertGreaterEqual(ev["coverage"], MIN_COVERAGE_FOR_PCT,
+                                "真实样本的覆盖率达到下限，比例才给得出 35.2941")
+        self.assertEqual(ev["source_gaps"], [])
 
 
 if __name__ == "__main__":

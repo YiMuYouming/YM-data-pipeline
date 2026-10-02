@@ -76,7 +76,7 @@
       "is_strong":   {"status":"auto","source":"pytdx","freq":"每日计算一次","note":"近5日收盘从未跌破MA5"}
     },
 
-    "live_sectors": {
+    "sector_inflow": {
       "_desc":       "板块指数实时数据",
       "涨跌幅":      {"status":"auto","source":"pytdx","freq":"30s"},
       "最新价":      {"status":"auto","source":"pytdx","freq":"30s"},
