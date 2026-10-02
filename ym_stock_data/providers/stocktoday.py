@@ -1177,11 +1177,12 @@ class StockTodayProvider:
             row for row in (raw.get("items") or [])
             if str(row.get("type") or "") == CONCEPT_BOARD_TYPE
         ]
-        requested = {str(code).split(".")[0] for code in codes}
-        # 请求了但被 type 闸挡掉的，如实进 missing——不回声不等于没有
+        # 请求了但被 type 闸挡掉的，如实进 missing——不回声不等于没有。
+        # missing 回显调用方给的原始形式；比对按裸 id（上游带 .TI）。
+        requested = {str(code).split(".")[0]: str(code) for code in codes}
+        returned = {str(row.get("ts_code") or "").split(".")[0] for row in items}
         rejected = sorted(
-            requested
-            - {str(row.get("ts_code") or "").split(".")[0] for row in items}
+            original for bare, original in requested.items() if bare not in returned
         )
         return ProviderOutcome(
             self.name,
