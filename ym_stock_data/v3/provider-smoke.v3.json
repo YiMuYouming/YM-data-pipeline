@@ -15,9 +15,7 @@
       "operation": "direct_provider_call",
       "intent": "news",
       "capability": "news",
-      "params": {
-        "limit": 3
-      },
+      "params": {"limit": 3},
       "read_only": true
     },
     {
@@ -25,11 +23,7 @@
       "operation": "direct_provider_call",
       "intent": "filings",
       "capability": "filings",
-      "params": {
-        "code": "600519",
-        "days": 365,
-        "max_pages": 1
-      },
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
       "read_only": true
     },
     {
@@ -45,12 +39,7 @@
       "operation": "direct_provider_call",
       "intent": "index_kline",
       "capability": "index_kline_minute",
-      "params": {
-        "index_code": "000001.SH",
-        "period": "5m",
-        "start_date": "20260922",
-        "end_date": "20260922"
-      },
+      "params": {"index_code": "000001.SH", "period": "5m", "start_date": "20260922", "end_date": "20260922"},
       "read_only": true
     },
     {
@@ -58,12 +47,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_daily",
-      "params": {
-        "code": "600519",
-        "period": "daily",
-        "count": 3,
-        "adjustment": "qfq"
-      },
+      "params": {"code": "600519", "period": "daily", "count": 3, "adjustment": "qfq"},
       "read_only": true
     },
     {
@@ -79,11 +63,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_event",
       "capability": "stock_event",
-      "params": {
-        "event": "lockup",
-        "code": "600519",
-        "page_size": 3
-      },
+      "params": {"event": "lockup", "code": "600519", "page_size": 3},
       "read_only": true
     },
     {
@@ -91,9 +71,7 @@
       "operation": "direct_provider_call",
       "intent": "market_limit_state",
       "capability": "market_limit_state",
-      "params": {
-        "date": "${today_shanghai}"
-      },
+      "params": {"date": "${today_shanghai}"},
       "read_only": true
     },
     {
@@ -109,11 +87,7 @@
       "operation": "direct_provider_call",
       "intent": "research",
       "capability": "research_reports",
-      "params": {
-        "code": "600519",
-        "days": 365,
-        "max_pages": 1
-      },
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
       "read_only": true
     },
     {
@@ -121,10 +95,7 @@
       "operation": "direct_provider_call",
       "intent": "review_sentiment",
       "capability": "screener",
-      "params": {
-        "query": "沪深A股 非ST 非停牌 最新价>=1",
-        "limit": 3
-      },
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
       "read_only": true
     },
     {
@@ -132,11 +103,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_snapshot",
       "capability": "stock_snapshot",
-      "params": {
-        "codes": [
-          "600519"
-        ]
-      },
+      "params": {"codes": ["600519"]},
       "read_only": true
     },
     {
@@ -152,11 +119,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_daily",
-      "params": {
-        "code": "600519",
-        "period": "daily",
-        "count": 3
-      },
+      "params": {"code": "600519", "period": "daily", "count": 3},
       "read_only": true
     },
     {
@@ -172,10 +135,7 @@
       "operation": "direct_provider_call",
       "intent": "review_sentiment",
       "capability": "structured_screener",
-      "params": {
-        "query": "沪深A股 非ST 非停牌 最新价>=1",
-        "limit": 3
-      },
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
       "read_only": true
     },
     {
@@ -183,10 +143,7 @@
       "operation": "direct_provider_call",
       "intent": "review_sentiment",
       "capability": "screener",
-      "params": {
-        "query": "沪深A股 非ST 非停牌 最新价>=1",
-        "limit": 3
-      },
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
       "read_only": true
     },
     {
@@ -194,11 +151,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_60m",
-      "params": {
-        "code": "600519",
-        "period": "60m",
-        "count": 3
-      },
+      "params": {"code": "600519", "period": "60m", "count": 3},
       "read_only": true
     },
     {
@@ -206,12 +159,7 @@
       "operation": "direct_provider_call",
       "intent": "index_kline",
       "capability": "index_kline_minute",
-      "params": {
-        "index_code": "000001.SH",
-        "period": "5m",
-        "start_date": "20260922",
-        "end_date": "20260922"
-      },
+      "params": {"index_code": "000001.SH", "period": "5m", "start_date": "20260922", "end_date": "20260922"},
       "read_only": true
     },
     {
@@ -219,10 +167,7 @@
       "operation": "direct_provider_call",
       "intent": "index_intraday_compare",
       "capability": "index_intraday_compare",
-      "params": {
-        "period": "15m",
-        "trade_date": "20260922"
-      },
+      "params": {"period": "15m", "trade_date": "20260922"},
       "read_only": true
     },
     {
@@ -232,17 +177,8 @@
       "capability": "stocktoday_rt_k",
       "params": {
         "api_name": "rt_k",
-        "params": {
-          "ts_code": "600519.SH"
-        },
-        "fields": [
-          "ts_code",
-          "trade_time",
-          "close",
-          "pre_close",
-          "name",
-          "updated_at"
-        ],
+        "params": {"ts_code": "600519.SH"},
+        "fields": ["ts_code", "trade_time", "close", "pre_close", "name", "updated_at"],
         "max_rows": 1
       },
       "read_only": true
@@ -252,12 +188,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_snapshot",
       "capability": "stock_snapshot",
-      "params": {
-        "codes": [
-          "600519"
-        ],
-        "source": "stocktoday"
-      },
+      "params": {"codes": ["600519"], "source": "stocktoday"},
       "read_only": true
     },
     {
@@ -265,12 +196,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_daily",
-      "params": {
-        "code": "600519",
-        "period": "daily",
-        "count": 3,
-        "source": "stocktoday"
-      },
+      "params": {"code": "600519", "period": "daily", "count": 3, "source": "stocktoday"},
       "read_only": true
     },
     {
@@ -278,11 +204,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_daily",
-      "params": {
-        "code": "600519",
-        "period": "daily",
-        "count": 3
-      },
+      "params": {"code": "600519", "period": "daily", "count": 3},
       "read_only": true
     },
     {
@@ -298,9 +220,7 @@
       "operation": "direct_provider_call",
       "intent": "news",
       "capability": "news",
-      "params": {
-        "limit": 3
-      },
+      "params": {"limit": 3},
       "read_only": true
     },
     {
@@ -308,11 +228,7 @@
       "operation": "direct_provider_call",
       "intent": "filings",
       "capability": "filings",
-      "params": {
-        "code": "600519",
-        "days": 365,
-        "max_pages": 1
-      },
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
       "read_only": true
     },
     {
@@ -320,11 +236,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_snapshot",
       "capability": "stock_snapshot",
-      "params": {
-        "codes": [
-          "600519"
-        ]
-      },
+      "params": {"codes": ["600519"]},
       "read_only": true
     },
     {
@@ -332,11 +244,7 @@
       "operation": "direct_provider_call",
       "intent": "research",
       "capability": "research_reports",
-      "params": {
-        "code": "600519",
-        "days": 365,
-        "max_pages": 1
-      },
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
       "read_only": true
     },
     {
@@ -344,10 +252,7 @@
       "operation": "direct_provider_call",
       "intent": "review_sentiment",
       "capability": "structured_screener",
-      "params": {
-        "query": "沪深A股 非ST 非停牌 最新价>=1",
-        "limit": 3
-      },
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
       "read_only": true
     },
     {
@@ -355,11 +260,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_snapshot",
       "capability": "stock_snapshot",
-      "params": {
-        "codes": [
-          "600519"
-        ]
-      },
+      "params": {"codes": ["600519"]},
       "read_only": true
     },
     {
@@ -375,11 +276,7 @@
       "operation": "direct_provider_call",
       "intent": "stock_kline",
       "capability": "stock_kline_daily",
-      "params": {
-        "code": "600519",
-        "period": "daily",
-        "count": 3
-      },
+      "params": {"code": "600519", "period": "daily", "count": 3},
       "read_only": true
     },
     {
@@ -387,11 +284,7 @@
       "operation": "direct_provider_call",
       "intent": "sector_index",
       "capability": "sector_index",
-      "params": {
-        "names": [
-          "半导体"
-        ]
-      },
+      "params": {"names": ["半导体"]},
       "read_only": true
     },
     {
@@ -399,11 +292,7 @@
       "operation": "direct_provider_call",
       "intent": "filings",
       "capability": "filings",
-      "params": {
-        "code": "600519",
-        "days": 365,
-        "max_pages": 1
-      },
+      "params": {"code": "600519", "days": 365, "max_pages": 1},
       "read_only": true
     },
     {
@@ -411,10 +300,7 @@
       "operation": "direct_provider_call",
       "intent": "wind_enrichment",
       "capability": "company_profile",
-      "params": {
-        "capability": "company_profile",
-        "code": "600519"
-      },
+      "params": {"capability": "company_profile", "code": "600519"},
       "read_only": true
     },
     {
@@ -422,10 +308,7 @@
       "operation": "direct_provider_call",
       "intent": "review_sentiment",
       "capability": "screener",
-      "params": {
-        "query": "沪深A股 非ST 非停牌 最新价>=1",
-        "limit": 3
-      },
+      "params": {"query": "沪深A股 非ST 非停牌 最新价>=1", "limit": 3},
       "read_only": true
     },
     {
@@ -433,9 +316,7 @@
       "operation": "direct_provider_call",
       "intent": "market_limit_board",
       "capability": "market_limit_board",
-      "params": {
-        "kind": "up"
-      },
+      "params": {"kind": "up"},
       "read_only": true
     },
     {
@@ -443,10 +324,7 @@
       "operation": "direct_provider_call",
       "intent": "northbound_flow",
       "capability": "northbound_flow",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -454,11 +332,7 @@
       "operation": "direct_provider_call",
       "intent": "index_kline",
       "capability": "index_kline_daily",
-      "params": {
-        "index_code": "000001.SH",
-        "period": "daily",
-        "count": 3
-      },
+      "params": {"index_code": "000001.SH", "period": "daily", "count": 3},
       "read_only": true
     },
     {
@@ -466,10 +340,7 @@
       "operation": "direct_provider_call",
       "intent": "index_intraday_compare",
       "capability": "index_intraday_compare",
-      "params": {
-        "period": "15m",
-        "trade_date": "20260922"
-      },
+      "params": {"period": "15m", "trade_date": "20260922"},
       "read_only": true
     },
     {
@@ -477,10 +348,7 @@
       "operation": "direct_provider_call",
       "intent": "fund_flow",
       "capability": "fund_flow",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -488,10 +356,7 @@
       "operation": "direct_provider_call",
       "intent": "index_intraday_compare",
       "capability": "index_intraday_compare",
-      "params": {
-        "period": "5m",
-        "trade_date": "20260922"
-      },
+      "params": {"period": "5m", "trade_date": "20260922"},
       "read_only": true
     },
     {
@@ -499,11 +364,7 @@
       "operation": "direct_provider_call",
       "intent": "index_kline",
       "capability": "index_kline_daily",
-      "params": {
-        "index_code": "000001.SH",
-        "period": "daily",
-        "count": 3
-      },
+      "params": {"index_code": "000001.SH", "period": "daily", "count": 3},
       "read_only": true
     },
     {
@@ -511,10 +372,7 @@
       "operation": "direct_provider_call",
       "intent": "industry_flow",
       "capability": "industry_flow",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -522,10 +380,7 @@
       "operation": "direct_provider_call",
       "intent": "legacy_hot_rank",
       "capability": "legacy_hot_rank",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -533,11 +388,7 @@
       "operation": "direct_provider_call",
       "intent": "market_hot_rank",
       "capability": "market_hot_rank",
-      "params": {
-        "source": "ths",
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"source": "ths", "trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -545,9 +396,7 @@
       "operation": "direct_provider_call",
       "intent": "market_limit_board",
       "capability": "market_limit_board",
-      "params": {
-        "kind": "up"
-      },
+      "params": {"kind": "up"},
       "read_only": true
     },
     {
@@ -555,10 +404,7 @@
       "operation": "direct_provider_call",
       "intent": "northbound_flow",
       "capability": "northbound_flow",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -574,10 +420,7 @@
       "operation": "direct_provider_call",
       "intent": "legacy_hot_rank",
       "capability": "legacy_hot_rank",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -585,10 +428,7 @@
       "operation": "direct_provider_call",
       "intent": "industry_flow",
       "capability": "industry_flow",
-      "params": {
-        "trade_date": "20260922",
-        "limit": 3
-      },
+      "params": {"trade_date": "20260922", "limit": 3},
       "read_only": true
     },
     {
@@ -596,9 +436,7 @@
       "operation": "direct_provider_call",
       "intent": "market_limit_state",
       "capability": "market_limit_state",
-      "params": {
-        "date": "20260924"
-      },
+      "params": {"date": "20260924"},
       "read_only": true
     },
     {
@@ -614,9 +452,7 @@
       "operation": "direct_provider_call",
       "intent": "index_intraday_compare",
       "capability": "index_intraday_compare",
-      "params": {
-        "period": "15m"
-      },
+      "params": {"period": "15m"},
       "read_only": true
     },
     {
@@ -632,11 +468,7 @@
       "operation": "direct_provider_call",
       "intent": "concept_index",
       "capability": "concept_index",
-      "params": {
-        "names": [
-          "算力"
-        ]
-      },
+      "params": {"names": ["\u7b97\u529b"]},
       "read_only": true
     },
     {
@@ -644,9 +476,7 @@
       "operation": "direct_provider_call",
       "intent": "market_board_strength",
       "capability": "market_board_strength",
-      "params": {
-        "trade_date": "20260930"
-      },
+      "params": {"trade_date": "20260930"},
       "read_only": true
     }
   ],
