@@ -236,6 +236,10 @@ def _board_strength(params: dict) -> dict:
     boards_meta = load_board_definitions(definitions)["boards"] if definitions else []
     wanted = [str(b) for b in (params.get("board_ids") or [])]
     board_ids = wanted or [str(entry["board_id"]) for entry in boards_meta]
+    board_names = {
+        str(entry["board_id"]): str(entry.get("board_name") or entry.get("name") or "")
+        for entry in boards_meta
+    }
 
     limit_pool = _limit_pool_for(trade_date)
     flows = _industry_flow_for(trade_date)
@@ -245,6 +249,8 @@ def _board_strength(params: dict) -> dict:
     for board_id in board_ids:
         payload = board_strength(
             board_id,
+            # definitions 里的板块名要传下去：涨停池记的是名字，不传就对不上
+            board_name=board_names.get(board_id),
             pool=limit_pool,
             industry_bars=bars_by_board.get(board_id) or [],
             flows=flows,

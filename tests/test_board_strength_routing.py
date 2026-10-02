@@ -231,3 +231,54 @@ class BoardRowCountTests(unittest.TestCase):
         from ym_stock_data.providers import local
 
         self.assertEqual(0, local._row_count("market_board_strength", {"boards": []}))
+
+
+class PoolJoinTests(unittest.TestCase):
+    """涨停池记的是**行业名**，board_id 是代码——两个键都要认。
+
+    在线烟测发现的：池里有 52 条（industry="房地产开发"），而 board_id 是
+    881121，拿名字跟代码比永远匹配不上，于是七个字段全部 missing，
+    而且从结果上看不出是哪儿错的。
+    """
+
+    POOL = [
+        {"code": "000011", "name": "深物业A", "industry": "房地产开发", "board": 3},
+        {"code": "600123", "name": "示例B", "industry": "光伏设备", "board": 2},
+    ]
+
+    def test_pool_row_matches_by_board_name(self):
+        from ym_stock_data.board_strength import board_strength
+
+        out = board_strength("881121", board_name="房地产开发", pool=self.POOL,
+                            coverage=1.0)
+        self.assertEqual(1, out["fields"]["limit_up_count"]["value"])
+
+    def test_pool_row_matches_by_board_id(self):
+        from ym_stock_data.board_strength import board_strength
+
+        pool = [{"code": "000011", "board_id": "881121"}]
+        out = board_strength("881121", board_name="房地产开发", pool=pool,
+                            coverage=1.0)
+        self.assertEqual(1, out["fields"]["limit_up_count"]["value"])
+
+    def test_without_member_coverage_nothing_is_reported(self):
+        """没给覆盖率就全给 null——**不给就不给**，不猜。
+
+        这正是"覆盖率必须由拿着成员名单的一方算出来"的落地形态：
+        管道这一侧只有涨停池，给不出成员比例，于是宁可不报。
+        """
+        from ym_stock_data.board_strength import board_strength
+
+        out = board_strength("881121", board_name="房地产开发", pool=self.POOL)
+        self.assertEqual("missing", out["fields"]["limit_up_count"]["status"])
+        self.assertIsNone(out["fields"]["limit_up_count"]["value"])
+
+    def test_unrelated_board_stays_empty(self):
+        from ym_stock_data.board_strength import board_strength
+
+        # 调用方声明样本齐全（coverage=1.0），那么 0 就是一次真实测量：
+        # 这个板块今天确实没有涨停。凑不准才该报 null。
+        out = board_strength("881999", board_name="银行", pool=self.POOL,
+                             coverage=1.0)
+        self.assertEqual(0, out["fields"]["limit_up_count"]["value"])
+        self.assertEqual("ok", out["fields"]["limit_up_count"]["status"])

@@ -55,6 +55,7 @@ def _seal_distribution(pool: list[dict[str, Any]]) -> dict[str, Any] | None:
 def board_strength(
     board_id: str,
     *,
+    board_name: str | None = None,
     pool: Iterable[Mapping[str, Any]] | None = None,
     industry_bars: Iterable[Mapping[str, Any]] | None = None,
     flows: Iterable[Mapping[str, Any]] | None = None,
@@ -66,8 +67,16 @@ def board_strength(
 ) -> dict[str, Any]:
     """Build one board's strength payload. Pure: no IO, no provider calls."""
     rows = [row for row in (pool or []) if isinstance(row, dict)]
-    board_rows = [row for row in rows
-                  if str(row.get("industry") or row.get("board_id") or "") == board_id]
+    # 涨停池按**行业名**记录（"房地产开发"），而 board_id 是代码（881121）。
+    # 拿名字跟代码比永远匹配不上——字段会全部 missing，而且看不出是哪儿错的。
+    # 两个键都认：池子按名字给的按名字比，按代码给的按代码比。
+    keys = {key for key in (board_id, board_name) if key}
+    board_rows = [
+        row for row in rows
+        if str(row.get("industry") or row.get("board_name")
+               or row.get("board_id") or "") in keys
+        or str(row.get("code") or "") in keys
+    ]
     bars = [(str(row.get("trade_date")), row.get("close"))
             for row in (industry_bars or []) if isinstance(row, dict)]
     flow_rows = [row for row in (flows or []) if isinstance(row, dict)]
