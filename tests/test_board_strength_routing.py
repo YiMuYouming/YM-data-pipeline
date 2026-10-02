@@ -188,7 +188,7 @@ class ConceptTypeGateTests(unittest.TestCase):
             {"ts_code": "864001.TI", "name": "昨日涨幅超过10%", "type": "S"},
             {"ts_code": "864006.TI", "name": "固态电池", "type": "N"},
         ])
-        out = provider.call("concept_index", {})
+        out = provider.call("concept_index", {"codes": ["864005", "864006"]})
         names = sorted(row["name"] for row in out.data["items"])
         self.assertEqual(["区块链", "固态电池"], names,
                          "type=S 的选股筛选条件混进概念板块了")
@@ -202,6 +202,7 @@ class ConceptTypeGateTests(unittest.TestCase):
         out = provider.call("concept_index", {"codes": ["864005.TI", "883001.TI"]})
         self.assertEqual(["883001.TI"], out.data["missing"])
         self.assertEqual(["区块链"], [r["name"] for r in out.data["items"]])
+        self.assertEqual("success", out.status)
 
     def test_codes_get_the_ti_suffix(self):
         """ts_code 必须带 .TI 后缀：不带上游静默返空（在线实测，2026-10-02）。
@@ -231,8 +232,9 @@ class ConceptTypeGateTests(unittest.TestCase):
         provider = self._provider_with_rows([
             {"ts_code": "864007.TI", "name": "太阳能"},
         ])
-        out = provider.call("concept_index", {})
+        out = provider.call("concept_index", {"codes": ["864007"]})
         self.assertEqual([], out.data["items"])
+        self.assertEqual(["864007"], out.data["missing"])
 
 
 class BoardRowCountTests(unittest.TestCase):
