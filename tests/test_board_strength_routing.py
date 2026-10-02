@@ -28,7 +28,12 @@ def _normalize(intent, params, data, provider):
 
 
 class ConceptIndexRouteTests(unittest.TestCase):
-    """概念板块是另一种类型（885xxx），走 StockToday，不与 881 行业混排（K1）。"""
+    """概念板块是另一种类型，走 StockToday，不与行业混排（K1）。
+
+    判据是数据源的 **type 字段**（N=概念）。实测同花顺概念不止 885：
+    916 条概念分布在 864/865/875/883/885/886 六个前缀上，而 864/883 与
+    "昨日涨幅超过X%" 这类选股筛选共用——只认 885 会拒掉 613 条真概念。
+    """
 
     def test_phrase_resolves_to_concept_index(self):
         resolved = intent_registry.resolve_intent("查概念板块", names=["算力"])
@@ -51,9 +56,17 @@ class ConceptIndexRouteTests(unittest.TestCase):
         self.assertTrue(provider_policy._CAPABILITY_METHODS[capability],
                         "capability 必须声明它允许调的 StockToday 方法")
 
-    def test_codes_must_use_the_885_prefix(self):
-        # 不抛异常即通过
-        pipeline_api._validate_params("concept_index", {"codes": [f"{CONCEPT_PREFIX}001"]})
+    def test_every_observed_concept_prefix_is_accepted(self):
+        """实测出现的六个概念前缀都要能过——它们都是真概念。"""
+        for prefix in pipeline_api.CONCEPT_CODE_PREFIXES:
+            # 不抛异常即通过
+            pipeline_api._validate_params("concept_index", {"codes": [f"{prefix}005"]})
+
+    def test_a_filter_code_prefix_is_refused(self):
+        """864 是概念与选股筛选共用前缀；形状检查只挡形状，type 才挡类型。"""
+        with self.assertRaises(ValueError) as ctx:
+            pipeline_api._validate_params("concept_index", {"codes": ["991001"]})
+        self.assertIn("864", str(ctx.exception))
 
     def test_industry_prefix_is_refused_for_concept_index(self):
         """881 是行业，不是概念——放过去就是两种类型混排。"""
@@ -61,7 +74,7 @@ class ConceptIndexRouteTests(unittest.TestCase):
             pipeline_api._validate_params(
                 "concept_index", {"codes": [f"{INDUSTRY_PREFIX}001"]}
             )
-        self.assertIn("885", str(ctx.exception))
+        self.assertIn("concept prefix", str(ctx.exception))
 
     def test_concept_index_requires_codes_or_names(self):
         with self.assertRaises(ValueError) as ctx:
@@ -122,10 +135,21 @@ class MarketBoardStrengthRouteTests(unittest.TestCase):
 class OneBoardOnePlaceTests(unittest.TestCase):
     """铁律 2：行业与概念是两种类型，分开装载，不混排。"""
 
-    def test_both_prefixes_are_declared_and_distinct(self):
+    def test_industry_and_concept_prefixes_stay_disjoint(self):
+        """行业前缀与概念前缀不许重叠——重叠就意味着类型只能靠 type 分。"""
+        industry = {"700", "861", "871", "877", "881", "884"}
+        concept = set(pipeline_api.CONCEPT_CODE_PREFIXES)
+        self.assertEqual(set(), concept & industry,
+                         "行业与概念的前缀重叠了，按前缀分家就不再成立")
         self.assertEqual("881", INDUSTRY_PREFIX)
-        self.assertEqual("885", CONCEPT_PREFIX)
         self.assertNotEqual(INDUSTRY_PREFIX, CONCEPT_PREFIX)
+
+    def test_board_type_is_the_real_discriminator(self):
+        """前缀会重叠（864/883），type 才是判据。"""
+        self.assertEqual("N", pipeline_api.CONCEPT_BOARD_TYPE)
+        self.assertEqual("I", pipeline_api.INDUSTRY_BOARD_TYPE)
+        self.assertNotEqual(pipeline_api.CONCEPT_BOARD_TYPE,
+                            pipeline_api.INDUSTRY_BOARD_TYPE)
 
     def test_board_strength_and_concept_index_are_separate_intents(self):
         specs = {spec.intent for spec in intent_registry._SPECS}
@@ -139,3 +163,50 @@ class OneBoardOnePlaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ConceptTypeGateTests(unittest.TestCase):
+    """适配器按 type 收口：同前缀的选股筛选条件不能混进概念板块。
+
+    实测 ths_index 里 `864005 区块链`(type=N) 与 `864001 昨日涨幅超过10%`(type=S)
+    前缀完全一样。api 层的前缀检查挡不住这种，只能在返回结果上按 type 过滤。
+    """
+
+    def _provider_with_rows(self, rows):
+        from ym_stock_data.providers import stocktoday as st
+
+        provider = st.StockTodayProvider(token_loader=lambda: "t")
+        outcome = provider._request_table = lambda name, nested, **kw: st.ProviderOutcome(
+            "stocktoday", "success",
+            data={"items": rows, "_stocktoday": {}},
+            fetched_at="2026-10-02T15:00:00+08:00", latency_ms=1,
+        )
+        return provider
+
+    def test_same_prefix_different_type_is_separated(self):
+        provider = self._provider_with_rows([
+            {"ts_code": "864005.TI", "name": "区块链", "type": "N"},
+            {"ts_code": "864001.TI", "name": "昨日涨幅超过10%", "type": "S"},
+            {"ts_code": "864006.TI", "name": "固态电池", "type": "N"},
+        ])
+        out = provider.call("concept_index", {})
+        names = sorted(row["name"] for row in out.data["items"])
+        self.assertEqual(["区块链", "固态电池"], names,
+                         "type=S 的选股筛选条件混进概念板块了")
+
+    def test_requested_code_that_is_not_a_concept_is_reported_as_missing(self):
+        """请求了但不是概念的代码要进 missing——不回声不等于没有。"""
+        provider = self._provider_with_rows([
+            {"ts_code": "864005.TI", "name": "区块链", "type": "N"},
+            {"ts_code": "883001.TI", "name": "昨日成交量前十", "type": "S"},
+        ])
+        out = provider.call("concept_index", {"codes": ["864005.TI", "883001.TI"]})
+        self.assertEqual(["883001.TI"], out.data["missing"])
+        self.assertEqual(["区块链"], [r["name"] for r in out.data["items"]])
+
+    def test_missing_type_field_is_not_silently_accepted(self):
+        """没有 type 的行一律不收——宁可少给，不能把类型不明的东西当概念发出去。"""
+        provider = self._provider_with_rows([
+            {"ts_code": "864007.TI", "name": "太阳能"},
+        ])
+        out = provider.call("concept_index", {})
+        self.assertEqual([], out.data["items"])

@@ -67,6 +67,15 @@ TDX_DIAGNOSTIC_NAMES = (
     "tdx_notice",
     "tdx_news",
 )
+# 同花顺概念板块的代码前缀（第二道闸；第一道是数据源的 type == "N"）。
+# 实测 2026-10-02 ths_index 全量 2722 行，type=N 共 916 条，前缀分布：
+#   885×303  865×250  875×219  886×104  864×35  883×5
+# 只认 885 会拒掉 613/916 的真概念。type=S（"昨日涨幅超过X%"这类选股筛选）
+# 与 type=N 共用 864 和 883 两个前缀，所以**前缀不能单独用来分家**。
+CONCEPT_CODE_PREFIXES = ("864", "865", "875", "883", "885", "886")
+CONCEPT_BOARD_TYPE = "N"
+INDUSTRY_BOARD_TYPE = "I"
+
 _ALLOWED_PARAMS = {
     "market_facts": frozenset({"trade_date"}),
     "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
@@ -302,8 +311,16 @@ def _validate_params(intent: str, params: dict) -> None:
         if any(not str(code).startswith("881") for code in params.get("codes") or []):
             raise ValueError("sector_index codes must use the THS 881 prefix")
     elif intent == "concept_index":
-        # 与 sector_index 同形，但前缀必须是 885：881 是行业，885 才是概念。
-        # 放错就是"两种类型混排"（K1），所以这里 fail closed 而不是猜。
+        # 与 sector_index 同形，但**第一道闸是数据源的 type 字段**（N=概念）。
+        # 原来只按 885 前缀挡，实测同花顺概念根本不止 885（见下），而且
+        # 864/883 前缀是概念与"昨日涨幅超过X%"这类**选股筛选条件共用**的——
+        # 光看前缀分不出「区块链」和「昨日涨幅超过10%」。所以：
+        #   type 是判据，前缀只是第二道便宜的形状检查。
+        # 实测分布（2026-10-02，ths_index 全量 2722 行）：
+        #   type=N  916 条  前缀 864/865/875/883/885/886
+        #   type=I 1264 条  前缀 700/861/871/877/881/884
+        #   type=S  140 条  前缀 864/873/883/991  ← 与 N 的 864/883 重叠
+        # 概念前缀取 N 的全集，不是 K1 说的 885——K1 该更新了（已记入 PROGRESS）。
         for key in ("codes", "names"):
             value = params.get(key)
             if isinstance(value, str):
@@ -312,8 +329,14 @@ def _validate_params(intent: str, params: dict) -> None:
                 raise ValueError(f"concept_index {key} must be a list")
         if not params.get("codes") and not params.get("names"):
             raise ValueError("concept_index requires codes or names")
-        if any(not str(code).startswith("885") for code in params.get("codes") or []):
-            raise ValueError("concept_index codes must use the THS 885 prefix")
+        if any(not str(code).startswith(CONCEPT_CODE_PREFIXES)
+               for code in params.get("codes") or []):
+            bad = [c for c in params.get("codes") or []
+                   if not str(c).startswith(CONCEPT_CODE_PREFIXES)]
+            raise ValueError(
+                f"concept_index codes must use a THS concept prefix "
+                f"({'/'.join(sorted(CONCEPT_CODE_PREFIXES))}), got {bad}"
+            )
     elif intent == "market_board_strength":
         board_ids = params.get("board_ids")
         if isinstance(board_ids, str):

@@ -28,6 +28,11 @@ from .stocktoday_inventory import load_inventory
 
 ENDPOINT = "https://tushare.citydata.club"
 DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-budget.sqlite3"
+
+# ths_index 的板块分类。type 是判据：概念与"昨日涨幅超过X%"这类选股筛选
+# 共用 864/883 前缀，光看代码分不出来。取值来自 2026-10-02 实测全量清单。
+CONCEPT_BOARD_TYPE = "N"   # 概念板块
+INDUSTRY_BOARD_TYPE = "I"  # 行业板块
 MAX_ROWS = 10000
 # rt_idx_k / rt_idx_tick / rt_sw_k / idx_mins answer "该接口为龙虾套餐专属" on the
 # current plan; skip them for 30 minutes instead of spending quota every poll,
@@ -1088,8 +1093,8 @@ class StockTodayProvider:
             self.name,
             outcome.status,
             data={
-                "items": raw.get("items", []),
-                "missing": [],
+                "items": items,
+                "missing": rejected,
                 "_stocktoday": raw.get("_stocktoday", {}),
             },
             fetched_at=outcome.fetched_at,
@@ -1099,8 +1104,13 @@ class StockTodayProvider:
         )
 
     def _call_concept_index(self, params):
-        """概念板块（885xxx）。与行业同源不同类：仍走 ths_index，但调用方已经
-        在 api 层把 881 前缀挡掉了，这里只把过滤条件写清楚，不做二次兜底。"""
+        """概念板块。判据是数据源的 **type 字段**（N=概念），不是代码前缀。
+
+        为什么不能只看前缀：ths_index 里 `864005 区块链`（type=N）和
+        `864001 昨日涨幅超过10%`（type=S）前缀完全一样。按前缀过滤会把选股
+        筛选条件混进概念板块——那正是 K1 要防的"两种类型混排"，而且是静默的。
+        所以这里按 type 收口，前缀留给 api 层做便宜的形状检查。
+        """
         codes = params.get("codes") or []
         names = params.get("names") or []
         nested = {}
@@ -1112,12 +1122,22 @@ class StockTodayProvider:
         if outcome.error_code:
             return outcome
         raw = outcome.data if isinstance(outcome.data, dict) else {}
+        items = [
+            row for row in (raw.get("items") or [])
+            if str(row.get("type") or "") == CONCEPT_BOARD_TYPE
+        ]
+        requested = {str(code) for code in codes}
+        # 请求了但被 type 闸挡掉的，如实进 missing——不回声不等于没有
+        rejected = sorted(
+            requested
+            - {str(row.get("ts_code") or "") for row in items}
+        )
         return ProviderOutcome(
             self.name,
             outcome.status,
             data={
-                "items": raw.get("items", []),
-                "missing": [],
+                "items": items,
+                "missing": rejected,
                 "_stocktoday": raw.get("_stocktoday", {}),
             },
             fetched_at=outcome.fetched_at,
