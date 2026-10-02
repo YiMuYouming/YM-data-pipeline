@@ -13,7 +13,7 @@ import unittest
 
 from ym_stock_data import api as pipeline_api
 from ym_stock_data import intent_registry, provider_policy, routing
-from ym_stock_data.board_strength import CONCEPT_PREFIX, INDUSTRY_PREFIX
+from ym_stock_data.board_strength import CONCEPT_CODE_PREFIXES, INDUSTRY_PREFIX
 from ym_stock_data.contracts import ProviderAttempt
 from ym_stock_data.intent_normalizers import normalize_success
 
@@ -138,11 +138,11 @@ class OneBoardOnePlaceTests(unittest.TestCase):
     def test_industry_and_concept_prefixes_stay_disjoint(self):
         """行业前缀与概念前缀不许重叠——重叠就意味着类型只能靠 type 分。"""
         industry = {"700", "861", "871", "877", "881", "884"}
-        concept = set(pipeline_api.CONCEPT_CODE_PREFIXES)
+        concept = set(CONCEPT_CODE_PREFIXES)
         self.assertEqual(set(), concept & industry,
                          "行业与概念的前缀重叠了，按前缀分家就不再成立")
         self.assertEqual("881", INDUSTRY_PREFIX)
-        self.assertNotEqual(INDUSTRY_PREFIX, CONCEPT_PREFIX)
+        self.assertEqual(concept, set(CONCEPT_CODE_PREFIXES))
 
     def test_board_type_is_the_real_discriminator(self):
         """前缀会重叠（864/883），type 才是判据。"""

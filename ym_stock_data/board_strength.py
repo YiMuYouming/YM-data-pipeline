@@ -17,7 +17,10 @@ from . import indicators as _indicators
 
 MIN_COVERAGE = 0.8
 INDUSTRY_PREFIX = "881"
-CONCEPT_PREFIX = "885"
+# 概念前缀不是单个 885：实测 ths_index type=N 共 916 条，分布在
+# 864/865/875/883/885/886 上。判据始终是数据源的 type 字段（N=概念、I=行业），
+# 这里的前缀只是 definitions 文件里的形状检查（见 api.CONCEPT_CODE_PREFIXES）。
+CONCEPT_CODE_PREFIXES = ("864", "865", "875", "883", "885", "886")
 
 FIELDS: Mapping[str, str] = {
     "limit_up_count": "market_facts",
@@ -171,9 +174,14 @@ def load_board_definitions(path: str | Path) -> dict[str, Any]:
         kind = str(entry.get("type") or "industry")
         if kind not in {"industry", "concept"}:
             raise ValueError(f"unknown board type: {kind}")
-        prefix = INDUSTRY_PREFIX if kind == "industry" else CONCEPT_PREFIX
-        if not board_id.startswith(prefix):
-            raise ValueError(f"{board_id} 不是 {kind} 板块（前缀应为 {prefix}）")
+        if kind == "industry":
+            if not board_id.startswith(INDUSTRY_PREFIX):
+                raise ValueError(
+                    f"{board_id} 不是行业板块（前缀应为 {INDUSTRY_PREFIX}）")
+        elif not board_id.startswith(CONCEPT_CODE_PREFIXES):
+            raise ValueError(
+                f"{board_id} 不是概念板块（前缀应为 "
+                f"{'/'.join(CONCEPT_CODE_PREFIXES)} 之一）")
         if board_id in seen:
             raise ValueError(f"duplicate board_id: {board_id}")
         seen.add(board_id)
@@ -183,5 +191,5 @@ def load_board_definitions(path: str | Path) -> dict[str, Any]:
     return payload
 
 
-__all__ = ["CONCEPT_PREFIX", "FIELDS", "INDUSTRY_PREFIX", "MIN_COVERAGE",
+__all__ = ["CONCEPT_CODE_PREFIXES", "FIELDS", "INDUSTRY_PREFIX", "MIN_COVERAGE",
            "board_strength", "load_board_definitions"]
