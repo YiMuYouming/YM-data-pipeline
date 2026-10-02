@@ -181,7 +181,7 @@ PY
 
 ## 6. Market_Watch observation-only 探针
 
-只调用 Market Watch 侧次日计划脚本的管道入口 `_pipeline_query()`（W4 之后 C1.5→C2→D1 一个脚本，问财路径已删）；rows 只在内存中计数，不打印、不落盘，也不运行选股链写入主程序。
+只调用 Market Watch 侧次日计划脚本的管道入口 `_pipeline_query()`（W4 之后 C1.5→C2→D1 一个脚本，问财路径已删；成员名册经 `board_members` 意图按交易日缓存，`member_coverage` 由拿着名册的 Market_Watch 侧算出传回 `market_board_strength`）；rows 只在内存中计数，不打印、不落盘，也不运行选股链写入主程序。
 
 ```bash
 UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/market-watch.json" > /dev/null 2>/dev/null <<'PY'
