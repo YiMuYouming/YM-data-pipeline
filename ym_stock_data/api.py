@@ -72,6 +72,11 @@ _ALLOWED_PARAMS = {
     "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
     "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
+    "concept_index": frozenset({"codes", "names"}),
+    # member_coverage: {board_id: 比率}，由知道成员名单的一方给（如 ths_member）。
+    "market_board_strength": frozenset(
+        {"trade_date", "board_ids", "definitions", "member_coverage"}
+    ),
     "stock_snapshot": frozenset({"codes", "source", "use_case"}),
     "stock_kline": frozenset(
         {"code", "period", "count", "source", "adjustment", "use_case", "start_date", "end_date"}
@@ -296,6 +301,26 @@ def _validate_params(intent: str, params: dict) -> None:
             raise ValueError("sector_index requires codes or names")
         if any(not str(code).startswith("881") for code in params.get("codes") or []):
             raise ValueError("sector_index codes must use the THS 881 prefix")
+    elif intent == "concept_index":
+        # 与 sector_index 同形，但前缀必须是 885：881 是行业，885 才是概念。
+        # 放错就是"两种类型混排"（K1），所以这里 fail closed 而不是猜。
+        for key in ("codes", "names"):
+            value = params.get(key)
+            if isinstance(value, str):
+                params[key] = [value]
+            elif value is not None and not isinstance(value, (list, tuple)):
+                raise ValueError(f"concept_index {key} must be a list")
+        if not params.get("codes") and not params.get("names"):
+            raise ValueError("concept_index requires codes or names")
+        if any(not str(code).startswith("885") for code in params.get("codes") or []):
+            raise ValueError("concept_index codes must use the THS 885 prefix")
+    elif intent == "market_board_strength":
+        board_ids = params.get("board_ids")
+        if isinstance(board_ids, str):
+            board_ids = [board_ids]
+        if board_ids is not None and not isinstance(board_ids, (list, tuple)):
+            raise ValueError("market_board_strength board_ids must be a list")
+        params["board_ids"] = [str(b) for b in (board_ids or [])] or None
     elif intent == "stock_kline":
         if not str(params.get("code") or "").strip():
             raise ValueError("stock_kline requires code")
@@ -607,6 +632,14 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "concept_index":
+        rows = data.get("items")
+        count = len(rows) if isinstance(rows, list) else 0
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "market_board_strength":
+        boards = data.get("boards")
+        count = len(boards) if isinstance(boards, list) else 0
+        return isinstance(boards, list), isinstance(boards, list) and not boards, count
     if intent == "stock_snapshot":
         count = sum(
             isinstance(data.get(code), dict) and not data[code].get("error")

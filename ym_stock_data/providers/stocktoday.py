@@ -1098,6 +1098,34 @@ class StockTodayProvider:
             provenance=outcome.provenance,
         )
 
+    def _call_concept_index(self, params):
+        """概念板块（885xxx）。与行业同源不同类：仍走 ths_index，但调用方已经
+        在 api 层把 881 前缀挡掉了，这里只把过滤条件写清楚，不做二次兜底。"""
+        codes = params.get("codes") or []
+        names = params.get("names") or []
+        nested = {}
+        if codes:
+            nested["ts_code"] = ",".join(str(code) for code in codes)
+        if names:
+            nested["name"] = ",".join(str(name) for name in names)
+        outcome = self._request_table("ths_index", nested)
+        if outcome.error_code:
+            return outcome
+        raw = outcome.data if isinstance(outcome.data, dict) else {}
+        return ProviderOutcome(
+            self.name,
+            outcome.status,
+            data={
+                "items": raw.get("items", []),
+                "missing": [],
+                "_stocktoday": raw.get("_stocktoday", {}),
+            },
+            fetched_at=outcome.fetched_at,
+            latency_ms=outcome.latency_ms,
+            auth=outcome.auth,
+            provenance=outcome.provenance,
+        )
+
     def _call_flow(self, *, api_name, params):
         nested = {"trade_date": params.get("trade_date")}
         nested = {key: value for key, value in nested.items() if value}
@@ -1295,6 +1323,8 @@ class StockTodayProvider:
             return self._call_hot_rank(params)
         if intent == "sector_index":
             return self._call_sector_index(params)
+        if intent == "concept_index":
+            return self._call_concept_index(params)
         if intent == "industry_flow":
             return self._call_flow(api_name="moneyflow_ind_ths", params=params)
         if intent == "fund_flow":

@@ -75,6 +75,26 @@ _ROUTES = {
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
     ),
+    "concept_index": RouteSpec(
+        intent="concept_index",
+        providers=("stocktoday",),
+        # 概念板块是另一种类型（885xxx），与 881 行业分开装载、不混排（K1）。
+        data_scope="同花顺885概念板块指数；概念与行业是两种类型，不混排",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=300,
+    ),
+    "market_board_strength": RouteSpec(
+        intent="market_board_strength",
+        # 本地合成：输入全部来自下面三个已注册的 capability，不新增数据源。
+        # provider 写成 board_strength 是为了在 attempts 里如实写明
+        # "这些数是算出来的"，不被误认成某个源的原始输出。
+        providers=("board_strength",),
+        data_scope="逐板块强度，由 market_facts（涨停家数、封板时间、连板）、"
+                   "sector_index（相对 5 日线、排名变化）与 industry_flow（三日资金净额）"
+                   "合成；本地计算，不是任何单一源的原始输出",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=86400,
+    ),
     "stock_snapshot": RouteSpec(
         intent="stock_snapshot",
         providers=("stocktoday", "tencent"),

@@ -12,8 +12,19 @@ from __future__ import annotations
 import unittest
 
 from ym_stock_data import api as pipeline_api
-from ym_stock_data import intent_normalizers, intent_registry, provider_policy, routing
+from ym_stock_data import intent_registry, provider_policy, routing
 from ym_stock_data.board_strength import CONCEPT_PREFIX, INDUSTRY_PREFIX
+from ym_stock_data.contracts import ProviderAttempt
+from ym_stock_data.intent_normalizers import normalize_success
+
+
+def _normalize(intent, params, data, provider):
+    spec = routing.route_for(intent, params)
+    return normalize_success(
+        intent, params, data, provider=provider, spec=spec,
+        attempts=[ProviderAttempt(provider=provider, status="ok",
+                                  error_code=None, latency_ms=1)],
+    )
 
 
 class ConceptIndexRouteTests(unittest.TestCase):
@@ -58,8 +69,10 @@ class ConceptIndexRouteTests(unittest.TestCase):
 
     def test_normalizer_passes_items_through(self):
         payload = {"items": [{"code": "885001", "name": "算力"}]}
-        result = intent_normalizers.normalize("concept_index", payload, {})
-        self.assertEqual(payload["items"], result["items"])
+        business, quality = _normalize("concept_index", {"names": ["算力"]},
+                                       payload, "stocktoday")
+        self.assertEqual(payload["items"], business["items"])
+        self.assertEqual(1, quality["row_count"])
 
 
 class MarketBoardStrengthRouteTests(unittest.TestCase):
@@ -98,9 +111,11 @@ class MarketBoardStrengthRouteTests(unittest.TestCase):
             "boards": [{"board_id": "881001", "fields": {}, "source_gaps": []}],
             "source_gaps": [],
         }
-        result = intent_normalizers.normalize("market_board_strength", payload, {})
-        self.assertEqual(payload["boards"], result["boards"])
-        self.assertEqual([], result["source_gaps"])
+        business, quality = _normalize("market_board_strength", {"board_ids": ["881001"]},
+                                       payload, "board_strength")
+        self.assertEqual(payload["boards"], business["boards"])
+        self.assertEqual([], business["source_gaps"])
+        self.assertEqual(1, quality["row_count"])
 
 
 class OneBoardOnePlaceTests(unittest.TestCase):

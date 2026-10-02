@@ -316,6 +316,27 @@ def normalize_success(
             expected_count=len(params.get("codes") or []) + len(params.get("names") or []),
             missing=missing if isinstance(missing, list) else [],
         )
+    elif intent == "concept_index":
+        rows = data.get("items", [])
+        missing = data.get("missing", [])
+        quality = assess_quality(
+            rows if isinstance(rows, list) else [],
+            expected_row_shape="sector_rows",
+            expected_count=len(params.get("codes") or []) + len(params.get("names") or []),
+            missing=missing if isinstance(missing, list) else [],
+        )
+    elif intent == "market_board_strength":
+        # 板块强度是逐板块的 K5 字段块，不是一张同构的行表；
+        # 质量按"返回了几个板块 + 各自有没有缺口"来判，不套 sector_rows。
+        boards = data.get("boards") if isinstance(data.get("boards"), list) else []
+        gaps = data.get("source_gaps") if isinstance(data.get("source_gaps"), list) else []
+        quality = assess_quality(
+            boards,
+            expected_row_shape="board_strength_rows",
+            expected_count=len(params.get("board_ids") or []) or None,
+            missing=[],
+        )
+        quality["gaps"] = gaps
     elif intent == "stock_kline":
         rows = data.get("bars", [])
         quality = assess_quality(

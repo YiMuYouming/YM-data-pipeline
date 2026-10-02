@@ -121,6 +121,13 @@ _SPECS = (
         optional=("names", "codes"),
     ),
     IntentSpec(
+        "concept_index",
+        ("查概念板块", "概念板块", "查概念"),
+        "concept_index",
+        required_any=("names", "codes"),
+        optional=("names", "codes"),
+    ),
+    IntentSpec(
         "industry_index",
         ("查行业", "行业"),
         "sector_index",
@@ -132,6 +139,12 @@ _SPECS = (
         ("查行业资金流", "行业资金流"),
         "industry_flow",
         optional=("trade_date", "limit"),
+    ),
+    IntentSpec(
+        "market_board_strength",
+        ("查板块强度", "板块强度"),
+        "market_board_strength",
+        optional=("trade_date", "definitions"),
     ),
     IntentSpec(
         "fund_flow",

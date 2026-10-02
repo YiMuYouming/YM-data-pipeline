@@ -212,6 +212,123 @@ def _legacy_industry_flow(params: dict) -> dict:
     }
 
 
+def _board_strength(params: dict) -> dict:
+    """逐板块强度：本地合成，输入全部来自已注册的既有 capability。
+
+    这不是一个新的数据源——涨停与封板来自 market_facts 的封存池、相对 5 日线与
+    排名变化来自 sector_index、三日资金净额来自 industry_flow。provider 记成
+    ``board_strength``，是为了在 attempts 里如实写明"这些数是算出来的"。
+
+    取不到的输入就少给一个字段，由 board_strength 按 K5 记 optional_missing；
+    **不拿 0 顶替**——一个凭空捏造的 0 会被下游当成"今天这个板块没有涨停"。
+    """
+    from ..board_strength import board_strength, load_board_definitions
+
+    trade_date = _compact_date(params.get("trade_date"))
+    definitions = params.get("definitions")
+    boards_meta = load_board_definitions(definitions)["boards"] if definitions else []
+    wanted = [str(b) for b in (params.get("board_ids") or [])]
+    board_ids = wanted or [str(entry["board_id"]) for entry in boards_meta]
+
+    limit_pool = _limit_pool_for(trade_date)
+    flows = _industry_flow_for(trade_date)
+    bars_by_board = _industry_bars_for(trade_date, board_ids)
+
+    boards, gaps = [], []
+    for board_id in board_ids:
+        payload = board_strength(
+            board_id,
+            pool=limit_pool,
+            industry_bars=bars_by_board.get(board_id) or [],
+            flows=flows,
+            # 覆盖率是"成员样本覆盖率"，只有拿着成员名单的一方才算得出来。
+            # 管道这一侧只有涨停池，拿不到成员比例——**不给就不给**，
+            # 让内核按 K5 记 typed gap 并把数值置 null；写死 1.0 等于假装
+            # 样本齐全，下游会把全 null 看成"这个板块今天没涨停"。
+            coverage=_member_coverage(board_id, params),
+            data_as_of=trade_date or "",
+        )
+        boards.append(payload)
+        gaps.extend(payload.get("source_gaps") or [])
+    return {
+        "trade_date": trade_date,
+        "boards": boards,
+        "source_gaps": gaps,
+        "source": "board_strength",
+    }
+
+
+def _member_coverage(board_id: str, params: dict) -> float | None:
+    """成员覆盖率由调用方给（它才知道成员名单）；没给就返回 None。"""
+    table = params.get("member_coverage")
+    if not isinstance(table, dict):
+        return None
+    value = table.get(board_id)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _limit_pool_for(trade_date: str | None) -> list[dict]:
+    """涨停池来自封存的 market_facts；没有封存就返回空列表（不猜、不补）。
+
+    封存表里存的是 ``board_count``，而计算内核要的是 ``board``（几板）与封板
+    时间；表里没有封板时间这一列，所以**不造**——``board_strength`` 拿到
+    None 会记 optional_missing，而不是把一个猜出来的时间当成封存事实。
+    """
+    if not trade_date:
+        return []
+    try:
+        from ..market_facts import MarketFactStore
+
+        store = MarketFactStore(read_only=True)
+        run = store.latest_limit_run(trade_date)
+        if not run:
+            return []
+        rows = store._events(run["id"], "up")
+    except Exception:
+        return []
+    pool = []
+    for row in rows:
+        pool.append({
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "industry": row.get("industry") or "",
+            "board": row.get("board_count") or 0,
+            "first_seal_time": None,
+            "seal_time": None,
+        })
+    return pool
+
+
+def _industry_flow_for(trade_date: str | None) -> list[dict]:
+    try:
+        raw = ths_industry.fetch_industry_summary(top_n=100)
+    except Exception:
+        return []
+    if raw.get("error"):
+        return []
+    observed = _compact_date(raw.get("trade_date") or raw.get("date"))
+    if trade_date and observed and observed != trade_date:
+        return []
+    rows = [*(raw.get("top") or []), *(raw.get("bottom") or [])]
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _industry_bars_for(trade_date: str | None, board_ids: list[str]) -> dict[str, list[dict]]:
+    bars: dict[str, list[dict]] = {board_id: [] for board_id in board_ids}
+    for board_id in board_ids:
+        try:
+            payload = ths_industry.fetch_sector_index(codes=[board_id])
+        except Exception:
+            continue
+        rows = payload.get("items") if isinstance(payload, dict) else None
+        if isinstance(rows, list):
+            bars[board_id] = [row for row in rows if isinstance(row, dict)]
+    return bars
+
+
 def _legacy_northbound(params: dict) -> dict:
     raw = northbound.fetch_realtime()
     if raw.get("error"):
@@ -483,6 +600,7 @@ class LocalProvider:
                 codes=params.get("codes"), names=params.get("names")
             ),
             ("ths_industry", "industry_flow"): lambda: _legacy_industry_flow(params),
+            ("board_strength", "market_board_strength"): lambda: _board_strength(params),
             ("northbound", "northbound_flow"): lambda: _legacy_northbound(params),
             ("ths_hot", "legacy_hot_rank"): lambda: _legacy_hot_rank(params),
             ("pytdx_index", "index_kline"): lambda: _legacy_index_kline(params),
