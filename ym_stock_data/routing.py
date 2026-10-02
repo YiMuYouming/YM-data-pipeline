@@ -83,6 +83,16 @@ _ROUTES = {
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
     ),
+    "board_members": RouteSpec(
+        intent="board_members",
+        # 成员关系的唯一生产者（审计回复 11 二.2）：行业和概念都走这一个，
+        # 源是 StockToday 的 ths_member；按交易日缓存，成员变动慢。
+        providers=("stocktoday",),
+        data_scope="同花顺板块成分股（ths_member）；行业与概念共用本意图，"
+                   "按交易日缓存，输出成员代码列表与 data_as_of",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=86400,
+    ),
     "market_board_strength": RouteSpec(
         intent="market_board_strength",
         # 本地合成：输入全部来自下面三个已注册的 capability，不新增数据源。

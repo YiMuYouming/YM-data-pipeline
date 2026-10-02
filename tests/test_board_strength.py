@@ -1,8 +1,9 @@
 """test_board_strength.py — W4 S1：逐板块强度字段（K5 形态）
 
 字段按开工单 W4 第二节第 2 点：limit_up_count / limit_up_2plus_count /
-seal_time_distribution / index_position_vs_ma5 / net_inflow_3d /
-midcap_above_ma20_pct / rank_change，每个都是 {value, source, data_as_of, status}。
+index_position_vs_ma5 / net_inflow_3d / midcap_above_ma20_pct / rank_change，
+每个都是 {value, source, data_as_of, status}。（seal_time_distribution 已按
+审计回复 11 二.3 删除：封存表没有这一列，没有生产者。）
 
 覆盖率不足（成员样本 <0.8）时数值置 null 并记 typed gap，**不给 0**。
 """
@@ -31,12 +32,9 @@ MEMBERS = [f"600{index:03d}" for index in range(10)]
 
 def _pool():
     return [
-        {"code": "600001", "board": 3, "seal_time": "09:35", "first_seal_time": "09:31",
-         "industry": "881157"},
-        {"code": "600002", "board": 1, "seal_time": "13:12", "first_seal_time": "13:12",
-         "industry": "881157"},
-        {"code": "600003", "board": 2, "seal_time": "10:01", "first_seal_time": "09:58",
-         "industry": "881157"},
+        {"code": "600001", "board": 3, "industry": "881157"},
+        {"code": "600002", "board": 1, "industry": "881157"},
+        {"code": "600003", "board": 2, "industry": "881157"},
     ]
 
 
@@ -85,11 +83,6 @@ class FieldShapeTest(unittest.TestCase):
         fields = self.result()["fields"]
         self.assertEqual(fields["limit_up_count"]["value"], 3)
         self.assertEqual(fields["limit_up_2plus_count"]["value"], 2)
-
-    def test_seal_time_distribution_reports_both_ends(self):
-        entry = self.result()["fields"]["seal_time_distribution"]
-        self.assertEqual(entry["value"]["earliest"], "09:31")
-        self.assertEqual(entry["value"]["latest"], "13:12")
 
     def test_index_position_vs_ma5_uses_the_last_close_over_5day_average(self):
         entry = self.result()["fields"]["index_position_vs_ma5"]

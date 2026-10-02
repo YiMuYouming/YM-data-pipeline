@@ -472,6 +472,14 @@
       "read_only": true
     },
     {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "board_members",
+      "capability": "board_members",
+      "params": {"codes": ["881121"]},
+      "read_only": true
+    },
+    {
       "provider": "board_strength",
       "operation": "direct_provider_call",
       "intent": "market_board_strength",

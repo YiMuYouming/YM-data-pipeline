@@ -128,6 +128,15 @@ _SPECS = (
         optional=("names", "codes"),
     ),
     IntentSpec(
+        "board_members",
+        ("查板块成员", "板块成员"),
+        "board_members",
+        # 只收 codes：ths_member 没有按板块名查的参数，ths_index 的按名查询
+        # 在线实测返回空——给 names 留一条走不通的路比不给更坏。
+        required=("codes",),
+        optional=("codes", "trade_date"),
+    ),
+    IntentSpec(
         "industry_index",
         ("查行业", "行业"),
         "sector_index",

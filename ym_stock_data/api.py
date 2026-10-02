@@ -75,6 +75,9 @@ TDX_DIAGNOSTIC_NAMES = (
 CONCEPT_CODE_PREFIXES = ("864", "865", "875", "883", "885", "886")
 CONCEPT_BOARD_TYPE = "N"
 INDUSTRY_BOARD_TYPE = "I"
+# 行业板块码前缀（同花顺二级行业 881xxx）；概念前缀见 CONCEPT_CODE_PREFIXES。
+# 前缀只是第二道形状检查，类型判据是 ths_index 的 type 字段（K1，审计回复 11）。
+INDUSTRY_CODE_PREFIX = "881"
 
 _ALLOWED_PARAMS = {
     "market_facts": frozenset({"trade_date"}),
@@ -82,6 +85,7 @@ _ALLOWED_PARAMS = {
     "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
     "concept_index": frozenset({"codes", "names"}),
+    "board_members": frozenset({"codes", "trade_date"}),
     # member_coverage: {board_id: 比率}，由知道成员名单的一方给（如 ths_member）。
     "market_board_strength": frozenset(
         {"trade_date", "board_ids", "definitions", "member_coverage"}
@@ -344,6 +348,33 @@ def _validate_params(intent: str, params: dict) -> None:
         if board_ids is not None and not isinstance(board_ids, (list, tuple)):
             raise ValueError("market_board_strength board_ids must be a list")
         params["board_ids"] = [str(b) for b in (board_ids or [])] or None
+    elif intent == "board_members":
+        # 只收 codes（成员查询没有按板块名走的通道，见 intent_registry 注释）。
+        # 板块码的形状检查是**第二道**闸（K1）：行业 881、概念六个实测前缀，
+        # 类型判据在数据源侧（ths_index 的 type 字段）；这里挡的是把个股码
+        # （600519）当板块码传进来。允许带 .TI 后缀——ths_index 返回的就是
+        # 带后缀的形式，definitions 里是裸 id，两个都要能过。
+        codes = params.get("codes")
+        if isinstance(codes, str):
+            codes = [codes]
+        if not isinstance(codes, (list, tuple)) or not codes:
+            raise ValueError("board_members requires codes")
+        for code in codes:
+            bare = str(code).split(".")[0]
+            if not (bare.startswith(INDUSTRY_CODE_PREFIX)
+                    or bare.startswith(CONCEPT_CODE_PREFIXES)):
+                raise ValueError(
+                    f"board_members codes must use a THS board prefix "
+                    f"({INDUSTRY_CODE_PREFIX} or "
+                    f"{'/'.join(sorted(CONCEPT_CODE_PREFIXES))}), got {code}"
+                )
+        params["codes"] = [str(code) for code in codes]
+        day = params.get("trade_date")
+        if day is not None:
+            if not isinstance(day, str) or not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}|\d{8}", day):
+                raise ValueError("board_members trade_date must use YYYYMMDD")
+            params["trade_date"] = _normalize_ymd(day)
     elif intent == "stock_kline":
         if not str(params.get("code") or "").strip():
             raise ValueError("stock_kline requires code")

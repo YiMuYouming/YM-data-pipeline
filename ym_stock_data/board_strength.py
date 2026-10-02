@@ -5,6 +5,11 @@
 一个凭空捏造的 0 会被下游当成"今天这个板块没有涨停"来用。
 
 概念板块是另一种 `type`，与同花顺二级行业（`881xxx`）分开装载，不混排。
+
+`seal_time_distribution`（封板时间分布）2026-10-02 按审计回复 11 二.3 **删除**：
+封存表没有这一列，现在没有生产者，铁律 4 下不许留必填字段。上游其实有
+（StockToday 涨停明细带首封/最后封时间）——记入遗留归第二批：`market_facts`
+入库时把这两列存下来，存了以后再加回本意图。
 """
 
 from __future__ import annotations
@@ -25,7 +30,6 @@ CONCEPT_CODE_PREFIXES = ("864", "865", "875", "883", "885", "886")
 FIELDS: Mapping[str, str] = {
     "limit_up_count": "market_facts",
     "limit_up_2plus_count": "market_facts",
-    "seal_time_distribution": "market_facts",
     "index_position_vs_ma5": "sector_index",
     "net_inflow_3d": "industry_flow",
     "midcap_above_ma20_pct": "indicators.midcap_above_ma20_pct",
@@ -35,21 +39,6 @@ FIELDS: Mapping[str, str] = {
 
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
-
-
-def _seal_distribution(pool: list[dict[str, Any]]) -> dict[str, Any] | None:
-    firsts, lasts = [], []
-    for row in pool:
-        for key, sink in (("first_seal_time", firsts), ("seal_time", lasts)):
-            value = row.get(key)
-            if isinstance(value, str) and value.strip():
-                sink.append(value.strip())
-    if not firsts and not lasts:
-        return None
-    return {"earliest": min(firsts) if firsts else None,
-            "latest": max(lasts) if lasts else None,
-            "buckets": {"morning": sum(1 for t in lasts if t < "12:00"),
-                        "afternoon": sum(1 for t in lasts if t >= "12:00")}}
 
 
 def board_strength(
@@ -89,7 +78,6 @@ def board_strength(
     values: dict[str, Any] = {
         "limit_up_count": len(board_rows),
         "limit_up_2plus_count": sum(1 for row in board_rows if (row.get("board") or 0) >= 2),
-        "seal_time_distribution": _seal_distribution(board_rows),
         "index_position_vs_ma5": _index_vs_ma5(bars),
         "net_inflow_3d": _net_inflow_3d(flow_rows),
         "midcap_above_ma20_pct": midcap_pct,

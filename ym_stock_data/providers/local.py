@@ -286,9 +286,9 @@ def _member_coverage(board_id: str, params: dict) -> float | None:
 def _limit_pool_for(trade_date: str | None) -> list[dict]:
     """涨停池来自封存的 market_facts；没有封存就返回空列表（不猜、不补）。
 
-    封存表里存的是 ``board_count``，而计算内核要的是 ``board``（几板）与封板
-    时间；表里没有封板时间这一列，所以**不造**——``board_strength`` 拿到
-    None 会记 optional_missing，而不是把一个猜出来的时间当成封存事实。
+    封存表里存的是 ``board_count``，计算内核要的是 ``board``（几板）。
+    封板时间（首封/最后封）表里没有这一列，``seal_time_distribution`` 已按
+    审计回复 11 二.3 从本意图删除，归第二批（``market_facts`` 入库时存下来）。
     """
     if not trade_date:
         return []
@@ -309,8 +309,6 @@ def _limit_pool_for(trade_date: str | None) -> list[dict]:
             "name": row.get("name"),
             "industry": row.get("industry") or "",
             "board": row.get("board_count") or 0,
-            "first_seal_time": None,
-            "seal_time": None,
         })
     return pool
 

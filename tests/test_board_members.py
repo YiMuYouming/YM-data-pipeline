@@ -83,10 +83,10 @@ class BoardMembersApiTests(unittest.TestCase):
             pipeline_api._validate_params("board_members", {"codes": ["600519"]})
         self.assertIn("board prefix", str(ctx.exception))
 
-    def test_requires_codes_or_names(self):
+    def test_requires_codes(self):
         with self.assertRaises(ValueError) as ctx:
             pipeline_api._validate_params("board_members", {"codes": []})
-        self.assertIn("requires codes or names", str(ctx.exception))
+        self.assertIn("requires codes", str(ctx.exception))
 
     def test_trade_date_accepts_both_written_forms(self):
         params = {"codes": ["881121"], "trade_date": "2026-09-30"}

@@ -19,6 +19,7 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 市场全景、指数、涨跌家数 | `realtime_market` | 无 |
 | 行业/板块 | `sector_index` | `names` 或 881 `codes` |
 | 概念板块 | `concept_index` | `names` 或 885 `codes`（与 881 行业不是一回事，不混排） |
+| 板块成员 | `board_members` | 板块 `codes`（881 行业或概念前缀均可，可带 `.TI` 后缀）；可选 `trade_date`（成员按交易日缓存） |
 | 逐板块强度 | `market_board_strength` | `trade_date`；可选 `board_ids`、`definitions`、`member_coverage` |
 | 个股当前快照 | `stock_snapshot` | `codes` |
 | 日/周/月/分钟 K 线 | `stock_kline` | `code`、`period`；可选日期范围与复权方式 |
@@ -117,6 +118,7 @@ K 线检查 `datetime`、`volume_unit=share`、`amount_unit=CNY` 和 `adjustment
 | `查分钟K` | `stock_kline` | `code`、`period=5m/15m/60m` |
 | `查板块` / `查行业` | `sector_index` | `names` 或 881 `codes` |
 | `查概念板块` / `查概念` | `concept_index` | `names` 或 885 `codes` |
+| `查板块成员` / `板块成员` | `board_members` | 板块 `codes`；可选 `trade_date` |
 | `查板块强度` / `板块强度` | `market_board_strength` | `trade_date` |
 
 ```bash
