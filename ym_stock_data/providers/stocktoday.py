@@ -1171,6 +1171,13 @@ class StockTodayProvider:
             bare = code.split(".")[0]
             outcome = self._request_table(
                 "ths_index", {"ts_code": f"{bare}{BOARD_INDEX_SUFFIX}"})
+            # 瞬时上游错误重试一次（与 _call_flow 对 moneyflow_mkt_dc 的同款先例）；
+            # 鉴权/套餐类错误不重试——_request_table 内部已有记忆化的拒绝。
+            if (outcome.error_code
+                    and outcome.error_code not in {"AUTH_DENIED", "PLAN_NOT_ENTITLED",
+                                                   "AUTH_MISSING", "RATE_LIMITED"}):
+                outcome = self._request_table(
+                    "ths_index", {"ts_code": f"{bare}{BOARD_INDEX_SUFFIX}"})
             if outcome.error_code:
                 return outcome
             rows = [
