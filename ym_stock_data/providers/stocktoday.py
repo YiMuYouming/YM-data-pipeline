@@ -1198,6 +1198,80 @@ class StockTodayProvider:
             provenance=self._provenance(),
         )
 
+    def _call_board_members(self, params):
+        """板块成员（board_members）：成员关系的唯一生产者（审计回复 11 二.2）。
+
+        在线实测（2026-10-02）钉住的三个行为：
+        1. ``ts_code`` 必须带 ``.TI`` 后缀——``881121`` 查不到，``881121.TI``
+           返回 187 名成员。definitions 里是裸 id，这里补后缀，回显仍用调用方
+           给的 board_id。
+        2. 逗号合并多板块上游返回空——一个板块一次调用。
+        3. 板块码可能解析到美股指数（``861292.TI`` 房地产开发 = exchange US，
+           成员是 ``JOE.N`` 这类）。成员原样带回交易所后缀，由调用方判 A 股；
+           本意图不挑市场，只如实转述源返回——挑市场就是第二道口径，
+           而铁律 2 要求一个事实一个来源。
+
+        按交易日缓存（成员变动慢）：``{member_cache_root}/{trade_date}.json``，
+        同一天的后续调用只补缺的板块；上游失败或空成员的板块**不进缓存**，
+        否则一次抖动会被按成交日永久记住。
+        """
+        codes = [str(code) for code in (params.get("codes") or [])]
+        started = self.clock.monotonic()
+        try:
+            trade_date = (
+                params.get("trade_date")
+                or latest_completed_trade_date(datetime.now(TZ_SHANGHAI))
+            )
+        except TradeCalendarUnavailable:
+            return self._fail(started, "CALENDAR_UNAVAILABLE")
+
+        cached = _load_member_cache(self.member_cache_root, trade_date)
+        boards: list[dict] = []
+        missing: list[str] = []
+        fresh: dict[str, dict] = {}
+        for code in codes:
+            entry = cached.get(code)
+            if entry is not None:
+                boards.append({"board_id": code, **entry})
+                continue
+            upstream_code = f"{code.split('.')[0]}{BOARD_INDEX_SUFFIX}"
+            outcome = self._request_table(
+                "ths_member",
+                {"ts_code": upstream_code, "con_code": "", "start_date": "",
+                 "end_date": "", "is_new": ""},
+            )
+            if outcome.error_code:
+                return outcome
+            rows = [row for row in (outcome.data.get("items") or [])
+                    if isinstance(row, dict)]
+            members = [str(row["con_code"]) for row in rows if row.get("con_code")]
+            if not members:
+                # 上游对不存在的板块码也是静默空（在线实测）。不回声不等于
+                # 没有——进 missing，让调用方看见这个板块没拿到成员。
+                missing.append(code)
+                continue
+            entry = {"members": members, "member_count": len(members),
+                     "fetched_at": outcome.fetched_at or ""}
+            boards.append({"board_id": code, **entry})
+            fresh[code] = entry
+        _store_member_cache(self.member_cache_root, trade_date, fresh)
+        stamps = [board.get("fetched_at") for board in boards
+                  if board.get("fetched_at")]
+        return ProviderOutcome(
+            self.name,
+            "success" if boards else "empty",
+            data={
+                "data_as_of": trade_date,
+                "boards": boards,
+                "missing": missing,
+                "source": "stocktoday:ths_member",
+            },
+            fetched_at=max(stamps) if stamps else None,
+            latency_ms=int((self.clock.monotonic() - started) * 1000),
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(),
+        )
+
     def _call_flow(self, *, api_name, params):
         nested = {"trade_date": params.get("trade_date")}
         nested = {key: value for key, value in nested.items() if value}
