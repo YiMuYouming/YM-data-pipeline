@@ -1156,12 +1156,17 @@ class StockTodayProvider:
         `864001 昨日涨幅超过10%`（type=S）前缀完全一样。按前缀过滤会把选股
         筛选条件混进概念板块——那正是 K1 要防的"两种类型混排"，而且是静默的。
         所以这里按 type 收口，前缀留给 api 层做便宜的形状检查。
+
+        ts_code 必须带 ``.TI`` 后缀（在线实测 2026-10-02：``885957`` 返回空，
+        ``885957.TI`` 返回 409 名成员所在的指数行）——与 ths_member 同一个坑。
+        不带后缀时上游静默返回空，比报错更难发现。
         """
         codes = params.get("codes") or []
         names = params.get("names") or []
         nested = {}
         if codes:
-            nested["ts_code"] = ",".join(str(code) for code in codes)
+            nested["ts_code"] = ",".join(
+                f"{str(code).split('.')[0]}{BOARD_INDEX_SUFFIX}" for code in codes)
         if names:
             nested["name"] = ",".join(str(name) for name in names)
         outcome = self._request_table("ths_index", nested)
@@ -1172,11 +1177,11 @@ class StockTodayProvider:
             row for row in (raw.get("items") or [])
             if str(row.get("type") or "") == CONCEPT_BOARD_TYPE
         ]
-        requested = {str(code) for code in codes}
+        requested = {str(code).split(".")[0] for code in codes}
         # 请求了但被 type 闸挡掉的，如实进 missing——不回声不等于没有
         rejected = sorted(
             requested
-            - {str(row.get("ts_code") or "") for row in items}
+            - {str(row.get("ts_code") or "").split(".")[0] for row in items}
         )
         return ProviderOutcome(
             self.name,

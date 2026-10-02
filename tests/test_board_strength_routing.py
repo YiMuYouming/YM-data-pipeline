@@ -203,6 +203,29 @@ class ConceptTypeGateTests(unittest.TestCase):
         self.assertEqual(["883001.TI"], out.data["missing"])
         self.assertEqual(["区块链"], [r["name"] for r in out.data["items"]])
 
+    def test_codes_get_the_ti_suffix(self):
+        """ts_code 必须带 .TI 后缀：不带上游静默返空（在线实测，2026-10-02）。
+
+        与 board_members 查到的是同一个坑：``885957`` 查不到，
+        ``885957.TI`` 才返回。适配器补后缀，回显/ missing 用调用方的裸 id。
+        """
+        provider = self._provider_with_rows([
+            {"ts_code": "885957.TI", "name": "东数西算(算力)", "type": "N"},
+        ])
+        seen = {}
+        original = provider._request_table
+
+        def _spy(name, nested, **kwargs):
+            seen.update(nested)
+            return original(name, nested, **kwargs)
+
+        provider._request_table = _spy
+        out = provider.call("concept_index", {"codes": ["885957"]})
+        self.assertEqual("885957.TI", seen["ts_code"])
+        self.assertEqual(["东数西算(算力)"],
+                         [row["name"] for row in out.data["items"]])
+        self.assertEqual([], out.data["missing"])
+
     def test_missing_type_field_is_not_silently_accepted(self):
         """没有 type 的行一律不收——宁可少给，不能把类型不明的东西当概念发出去。"""
         provider = self._provider_with_rows([
