@@ -189,11 +189,11 @@ class BoardMembersAdapterTests(unittest.TestCase):
             second = self._provider(rows, cache_root=tmp, calls=calls)
             out = second.call("board_members", {"codes": ["881121"],
                                                 "trade_date": "20260930"})
-        self.assertEqual(1, len(calls))
-        self.assertEqual(["000011.SZ"], out.data["boards"][0]["members"])
-        cached = json.loads(
-            (Path(tmp) / "20260930.json").read_text(encoding="utf-8"))
-        self.assertIn("881121", cached["boards"])
+            self.assertEqual(1, len(calls))
+            self.assertEqual(["000011.SZ"], out.data["boards"][0]["members"])
+            cached = json.loads(
+                (Path(tmp) / "20260930.json").read_text(encoding="utf-8"))
+            self.assertIn("881121", cached["boards"])
 
     def test_cached_day_skips_upstream_even_for_uncached_board(self):
         """同日缓存只补缺的板块，不整日作废重取。"""
@@ -209,8 +209,9 @@ class BoardMembersAdapterTests(unittest.TestCase):
             provider.call("board_members", {"codes": ["881121", "881155"],
                                             "trade_date": "20260930"})
         self.assertEqual(2, len(calls))
+        # 第二次调用只补缺的 881155；calls 是累积的，取第二次起
         self.assertEqual({"881155.TI"},
-                         {nested["ts_code"] for _, nested in calls})
+                         {nested["ts_code"] for _, nested in calls[1:]})
 
     def test_upstream_failure_is_not_swallowed_into_cache(self):
         """取数失败的板块不进缓存——下一次调用还能再试。"""
