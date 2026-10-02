@@ -330,9 +330,11 @@ def normalize_success(
         # 质量按"返回了几个板块 + 各自有没有缺口"来判，不套 sector_rows。
         boards = data.get("boards") if isinstance(data.get("boards"), list) else []
         gaps = data.get("source_gaps") if isinstance(data.get("source_gaps"), list) else []
+        # 板块强度不是同构的行表（每个 board 是一组 K5 字段块），所以
+        # **不传 expected_row_shape**——硬套一个行形状只会永远报 mismatch。
+        # 质量只回答"返回了几个板块"和"各自带了哪些缺口"。
         quality = assess_quality(
-            boards,
-            expected_row_shape="board_strength_rows",
+            [{"board_id": board.get("board_id")} for board in boards if isinstance(board, dict)],
             expected_count=len(params.get("board_ids") or []) or None,
             missing=[],
         )

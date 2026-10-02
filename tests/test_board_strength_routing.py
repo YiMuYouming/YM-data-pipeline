@@ -52,8 +52,8 @@ class ConceptIndexRouteTests(unittest.TestCase):
                         "capability 必须声明它允许调的 StockToday 方法")
 
     def test_codes_must_use_the_885_prefix(self):
-        ok, _ = pipeline_api._validate_params("concept_index", {"codes": [f"{CONCEPT_PREFIX}001"]})
-        self.assertTrue(ok)
+        # 不抛异常即通过
+        pipeline_api._validate_params("concept_index", {"codes": [f"{CONCEPT_PREFIX}001"]})
 
     def test_industry_prefix_is_refused_for_concept_index(self):
         """881 是行业，不是概念——放过去就是两种类型混排。"""
@@ -63,16 +63,17 @@ class ConceptIndexRouteTests(unittest.TestCase):
             )
         self.assertIn("885", str(ctx.exception))
 
-    def test_sector_index_still_refuses_concept_codes(self):
-        with self.assertRaises(ValueError):
+    def test_concept_index_requires_codes_or_names(self):
+        with self.assertRaises(ValueError) as ctx:
             pipeline_api._validate_params("concept_index", {"codes": []})
+        self.assertIn("requires codes or names", str(ctx.exception))
 
     def test_normalizer_passes_items_through(self):
         payload = {"items": [{"code": "885001", "name": "算力"}]}
         business, quality = _normalize("concept_index", {"names": ["算力"]},
                                        payload, "stocktoday")
         self.assertEqual(payload["items"], business["items"])
-        self.assertEqual(1, quality["row_count"])
+        self.assertEqual(1, quality["returned_count"])
 
 
 class MarketBoardStrengthRouteTests(unittest.TestCase):
@@ -103,8 +104,7 @@ class MarketBoardStrengthRouteTests(unittest.TestCase):
             self.assertIn(token, spec.data_scope)
 
     def test_trade_date_is_validated(self):
-        ok, _ = pipeline_api._validate_params("market_board_strength", {"trade_date": "20260930"})
-        self.assertTrue(ok)
+        pipeline_api._validate_params("market_board_strength", {"trade_date": "20260930"})
 
     def test_normalizer_keeps_boards_and_gaps(self):
         payload = {
@@ -115,7 +115,8 @@ class MarketBoardStrengthRouteTests(unittest.TestCase):
                                        payload, "board_strength")
         self.assertEqual(payload["boards"], business["boards"])
         self.assertEqual([], business["source_gaps"])
-        self.assertEqual(1, quality["row_count"])
+        self.assertEqual(1, quality["returned_count"])
+        self.assertEqual([], quality["gaps"])
 
 
 class OneBoardOnePlaceTests(unittest.TestCase):
