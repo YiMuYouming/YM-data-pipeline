@@ -251,3 +251,40 @@ class BoardMembersNormalizerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BoardMembersFreshnessTests(unittest.TestCase):
+    """按交易日缓存的成员快照，不按 fetched_at 年龄判 stale。
+
+    在线教训（2026-10-03 回放）：缓存是 10-02 抓的 9-30 名册，10-03 回放时
+    fetched_at 超过 max_age(86400) 被判 QUALITY_STALE、整条查询作废——
+    对"某交易日名册"这是错的轴：data_as_of 已经是交易日，缓存保证 as-of 语义。
+    """
+
+    def test_cached_trade_day_members_are_not_stale_by_fetch_age(self):
+        from ym_stock_data import api as pipeline_api
+        from datetime import datetime, timedelta
+
+        now = datetime(2026, 10, 3, 21, 40)
+        old_fetch = (now - timedelta(hours=30)).strftime("%Y-%m-%dT%H:%M:%S+08:00")
+        # 直接打质量判定的内部函数：board_members 且 fetched_at 很旧 → None（不 stale）
+        from ym_stock_data.providers.base import ProviderOutcome
+
+        outcome = ProviderOutcome(
+            "stocktoday", "success", data={"data_as_of": "20260930",
+                                           "boards": []},
+            fetched_at=old_fetch, latency_ms=1)
+        failure = pipeline_api._quality_failure_code(
+            "board_members", {"trade_date": "20260930"}, outcome.data, outcome,
+            86400)
+        self.assertIsNone(failure, "昨天的缓存被按 fetched_at 判 stale 了")
+
+    def test_market_facts_style_date_param_stays_historical(self):
+        """对照：显式 trade_date 的查询新鲜度标记 historical，不是 stale。"""
+        from ym_stock_data import api as pipeline_api
+        from datetime import datetime
+
+        freshness = pipeline_api._data_freshness(
+            "board_members", {"trade_date": "20260930"},
+            datetime(2026, 9, 30, 15, 0), 86400)
+        self.assertEqual("historical", freshness["status"])

@@ -1005,6 +1005,12 @@ def _quality_failure_code(
         # callers can see stale/unknown/filter-degraded semantics directly.
         return None
 
+    # W4（board_members）：成员按**交易日**缓存（成员变动慢），data_as_of 就是
+    # 交易日。用 fetched_at 判新旧会把昨天取的 9-30 名册全判 QUALITY_STALE——
+    # 对"某交易日的名册快照"这是错的轴。缓存自身的新鲜由调用方 trade_date 决定。
+    if intent == "board_members":
+        return None
+
     now = _now_shanghai()
     if outcome.fetched_at:
         fetched_at = _parse_fact_datetime(outcome.fetched_at)
