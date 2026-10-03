@@ -49,10 +49,15 @@ Hermes 看板经公共 `market_facts` intent 读取同一环境的独立事实�
 每天 16:15 和 17:15（上海时间）触发管道 `refresh`；只展示已完成双日校验的
 晋级率，并标注实际交易日。采集失败时保留明确缺口，不把前一日写成当天。
 
-已有公共只读意图 `query("market_facts", trade_date="20260923")`（或
-`./ym-data query market_facts 'trade_date="20260923"'`），从当前运行环境的
-`data/market-facts.sqlite3` 读同一份报告；缺库/缺日期返回带 error code 的失败，
-历史查询不被当作实时行情。每项仍须核对 `trade_date`、`source_gaps` 和证据时间。
+**封存库位置（写死，复审必修 2）**：`market_facts` 只读本机封存库
+`data/market-facts.sqlite3`，按 ① 环境变量 `YM_MARKET_FACTS_DB` →
+② 当前工作目录下 `data/market-facts.sqlite3` 的顺序定位。换机器/换目录回放
+时必须显式指定（Market_Watch 侧 `build_next_day_plan.py --facts-db <路径>`），
+否则读的是 CWD 相对路径；库不存在时报 `FACT_STORE_MISSING`（fail-closed），
+不会静默返 0 行。公共只读意图 `query("market_facts", trade_date="20260923")`
+（或 `./ym-data query market_facts 'trade_date="20260923"'`）读同一份报告；
+缺库/缺日期返回带 error code 的失败，历史查询不被当作实时行情。每项仍须核对
+`trade_date`、`source_gaps` 和证据时间。
 
 逐项检查时可运行 `report`；它以 SQLite 只读模式打开当前环境的库，库不存在会明确报错，
 不会在查询时建库。建议按下面顺序检查 `source_gaps`、`return_evidence`、
