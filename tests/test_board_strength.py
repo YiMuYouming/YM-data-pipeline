@@ -24,9 +24,11 @@ INDUSTRY_BARS = [
     {"trade_date": "2026-09-29", "close": 104.0},
     {"trade_date": "2026-09-30", "close": 106.0},
 ]
-FLOWS = [{"trade_date": "2026-09-28", "net_inflow_yi": 12.0},
-         {"trade_date": "2026-09-29", "net_inflow_yi": -3.0},
-         {"trade_date": "2026-09-30", "net_inflow_yi": 8.0}]
+# W4 返工：行必须带板块身份（ts_code/industry）才会被认领——按板块分别取资金流，
+# 不再“同一份 flows 传给每个板块取尾巴三行”（审计阻断 1）。
+FLOWS = [{"trade_date": "2026-09-28", "net_inflow_yi": 12.0, "ts_code": "881157.TI"},
+         {"trade_date": "2026-09-29", "net_inflow_yi": -3.0, "ts_code": "881157.TI"},
+         {"trade_date": "2026-09-30", "net_inflow_yi": 8.0, "ts_code": "881157.TI"}]
 MEMBERS = [f"600{index:03d}" for index in range(10)]
 
 
@@ -162,3 +164,99 @@ def _write(payload: dict) -> str:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerBoardFlowTests(unittest.TestCase):
+    """审计阻断 1：net_inflow_3d 必须按板块分别取，不许全市场榜单尾巴冒充。
+
+    旧行为：provider 把同一份全市场 flows 传给每个板块，内核取 flows[-3:]
+    ——103 个板块拿到同一个数（线上实测全是 −212.32，status 还是 ok）。
+    """
+
+    FLOWS = [
+        {"trade_date": "20260928", "industry": "银行", "ts_code": "881155.TI",
+         "net_amount": 10.0, "pct_change": 1.0},
+        {"trade_date": "20260929", "industry": "银行", "ts_code": "881155.TI",
+         "net_amount": 20.0, "pct_change": 0.5},
+        {"trade_date": "20260930", "industry": "银行", "ts_code": "881155.TI",
+         "net_amount": 30.0, "pct_change": 2.0},
+        {"trade_date": "20260928", "industry": "半导体", "ts_code": "881121.TI",
+         "net_amount": -1.0, "pct_change": -0.5},
+        {"trade_date": "20260929", "industry": "半导体", "ts_code": "881121.TI",
+         "net_amount": -2.0, "pct_change": -1.0},
+        {"trade_date": "20260930", "industry": "半导体", "ts_code": "881121.TI",
+         "net_amount": -3.0, "pct_change": -2.0},
+        # 全市场榜单里排在尾巴的无关行业——旧 bug 把它当成了每个板块的"三日合计"
+        {"trade_date": "20260930", "industry": "美容护理", "ts_code": "881182.TI",
+         "net_amount": -212.32, "pct_change": 0.1},
+    ]
+
+    def test_each_board_sums_its_own_three_days(self):
+        from ym_stock_data.board_strength import board_strength
+
+        bank = board_strength("881155", board_name="银行", flows=self.FLOWS,
+                              coverage=1.0)
+        semi = board_strength("881121", board_name="半导体", flows=self.FLOWS,
+                              coverage=1.0)
+        self.assertEqual(60.0, bank["fields"]["net_inflow_3d"]["value"])
+        self.assertEqual("ok", bank["fields"]["net_inflow_3d"]["status"])
+        self.assertEqual(-6.0, semi["fields"]["net_inflow_3d"]["value"])
+        self.assertNotEqual(
+            bank["fields"]["net_inflow_3d"]["value"],
+            semi["fields"]["net_inflow_3d"]["value"],
+            "不同板块拿到了同一个资金数——全市场榜单尾巴又混进来了",
+        )
+
+    def test_board_without_flow_rows_gets_null_and_typed_gap_not_ok(self):
+        """概念板块不在行业资金表里：置 null + 记 typed gap，status 不许 ok。"""
+        from ym_stock_data.board_strength import board_strength
+
+        concept = board_strength("885957", board_name="东数西算(算力)",
+                                 flows=self.FLOWS, coverage=1.0)
+        field = concept["fields"]["net_inflow_3d"]
+        self.assertIsNone(field["value"])
+        self.assertNotEqual("ok", field["status"])
+        codes = [gap["gap_code"] for gap in concept["source_gaps"]]
+        self.assertTrue(
+            any(code.startswith("board_field_unavailable:net_inflow_3d")
+                for code in codes),
+            f"取不到资金流必须记 typed gap，实际 gaps={codes}",
+        )
+
+    def test_matches_by_ts_code_when_name_differs(self):
+        from ym_stock_data.board_strength import board_strength
+
+        flows = [{"trade_date": "20260930", "industry": "某个别名",
+                  "ts_code": "881155.TI", "net_amount": 7.0}]
+        out = board_strength("881155", board_name="银行", flows=flows,
+                             coverage=1.0)
+        self.assertEqual(7.0, out["fields"]["net_inflow_3d"]["value"])
+
+    def test_flow_rows_are_ordered_by_date_before_window_sum(self):
+        from ym_stock_data.board_strength import board_strength
+
+        shuffled = list(reversed(self.FLOWS))
+        out = board_strength("881155", board_name="银行", flows=shuffled,
+                             coverage=1.0)
+        self.assertEqual(60.0, out["fields"]["net_inflow_3d"]["value"])
+
+
+class FieldGapTests(unittest.TestCase):
+    """审计阻断 4：覆盖足够但字段取不到值时，置 null 且记 typed gap。"""
+
+    def test_missing_field_records_typed_gap(self):
+        from ym_stock_data.board_strength import board_strength
+
+        # 只给 limit 池：其余字段无输入 → null + gap（一个都不许静默 ok）
+        out = board_strength("881155", board_name="银行",
+                             pool=[{"code": "600000", "industry": "银行",
+                                    "board": 1}],
+                             coverage=1.0)
+        gaps = {gap["gap_code"].split(":")[1]: gap
+                for gap in out["source_gaps"]
+                if gap["gap_code"].startswith("board_field_unavailable:")}
+        for field in ("net_inflow_3d", "index_position_vs_ma5",
+                      "midcap_above_ma20_pct", "rank_change"):
+            self.assertIn(field, gaps, f"{field} 取不到值但没记 typed gap")
+            self.assertEqual("advisory", gaps[field]["scope"])
+            self.assertIn("affected_review_cells", gaps[field])
