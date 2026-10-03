@@ -18,7 +18,7 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | --- | --- | --- |
 | 市场全景、指数、涨跌家数 | `realtime_market` | 无 |
 | 行业/板块 | `sector_index` | `names` 或 881 `codes` |
-| 概念板块 | `concept_index` | `names` 或 885 `codes`（与 881 行业不是一回事，不混排） |
+| 概念板块 | `concept_index` | `names` 或概念 `codes`（与 881 行业不是一回事，不混排；概念前缀实测分布在 864/865/875/883/885/886 六个段，只按 ths_index 的 type=N 判定，不写死单前缀——审计回复 11） |
 | 板块成员 | `board_members` | 板块 `codes`（881 行业或概念前缀均可，可带 `.TI` 后缀）；可选 `trade_date`（成员按交易日缓存） |
 | 逐板块强度 | `market_board_strength` | `trade_date`；可选 `board_ids`、`definitions`、`member_coverage` |
 | 个股当前快照 | `stock_snapshot` | `codes` |
@@ -117,7 +117,7 @@ K 线检查 `datetime`、`volume_unit=share`、`amount_unit=CNY` 和 `adjustment
 | `查前复权日K` | `stock_kline`，固定 `period=daily`、`adjustment=qfq` | `code` |
 | `查分钟K` | `stock_kline` | `code`、`period=5m/15m/60m` |
 | `查板块` / `查行业` | `sector_index` | `names` 或 881 `codes` |
-| `查概念板块` / `查概念` | `concept_index` | `names` 或 885 `codes` |
+| `查概念板块` / `查概念` | `concept_index` | `names` 或概念 `codes`（type=N 是判据，前缀只做形状检查） |
 | `查板块成员` / `板块成员` | `board_members` | 板块 `codes`；可选 `trade_date` |
 | `查板块强度` / `板块强度` | `market_board_strength` | `trade_date` |
 
