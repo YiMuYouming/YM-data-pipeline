@@ -33,9 +33,9 @@ class AcceptanceRunbookTests(unittest.TestCase):
             "./ym-data acceptance build",
             "./ym-data acceptance validate",
             "summarize_query_result",
-            "_default_resolver",
-            "extract_rows",
-            "_effective_meta",
+            "build_next_day_plan",
+            "_pipeline_query",
+            "member_coverage",
             "compat_iwencai_query",
             'mode="unified"',
             "empty_legacy",
@@ -97,9 +97,10 @@ class AcceptanceRunbookTests(unittest.TestCase):
 
         owners = (
             (PIPELINE_ROOT / "ym_stock_data/smoke.py", "def summarize_query_result"),
-            (MARKET_WATCH / "scripts/run_c15_scan.py", "def _default_resolver"),
-            (MARKET_WATCH / "scripts/c15_contract.py", "def extract_rows"),
-            (MARKET_WATCH / "scripts/c15_contract.py", "def _effective_meta"),
+            # W4：C1.5→C2→D1 合并进 build_next_day_plan.py，问财取数路径
+            # （_default_resolver / extract_rows / _effective_meta）已删。
+            (MARKET_WATCH / "scripts/build_next_day_plan.py", "def build_next_day_plan"),
+            (MARKET_WATCH / "scripts/build_next_day_plan.py", "def _pipeline_query"),
             (LIVE_DASHBOARD / "scripts/ym_data_query.py", "def compat_iwencai_query"),
             (LIVE_DASHBOARD / "scripts/ym_data_query.py", "def compare_review_results"),
         )
@@ -120,12 +121,12 @@ class AcceptanceRunbookTests(unittest.TestCase):
         self.assertNotIn("BREAKER_NOT_CONFIRMED", snippets)
         self.assertIn("CONTROLLED_CHAIN_NOT_CONFIRMED", snippets)
         self.assertIn(
-            'result = _default_resolver("review_sentiment")',
+            'query = _pipeline_query()',
             snippets,
         )
         self.assertNotRegex(
             snippets,
-            r'_default_resolver\("review_sentiment",\s*query=',
+            r'_pipeline_query\(\"review_sentiment\"',
         )
         dashboard_call = re.search(
             r'result = compat_iwencai_query\((.*?)\n\)',

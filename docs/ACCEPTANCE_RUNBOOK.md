@@ -181,7 +181,7 @@ PY
 
 ## 6. Market_Watch observation-only 探针
 
-只调用 `_default_resolver`，用 `extract_rows` 计数、用 `_effective_meta` 取得真实 nested provenance；rows 只在内存中计数，不打印、不落盘，也不运行 C1.5 写入主程序。
+只调用 Market Watch 侧次日计划脚本的管道入口 `_pipeline_query()`（W4 之后 C1.5→C2→D1 一个脚本，问财路径已删；成员名册经 `board_members` 意图按交易日缓存，`member_coverage` 由拿着名册的 Market_Watch 侧算出传回 `market_board_strength`）；rows 只在内存中计数，不打印、不落盘，也不运行选股链写入主程序。
 
 ```bash
 UV_PROJECT_ENVIRONMENT="$project_env" "$project_uv" --project "$pipeline_root" run python - "$acceptance_tmp/market-watch.json" > /dev/null 2>/dev/null <<'PY'
@@ -192,14 +192,14 @@ from pathlib import Path
 
 market_root = Path("/Users/yimu/Documents/YM_Capital/Market_Watch")
 sys.path.insert(0, str(market_root))
-from scripts.c15_contract import _effective_meta, extract_rows
-from scripts.run_c15_scan import _default_resolver
+from scripts.build_next_day_plan import _pipeline_query
 from ym_stock_data.smoke import summarize_query_result
 
-result = _default_resolver("review_sentiment")
-rows = extract_rows(result)
-meta = _effective_meta(result)
-summary = summarize_query_result({"data": [], "_meta": meta})
+query = _pipeline_query()
+result = query("review_sentiment", query="A股 非ST 涨停", limit=3)
+rows = (result.get("data") or {}).get("items") or []
+meta = result.get("_meta") or {}
+summary = summarize_query_result(result)
 quality = meta.get("quality") if isinstance(meta.get("quality"), dict) else {}
 value = {
     "status": summary["status"],

@@ -37,6 +37,10 @@ LOCAL_PROVIDER_NAMES = frozenset(
         "tencent",
         "sina",
         "ths_industry",
+        # 板块强度是本地合成的（输入来自 market_facts / sector_index /
+        # industry_flow），但它确实是一个被路由直接调起的适配器，
+        # 与 ths_industry、market_facts 同一性质，所以登记在这里。
+        "board_strength",
         "northbound",
         "ths_hot",
         "pytdx_index",
@@ -126,7 +130,10 @@ def _row_count(intent: str, raw: dict) -> int:
             return max(0, int(raw.get("_total") or 0))
         except (TypeError, ValueError):
             return 0
-    for key in ("datas", "items", "bars", "reports", "filings"):
+    # boards 是 market_board_strength 的行容器（一个板块一行）。
+    # 少了它，provider 会把「有板块」报成 status=empty，上层按
+    # STATUS_DATA_MISMATCH 拒掉整次查询——在线烟测就是这么发现的。
+    for key in ("datas", "items", "bars", "reports", "filings", "boards"):
         value = raw.get(key)
         if isinstance(value, list):
             return len(value)
@@ -210,6 +217,188 @@ def _legacy_industry_flow(params: dict) -> dict:
         "items": rows,
         "source": "ths_industry",
     }
+
+
+def _board_strength(params: dict) -> dict:
+    """逐板块强度：本地合成，输入全部来自已注册的既有 capability。
+
+    这不是一个新的数据源——涨停来自 market_facts 的封存池、三日资金净额与
+    排名变化来自 industry_flow 历史表（moneyflow_ind_ths，逐日全行业 90 行）。
+    provider 记成 ``board_strength``，是为了在 attempts 里如实写明"这些数是
+    算出来的"。
+
+    资金流**按板块分别取**（审计阻断 1）：把同一份全市场 flows 传给每个板块、
+    内核取尾巴三行，等于 103 个板块拿到同一个数。现在按交易日历取三天窗口，
+    内核按板块身份过滤后各自求和；概念不在行业资金表里 → null + typed gap。
+    """
+    from ..board_strength import board_strength, load_board_definitions
+
+    trade_date = _compact_date(params.get("trade_date"))
+    definitions = params.get("definitions")
+    boards_meta = load_board_definitions(definitions)["boards"] if definitions else []
+    wanted = [str(b) for b in (params.get("board_ids") or [])]
+    board_ids = wanted or [str(entry["board_id"]) for entry in boards_meta]
+    board_names = {
+        str(entry["board_id"]): str(entry.get("board_name") or entry.get("name") or "")
+        for entry in boards_meta
+    }
+    concept_ids = {
+        str(entry["board_id"]) for entry in boards_meta
+        if str(entry.get("type") or "") == "concept"
+    }
+
+    limit_pool = _limit_pool_for(trade_date)
+    # 三天窗口（含当日）的行业资金流；概念板块不在该表内，rank/net_inflow
+    # 由内核记 gap，不拿行业数据顶替（K1）。
+    window_days = _flow_window_days(trade_date)
+    flow_rows = _industry_flow_window(window_days)
+    rank_changes = _rank_changes(flow_rows, window_days)
+
+    boards, gaps = [], []
+    for board_id in board_ids:
+        payload = board_strength(
+            board_id,
+            # definitions 里的板块名要传下去：涨停池与资金流表记的是名字，
+            # 不传就对不上
+            board_name=board_names.get(board_id),
+            pool=limit_pool,
+            flows=flow_rows,
+            # 行业：三日涨幅排名差（industry_flow 逐日 pct_change 排名）。
+            # 概念不在表内 → 不传，内核记 typed gap。
+            rank_change=(None if board_id in concept_ids
+                         else rank_changes.get(board_id)),
+            # 覆盖率是"成员样本覆盖率"，只有拿着成员名单的一方才算得出来。
+            # 管道这一侧只有涨停池，拿不到成员比例——**不给就不给**，
+            # 让内核按 K5 记 typed gap 并把数值置 null；写死 1.0 等于假装
+            # 样本齐全，下游会把全 null 看成"这个板块今天没涨停"。
+            coverage=_member_coverage(board_id, params),
+            data_as_of=trade_date or "",
+        )
+        boards.append(payload)
+        gaps.extend(payload.get("source_gaps") or [])
+    return {
+        "trade_date": trade_date,
+        "boards": boards,
+        "source_gaps": gaps,
+        "flow_window_days": window_days,
+        "source": "board_strength",
+    }
+
+
+def _number(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("%", "").replace(",", "")
+    if not text or text in {"-", "—", "N"}:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _flow_window_days(trade_date: str | None) -> list[str]:
+    """三日窗口（含当日，按管道日历；K3——不自己算节假日）。"""
+    from ..trading_calendar import previous_trading_day
+
+    days = [trade_date] if trade_date else []
+    while len(days) < 3:
+        try:
+            days.append(previous_trading_day(
+                datetime.strptime(days[-1], "%Y%m%d").date()).strftime("%Y%m%d"))
+        except Exception:
+            break
+    return days
+
+
+def _industry_flow_window(days: list[str]) -> list[dict]:
+    """逐日取行业资金流（已注册的 industry_flow capability；本地合成的输入）。
+
+    一天一次调用、每次拿到全行业 90 行；按日拼接后交给内核按板块过滤。
+    合法 empty（休市日）与失败分开记：失败记一条 provider 侧 gap 行。
+    """
+    from ym_stock_data import query
+
+    rows: list[dict] = []
+    for day in days:
+        try:
+            result = query("industry_flow", trade_date=day, limit=300)
+        except Exception:
+            continue
+        items = (result.get("data") or {}).get("items") or []
+        rows.extend(row for row in items if isinstance(row, dict))
+    return rows
+
+
+def _rank_changes(flow_rows: list[dict], days: list[str]) -> dict[str, int]:
+    """行业三日涨幅排名差：今日排名 − 昨日排名（正=排名后退）。
+
+    排名只在行业资金表内部横向做；概念不在表里，不进结果（内核记 gap）。
+    """
+    if len(days) < 2:
+        return {}
+    today, previous = days[0], days[1]
+
+    def _ranks(day: str) -> dict[str, int]:
+        rows = [row for row in flow_rows
+                if str(row.get("trade_date") or "") == day
+                and _number(row.get("pct_change")) is not None]
+        rows.sort(key=lambda row: -_number(row.get("pct_change")))
+        return {
+            str(row.get("ts_code") or "").split(".")[0]: index
+            for index, row in enumerate(rows)
+        }
+
+    today_ranks, previous_ranks = _ranks(today), _ranks(previous)
+    changes: dict[str, int] = {}
+    for board_id, rank in today_ranks.items():
+        if board_id in previous_ranks:
+            changes[board_id] = rank - previous_ranks[board_id]
+    return changes
+
+
+def _member_coverage(board_id: str, params: dict) -> float | None:
+    """成员覆盖率由调用方给（它才知道成员名单）；没给就返回 None。"""
+    table = params.get("member_coverage")
+    if not isinstance(table, dict):
+        return None
+    value = table.get(board_id)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _limit_pool_for(trade_date: str | None) -> list[dict]:
+    """涨停池来自封存的 market_facts；没有封存就返回空列表（不猜、不补）。
+
+    封存表里存的是 ``board_count``，计算内核要的是 ``board``（几板）。
+    封板时间（首封/最后封）表里没有这一列，``seal_time_distribution`` 已按
+    审计回复 11 二.3 从本意图删除，归第二批（``market_facts`` 入库时存下来）。
+    """
+    if not trade_date:
+        return []
+    try:
+        from ..market_facts import MarketFactStore
+
+        store = MarketFactStore(read_only=True)
+        run = store.latest_limit_run(trade_date)
+        if not run:
+            return []
+        rows = store._events(run["id"], "up")
+    except Exception:
+        return []
+    pool = []
+    for row in rows:
+        pool.append({
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "industry": row.get("industry") or "",
+            "board": row.get("board_count") or 0,
+        })
+    return pool
 
 
 def _legacy_northbound(params: dict) -> dict:
@@ -483,6 +672,7 @@ class LocalProvider:
                 codes=params.get("codes"), names=params.get("names")
             ),
             ("ths_industry", "industry_flow"): lambda: _legacy_industry_flow(params),
+            ("board_strength", "market_board_strength"): lambda: _board_strength(params),
             ("northbound", "northbound_flow"): lambda: _legacy_northbound(params),
             ("ths_hot", "legacy_hot_rank"): lambda: _legacy_hot_rank(params),
             ("pytdx_index", "index_kline"): lambda: _legacy_index_kline(params),

@@ -20,7 +20,11 @@ from pathlib import Path
 import requests
 
 from ..contracts import TZ_SHANGHAI
-from ..trading_calendar import TradeCalendarUnavailable, market_fact_age_seconds
+from ..trading_calendar import (
+    TradeCalendarUnavailable,
+    latest_completed_trade_date,
+    market_fact_age_seconds,
+)
 from .base import ProviderOutcome
 from .stocktoday_auth import load_token
 from .stocktoday_catalog import API_PARAMS
@@ -28,6 +32,17 @@ from .stocktoday_inventory import load_inventory
 
 ENDPOINT = "https://tushare.citydata.club"
 DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-budget.sqlite3"
+# 板块成员按交易日缓存（审计回复 11 二.2：成员变动慢）。一天一个文件，
+# 盘上持久——provider 重启也命中，不是进程内存。
+BOARD_MEMBER_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "board_members"
+# ths_member 的 ts_code 必须带 .TI 后缀（在线实测：881121 查不到，
+# 881121.TI 返回 187 名成员）；逗号合并多板块上游返回空，只能逐板块调。
+BOARD_INDEX_SUFFIX = ".TI"
+
+# ths_index 的板块分类。type 是判据：概念与"昨日涨幅超过X%"这类选股筛选
+# 共用 864/883 前缀，光看代码分不出来。取值来自 2026-10-02 实测全量清单。
+CONCEPT_BOARD_TYPE = "N"   # 概念板块
+INDUSTRY_BOARD_TYPE = "I"  # 行业板块
 MAX_ROWS = 10000
 # rt_idx_k / rt_idx_tick / rt_sw_k / idx_mins answer "该接口为龙虾套餐专属" on the
 # current plan; skip them for 30 minutes instead of spending quota every poll,
@@ -391,6 +406,40 @@ def _session_time(stamp):
     return session_data_time(stamp)
 
 
+def _board_member_cache_path(root: Path, trade_date: str) -> Path:
+    return root / f"{trade_date}.json"
+
+
+def _load_member_cache(root: Path, trade_date: str) -> dict:
+    """读某交易日的板块成员缓存；坏了就当没有（不因缓存不可读而失败整次查询）。"""
+    try:
+        payload = json.loads(
+            _board_member_cache_path(root, trade_date).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    boards = payload.get("boards") if isinstance(payload, dict) else None
+    return boards if isinstance(boards, dict) else {}
+
+
+def _store_member_cache(root: Path, trade_date: str, entries: dict) -> None:
+    """把新取到的成员并进当日缓存。写不进去不影响本次返回——缓存是优化，不是事实源。"""
+    if not entries:
+        return
+    merged = _load_member_cache(root, trade_date)
+    merged.update(entries)
+    path = _board_member_cache_path(root, trade_date)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"trade_date": trade_date, "boards": merged},
+                       ensure_ascii=False),
+            encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        return
+
+
 def _rows(body):
     data = body.get("data")
     if isinstance(data, dict):
@@ -423,11 +472,13 @@ class StockTodayProvider:
         post=None,
         budget_path=DEFAULT_BUDGET_PATH,
         budget=None,
+        member_cache_root=BOARD_MEMBER_CACHE_ROOT,
         clock=None,
     ):
         self.token_loader = token_loader
         self.post = post or requests.post
         self.budget = budget or RequestBudget(budget_path)
+        self.member_cache_root = Path(member_cache_root)
         self.clock = clock or time
 
     def probe(self):
@@ -1088,14 +1139,144 @@ class StockTodayProvider:
             self.name,
             outcome.status,
             data={
-                "items": raw.get("items", []),
-                "missing": [],
+                "items": items,
+                "missing": rejected,
                 "_stocktoday": raw.get("_stocktoday", {}),
             },
             fetched_at=outcome.fetched_at,
             latency_ms=outcome.latency_ms,
             auth=outcome.auth,
             provenance=outcome.provenance,
+        )
+
+    def _call_concept_index(self, params):
+        """概念板块。判据是数据源的 **type 字段**（N=概念），不是代码前缀。
+
+        为什么不能只看前缀：ths_index 里 `864005 区块链`(type=N) 和
+        `864001 昨日涨幅超过10%`(type=S) 前缀完全一样。按前缀过滤会把选股
+        筛选条件混进概念板块——那正是 K1 要防的"两种类型混排"，而且是静默的。
+        所以这里按 type 收口，前缀留给 api 层做便宜的形状检查。
+
+        两个在线实测（2026-10-02）钉住的坑：
+        1. `ts_code` 必须带 `.TI` 后缀：`885957` 返回空，`885957.TI` 才返回；
+        2. 逗号合并多板块上游返回空（与 ths_member 同一个坑）——逐板块调。
+        """
+        codes = [str(code) for code in (params.get("codes") or [])]
+        names = params.get("names") or []
+        items: list[dict] = []
+        missing: list[str] = []
+        stamps: list[str] = []
+        latency = 0
+        for code in codes:
+            bare = code.split(".")[0]
+            outcome = self._request_table(
+                "ths_index", {"ts_code": f"{bare}{BOARD_INDEX_SUFFIX}"})
+            # 瞬时上游错误重试一次（与 _call_flow 对 moneyflow_mkt_dc 的同款先例）；
+            # 鉴权/套餐类错误不重试——_request_table 内部已有记忆化的拒绝。
+            if (outcome.error_code
+                    and outcome.error_code not in {"AUTH_DENIED", "PLAN_NOT_ENTITLED",
+                                                   "AUTH_MISSING", "RATE_LIMITED"}):
+                outcome = self._request_table(
+                    "ths_index", {"ts_code": f"{bare}{BOARD_INDEX_SUFFIX}"})
+            if outcome.error_code:
+                return outcome
+            rows = [
+                row for row in (outcome.data.get("items") or [])
+                if isinstance(row, dict)
+                and str(row.get("ts_code") or "").split(".")[0] == bare
+            ]
+            hit = [row for row in rows
+                   if str(row.get("type") or "") == CONCEPT_BOARD_TYPE]
+            if hit:
+                items.extend(hit)
+            else:
+                # 请求了但被 type 闸挡掉或查无此板块，如实进 missing
+                missing.append(code)
+            if outcome.fetched_at:
+                stamps.append(outcome.fetched_at)
+            latency += int(outcome.latency_ms or 0)
+        return ProviderOutcome(
+            self.name,
+            "success" if items else "empty",
+            data={"items": items, "missing": sorted(missing), "_stocktoday": {}},
+            fetched_at=max(stamps) if stamps else None,
+            latency_ms=latency,
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(),
+        )
+
+    def _call_board_members(self, params):
+        """板块成员（board_members）：成员关系的唯一生产者（审计回复 11 二.2）。
+
+        在线实测（2026-10-02）钉住的三个行为：
+        1. ``ts_code`` 必须带 ``.TI`` 后缀——``881121`` 查不到，``881121.TI``
+           返回 187 名成员。definitions 里是裸 id，这里补后缀，回显仍用调用方
+           给的 board_id。
+        2. 逗号合并多板块上游返回空——一个板块一次调用。
+        3. 板块码可能解析到美股指数（``861292.TI`` 房地产开发 = exchange US，
+           成员是 ``JOE.N`` 这类）。成员原样带回交易所后缀，由调用方判 A 股；
+           本意图不挑市场，只如实转述源返回——挑市场就是第二道口径，
+           而铁律 2 要求一个事实一个来源。
+
+        按交易日缓存（成员变动慢）：``{member_cache_root}/{trade_date}.json``，
+        同一天的后续调用只补缺的板块；上游失败或空成员的板块**不进缓存**，
+        否则一次抖动会被按成交日永久记住。
+        """
+        codes = [str(code) for code in (params.get("codes") or [])]
+        started = self.clock.monotonic()
+        try:
+            trade_date = (
+                params.get("trade_date")
+                or latest_completed_trade_date(datetime.now(TZ_SHANGHAI))
+            )
+        except TradeCalendarUnavailable:
+            return self._fail(started, "CALENDAR_UNAVAILABLE")
+
+        cached = _load_member_cache(self.member_cache_root, trade_date)
+        boards: list[dict] = []
+        missing: list[str] = []
+        fresh: dict[str, dict] = {}
+        for code in codes:
+            entry = cached.get(code)
+            if entry is not None:
+                boards.append({"board_id": code, **entry})
+                continue
+            upstream_code = f"{code.split('.')[0]}{BOARD_INDEX_SUFFIX}"
+            outcome = self._request_table(
+                "ths_member",
+                {"ts_code": upstream_code, "con_code": "", "start_date": "",
+                 "end_date": "", "is_new": ""},
+            )
+            if outcome.error_code:
+                return outcome
+            rows = [row for row in (outcome.data.get("items") or [])
+                    if isinstance(row, dict)]
+            members = [str(row["con_code"]) for row in rows if row.get("con_code")]
+            if not members:
+                # 上游对不存在的板块码也是静默空（在线实测）。不回声不等于
+                # 没有——进 missing，让调用方看见这个板块没拿到成员。
+                missing.append(code)
+                continue
+            entry = {"members": members, "member_count": len(members),
+                     "fetched_at": outcome.fetched_at or ""}
+            boards.append({"board_id": code, **entry})
+            fresh[code] = entry
+        _store_member_cache(self.member_cache_root, trade_date, fresh)
+        stamps = [board.get("fetched_at") for board in boards
+                  if board.get("fetched_at")]
+        return ProviderOutcome(
+            self.name,
+            "success" if boards else "empty",
+            data={
+                "data_as_of": trade_date,
+                "boards": boards,
+                "missing": missing,
+                "source": "stocktoday:ths_member",
+            },
+            fetched_at=max(stamps) if stamps else None,
+            latency_ms=int((self.clock.monotonic() - started) * 1000),
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(),
         )
 
     def _call_flow(self, *, api_name, params):
@@ -1295,6 +1476,10 @@ class StockTodayProvider:
             return self._call_hot_rank(params)
         if intent == "sector_index":
             return self._call_sector_index(params)
+        if intent == "concept_index":
+            return self._call_concept_index(params)
+        if intent == "board_members":
+            return self._call_board_members(params)
         if intent == "industry_flow":
             return self._call_flow(api_name="moneyflow_ind_ths", params=params)
         if intent == "fund_flow":

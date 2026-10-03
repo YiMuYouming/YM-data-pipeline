@@ -316,6 +316,39 @@ def normalize_success(
             expected_count=len(params.get("codes") or []) + len(params.get("names") or []),
             missing=missing if isinstance(missing, list) else [],
         )
+    elif intent == "concept_index":
+        rows = data.get("items", [])
+        missing = data.get("missing", [])
+        quality = assess_quality(
+            rows if isinstance(rows, list) else [],
+            expected_row_shape="sector_rows",
+            expected_count=len(params.get("codes") or []) + len(params.get("names") or []),
+            missing=missing if isinstance(missing, list) else [],
+        )
+    elif intent == "board_members":
+        # 板块成员不是同构行表：一行一个板块、值是成员代码列表。
+        # 质量只回答"几个板块拿到了成员、哪些没拿到"。
+        boards = data.get("boards") if isinstance(data.get("boards"), list) else []
+        missing = data.get("missing") if isinstance(data.get("missing"), list) else []
+        quality = assess_quality(
+            [{"board_id": board.get("board_id")} for board in boards if isinstance(board, dict)],
+            expected_count=len(params.get("codes") or []) or None,
+            missing=missing,
+        )
+    elif intent == "market_board_strength":
+        # 板块强度是逐板块的 K5 字段块，不是一张同构的行表；
+        # 质量按"返回了几个板块 + 各自有没有缺口"来判，不套 sector_rows。
+        boards = data.get("boards") if isinstance(data.get("boards"), list) else []
+        gaps = data.get("source_gaps") if isinstance(data.get("source_gaps"), list) else []
+        # 板块强度不是同构的行表（每个 board 是一组 K5 字段块），所以
+        # **不传 expected_row_shape**——硬套一个行形状只会永远报 mismatch。
+        # 质量只回答"返回了几个板块"和"各自带了哪些缺口"。
+        quality = assess_quality(
+            [{"board_id": board.get("board_id")} for board in boards if isinstance(board, dict)],
+            expected_count=len(params.get("board_ids") or []) or None,
+            missing=[],
+        )
+        quality["gaps"] = gaps
     elif intent == "stock_kline":
         rows = data.get("bars", [])
         quality = assess_quality(

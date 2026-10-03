@@ -67,11 +67,29 @@ TDX_DIAGNOSTIC_NAMES = (
     "tdx_notice",
     "tdx_news",
 )
+# 同花顺概念板块的代码前缀（第二道闸；第一道是数据源的 type == "N"）。
+# 实测 2026-10-02 ths_index 全量 2722 行，type=N 共 916 条，前缀分布：
+#   885×303  865×250  875×219  886×104  864×35  883×5
+# 只认 885 会拒掉 613/916 的真概念。type=S（"昨日涨幅超过X%"这类选股筛选）
+# 与 type=N 共用 864 和 883 两个前缀，所以**前缀不能单独用来分家**。
+CONCEPT_CODE_PREFIXES = ("864", "865", "875", "883", "885", "886")
+CONCEPT_BOARD_TYPE = "N"
+INDUSTRY_BOARD_TYPE = "I"
+# 行业板块码前缀（同花顺二级行业 881xxx）；概念前缀见 CONCEPT_CODE_PREFIXES。
+# 前缀只是第二道形状检查，类型判据是 ths_index 的 type 字段（K1，审计回复 11）。
+INDUSTRY_CODE_PREFIX = "881"
+
 _ALLOWED_PARAMS = {
     "market_facts": frozenset({"trade_date"}),
     "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
     "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
+    "concept_index": frozenset({"codes", "names"}),
+    "board_members": frozenset({"codes", "trade_date"}),
+    # member_coverage: {board_id: 比率}，由知道成员名单的一方给（如 ths_member）。
+    "market_board_strength": frozenset(
+        {"trade_date", "board_ids", "definitions", "member_coverage"}
+    ),
     "stock_snapshot": frozenset({"codes", "source", "use_case"}),
     "stock_kline": frozenset(
         {"code", "period", "count", "source", "adjustment", "use_case", "start_date", "end_date"}
@@ -296,6 +314,67 @@ def _validate_params(intent: str, params: dict) -> None:
             raise ValueError("sector_index requires codes or names")
         if any(not str(code).startswith("881") for code in params.get("codes") or []):
             raise ValueError("sector_index codes must use the THS 881 prefix")
+    elif intent == "concept_index":
+        # 与 sector_index 同形，但**第一道闸是数据源的 type 字段**（N=概念）。
+        # 原来只按 885 前缀挡，实测同花顺概念根本不止 885（见下），而且
+        # 864/883 前缀是概念与"昨日涨幅超过X%"这类**选股筛选条件共用**的——
+        # 光看前缀分不出「区块链」和「昨日涨幅超过10%」。所以：
+        #   type 是判据，前缀只是第二道便宜的形状检查。
+        # 实测分布（2026-10-02，ths_index 全量 2722 行）：
+        #   type=N  916 条  前缀 864/865/875/883/885/886
+        #   type=I 1264 条  前缀 700/861/871/877/881/884
+        #   type=S  140 条  前缀 864/873/883/991  ← 与 N 的 864/883 重叠
+        # 概念前缀取 N 的全集，不是 K1 说的 885——K1 该更新了（已记入 PROGRESS）。
+        for key in ("codes", "names"):
+            value = params.get(key)
+            if isinstance(value, str):
+                params[key] = [value]
+            elif value is not None and not isinstance(value, (list, tuple)):
+                raise ValueError(f"concept_index {key} must be a list")
+        if not params.get("codes") and not params.get("names"):
+            raise ValueError("concept_index requires codes or names")
+        if any(not str(code).startswith(CONCEPT_CODE_PREFIXES)
+               for code in params.get("codes") or []):
+            bad = [c for c in params.get("codes") or []
+                   if not str(c).startswith(CONCEPT_CODE_PREFIXES)]
+            raise ValueError(
+                f"concept_index codes must use a THS concept prefix "
+                f"({'/'.join(sorted(CONCEPT_CODE_PREFIXES))}), got {bad}"
+            )
+    elif intent == "market_board_strength":
+        board_ids = params.get("board_ids")
+        if isinstance(board_ids, str):
+            board_ids = [board_ids]
+        if board_ids is not None and not isinstance(board_ids, (list, tuple)):
+            raise ValueError("market_board_strength board_ids must be a list")
+        params["board_ids"] = [str(b) for b in (board_ids or [])] or None
+    elif intent == "board_members":
+        # 只收 codes（成员查询没有按板块名走的通道，见 intent_registry 注释）。
+        # 板块码的形状检查是**第二道**闸（K1）：行业 881、概念六个实测前缀，
+        # 类型判据在数据源侧（ths_index 的 type 字段）；这里挡的是把个股码
+        # （600519）当板块码传进来。允许带 .TI 后缀——ths_index 返回的就是
+        # 带后缀的形式，definitions 里是裸 id，两个都要能过。
+        codes = params.get("codes")
+        if isinstance(codes, str):
+            codes = [codes]
+        if not isinstance(codes, (list, tuple)) or not codes:
+            raise ValueError("board_members requires codes")
+        for code in codes:
+            bare = str(code).split(".")[0]
+            if not (bare.startswith(INDUSTRY_CODE_PREFIX)
+                    or bare.startswith(CONCEPT_CODE_PREFIXES)):
+                raise ValueError(
+                    f"board_members codes must use a THS board prefix "
+                    f"({INDUSTRY_CODE_PREFIX} or "
+                    f"{'/'.join(sorted(CONCEPT_CODE_PREFIXES))}), got {code}"
+                )
+        params["codes"] = [str(code) for code in codes]
+        day = params.get("trade_date")
+        if day is not None:
+            if not isinstance(day, str) or not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}|\d{8}", day):
+                raise ValueError("board_members trade_date must use YYYYMMDD")
+            params["trade_date"] = _normalize_ymd(day)
     elif intent == "stock_kline":
         if not str(params.get("code") or "").strip():
             raise ValueError("stock_kline requires code")
@@ -607,6 +686,14 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "concept_index":
+        rows = data.get("items")
+        count = len(rows) if isinstance(rows, list) else 0
+        return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "market_board_strength":
+        boards = data.get("boards")
+        count = len(boards) if isinstance(boards, list) else 0
+        return isinstance(boards, list), isinstance(boards, list) and not boards, count
     if intent == "stock_snapshot":
         count = sum(
             isinstance(data.get(code), dict) and not data[code].get("error")
@@ -916,6 +1003,12 @@ def _quality_failure_code(
     ):
         # Explicit source/dataset calls retain the provider observation so
         # callers can see stale/unknown/filter-degraded semantics directly.
+        return None
+
+    # W4（board_members）：成员按**交易日**缓存（成员变动慢），data_as_of 就是
+    # 交易日。用 fetched_at 判新旧会把昨天取的 9-30 名册全判 QUALITY_STALE——
+    # 对"某交易日的名册快照"这是错的轴。缓存自身的新鲜由调用方 trade_date 决定。
+    if intent == "board_members":
         return None
 
     now = _now_shanghai()

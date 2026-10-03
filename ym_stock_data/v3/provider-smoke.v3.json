@@ -462,6 +462,30 @@
       "capability": "market_intraday_state",
       "params": {},
       "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "concept_index",
+      "capability": "concept_index",
+      "params": {"names": ["\u7b97\u529b"]},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "board_members",
+      "capability": "board_members",
+      "params": {"codes": ["881121"]},
+      "read_only": true
+    },
+    {
+      "provider": "board_strength",
+      "operation": "direct_provider_call",
+      "intent": "market_board_strength",
+      "capability": "market_board_strength",
+      "params": {"trade_date": "20260930"},
+      "read_only": true
     }
   ],
   "external_pending": [
