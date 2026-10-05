@@ -45,6 +45,14 @@ from .stocktoday_audit import (
 
 
 CANONICAL_INTENTS = frozenset(_ROUTES) | {"review_sentiment", "stock_kline"}
+
+# 审计回复 21 · 断点 B：这些子命令会往 market-facts 库写封存结果。Mac 上默认
+# 拒绝（Hermes 是唯一封存者），只放行 sync-sealed 这条只读副本通路。
+_FACTS_WRITE_COMMANDS = frozenset(
+    {"collect-limits", "collect-history", "collect-daily", "collect-returns",
+     "refresh", "backfill-history", "backfill-daily"}
+)
+
 _STRING_PARAM_KEYS = frozenset(
     {"code", "ts_code", "date", "trade_date", "start_date", "end_date"}
 )
@@ -145,8 +153,28 @@ def _parser() -> argparse.ArgumentParser:
         action = facts_commands.add_parser(name)
         action.add_argument("--date", required=name not in {"report", "refresh"}, help="exchange trade date YYYYMMDD")
         action.add_argument("--db", type=Path, help="separate market-facts SQLite path")
+        if name in _FACTS_WRITE_COMMANDS:
+            # 审计回复 21 · 断点 B：Hermes 是唯一封存者，Mac 默认不再自己封存
+            action.add_argument(
+                "--allow-local-seal",
+                action="store_true",
+                help="允许在 Mac 上直接封存（只给测试/回放用；生产请用 sync-sealed）",
+            )
         if name == "refresh":
             facts_refresh_action = action
+    facts_sync = facts_commands.add_parser(
+        "sync-sealed",
+        help="等 Hermes 封存就绪 → 拉一份只读副本 → 校验（Mac 的唯一取库方式）",
+    )
+    facts_sync.add_argument("--date", help="exchange trade date YYYYMMDD（缺省取最近一个已完成交易日）")
+    facts_sync.add_argument("--db", type=Path, help="本地封存库路径（默认管道包内 data/market-facts.sqlite3）")
+    facts_sync.add_argument("--remote", default=None, help="Hermes SSH 目标（默认 agentuser@43.132.146.234）")
+    facts_sync.add_argument("--remote-db", default=None, help="Hermes 上的封存库路径")
+    facts_sync.add_argument("--base-url", default=None, help="只读接口 base url（默认 http://127.0.0.1:8088）")
+    facts_sync.add_argument("--wait-seconds", type=float, default=0.0,
+                            help="未就绪时最多等多少秒（默认 0＝只探一次，不阻塞）")
+    facts_sync.add_argument("--poll-seconds", type=float, default=60.0, help="等待时的轮询间隔")
+    facts_sync.add_argument("--dry-run", action="store_true", help="只报是否就绪与将拉什么，不写盘")
     facts_refresh_action.add_argument(
         "--force-provider",
         help=(
@@ -249,6 +277,39 @@ def main(argv: list[str] | None = None) -> int:
         from .contracts import TZ_SHANGHAI
         from .market_facts import DEFAULT_DB, MarketFactStore, normalize_stocktoday_limits
         from .trading_calendar import is_trading_day, latest_completed_trade_date
+
+        if args.facts_command in _FACTS_WRITE_COMMANDS:
+            from .market_facts_sync import local_seal_refusal
+
+            refusal = local_seal_refusal(
+                args.facts_command, allow=bool(getattr(args, "allow_local_seal", False))
+            )
+            if refusal:
+                print(json.dumps(
+                    {"error": "local_market_facts_seal_disabled", "message": refusal},
+                    ensure_ascii=False,
+                ))
+                return 3
+
+        if args.facts_command == "sync-sealed":
+            from .market_facts_sync import (
+                DEFAULT_REMOTE, DEFAULT_REMOTE_DB, sync_sealed,
+            )
+            from .trading_calendar import latest_completed_trade_date as _latest
+
+            trade_date = args.date or _latest(datetime.now(TZ_SHANGHAI))
+            receipt = sync_sealed(
+                trade_date,
+                target_db=args.db or DEFAULT_DB,
+                remote=args.remote or DEFAULT_REMOTE,
+                remote_db=args.remote_db or DEFAULT_REMOTE_DB,
+                base_url=args.base_url,
+                wait_seconds=args.wait_seconds,
+                poll_seconds=args.poll_seconds,
+                dry_run=args.dry_run,
+            )
+            _print_json(receipt)
+            return 0 if receipt.get("status") in {"pulled", "would_pull"} else 2
 
         try:
             store = MarketFactStore(args.db or DEFAULT_DB, read_only=args.facts_command == "report")

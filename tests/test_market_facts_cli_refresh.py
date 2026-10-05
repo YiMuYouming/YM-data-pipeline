@@ -1,5 +1,8 @@
 """`market-facts refresh --force-provider` appends one dated run instead of skipping.
 
+审计回复 21 · 断点 B 起，Mac 上 refresh 默认拒绝（Hermes 是唯一封存者），所以这里的 CLI 调用都显式带 `--allow-local-seal`——本文件测的是 refresh 的
+追加语义，不是平台闸（平台闸的用例在 tests/test_market_facts_sync_sealed.py）。
+
 The 9-28 promotion rate needs a 9-24 limit pool from the same provider as 9-28
 (StockToday): 9-24 was first collected from eastmoney and the store is
 append-only, so the fix is an opt-in forced re-collect that appends a new run.
@@ -60,7 +63,7 @@ class RefreshForceProviderTests(unittest.TestCase):
         with patch("ym_stock_data.__main__.canonical_query") as query, redirect_stdout(output):
             query.return_value = _stocktoday_result("20260924", [row("000001", 2), row("000002", 1)])
             code = main(["market-facts", "refresh", "--date", "20260924",
-                         "--db", str(self.db), *extra])
+                         "--db", str(self.db), "--allow-local-seal", *extra])
         return code, json.loads(output.getvalue()), query
 
     def test_plain_refresh_still_short_circuits_on_existing_run(self):
@@ -105,7 +108,8 @@ class RefreshForceProviderTests(unittest.TestCase):
         output = io.StringIO()
         with patch("ym_stock_data.__main__.canonical_query") as query, redirect_stdout(output):
             code = main(["market-facts", "refresh", "--date", "20260924",
-                         "--db", str(self.db), "--force-provider", "eastmoney_limit_pool"])
+                         "--db", str(self.db), "--allow-local-seal",
+                         "--force-provider", "eastmoney_limit_pool"])
         receipt = json.loads(output.getvalue())
         self.assertEqual(2, code)
         self.assertIn("force_provider_not_routable", receipt["gaps"][0]["error_code"])
@@ -124,7 +128,8 @@ class RefreshForceProviderTests(unittest.TestCase):
         output = io.StringIO()
         with patch("ym_stock_data.__main__.canonical_query", return_value=mismatched), redirect_stdout(output):
             code = main(["market-facts", "refresh", "--date", "20260924",
-                         "--db", str(self.db), "--force-provider", "stocktoday"])
+                         "--db", str(self.db), "--allow-local-seal",
+                         "--force-provider", "stocktoday"])
         receipt = json.loads(output.getvalue())
         self.assertEqual(2, code)
         self.assertEqual("force_provider_provider_mismatch", receipt["gaps"][0]["error_code"])
