@@ -205,6 +205,32 @@ class SyncSealedTest(unittest.TestCase):
         self.assertEqual([], leftovers)
 
 
+class RemoteFetchTest(unittest.TestCase):
+    """`fetch_remote_bytes` 走的是二进制 stdout，stdin 必须传 bytes。
+
+    实测踩过：`subprocess.run(input=<str>)` 在非 text 模式下抛
+    `TypeError: memoryview: a bytes-like object is required`，命令直接 500。
+    """
+
+    def test_stdin_is_bytes_and_stdout_is_returned_raw(self):
+        completed = mock.Mock(returncode=0, stdout=b"SQLite format 3\x00binary", stderr=b"")
+        with mock.patch("ym_stock_data.market_facts_sync.subprocess.run",
+                        return_value=completed) as run:
+            blob = sync.fetch_remote_bytes(remote="user@host", remote_db="/tmp/x.sqlite3")
+        self.assertEqual(b"SQLite format 3\x00binary", blob)
+        kwargs = run.call_args.kwargs
+        self.assertIsInstance(kwargs["input"], bytes, "ssh stdin 必须是 bytes")
+        self.assertFalse(kwargs.get("text"), "不能开 text 模式，stdout 要原样字节")
+
+    def test_remote_failure_is_a_typed_error(self):
+        completed = mock.Mock(returncode=9, stdout=b"", stderr=b"boom")
+        with mock.patch("ym_stock_data.market_facts_sync.subprocess.run",
+                        return_value=completed):
+            with self.assertRaises(RuntimeError) as ctx:
+                sync.fetch_remote_bytes(remote="user@host", remote_db="/tmp/x.sqlite3")
+        self.assertIn("remote_backup_failed:9", str(ctx.exception))
+
+
 class FingerprintEqualityTest(unittest.TestCase):
     """跨机等值判据必须是"行内容"，不能是 daily_runs.payload_sha256。
 

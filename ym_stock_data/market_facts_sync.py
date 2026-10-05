@@ -249,10 +249,13 @@ def fetch_remote_bytes(
         "cat /tmp/ym-market-facts-pull.sqlite3\n"
         "rm -f /tmp/ym-market-facts-pull.sqlite3\n"
     )
-    completed = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote, "bash", "-s"],
-        input=script, capture_output=True, timeout=timeout,
-    )
+    try:
+        completed = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote, "bash", "-s"],
+            input=script.encode("utf-8"), capture_output=True, timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"remote_backup_unreachable:{type(exc).__name__}") from exc
     if completed.returncode != 0:
         raise RuntimeError(
             f"remote_backup_failed:{completed.returncode}:{(completed.stderr or b'').decode('utf-8', 'replace')[:200]}"
