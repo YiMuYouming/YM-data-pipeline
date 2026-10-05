@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -36,26 +37,54 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8088"
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "market-facts.sqlite3"
 LOCAL_SEAL_ENV = "YM_ALLOW_LOCAL_MARKET_FACTS_SEAL"
 
-FINGERPRINT_SQL = """
-SELECT trade_date, COUNT(*), MAX(id) FROM {table} WHERE trade_date=? GROUP BY trade_date
-"""
+# 逐日等值判据：**按行内容**算规范化 sha256，不用 daily_runs.payload_sha256——
+# 那个哈希对行顺序敏感（`_hash({"date","provider","rows"})` 里 rows 是 provider 的
+# 原始顺序）。2026-10-05 对账实测：9-24/28/29/30 两次抓取的行集完全相同、payload_sha256
+# 却不同（把同一批行排序后重算，两侧哈希立刻一致）。跨机等值只能用排序后的行内容。
+_LIMIT_ROW_SQL = (
+    "SELECT kind, code, name, board_count, price, pct_change, break_times, industry "
+    "FROM limit_events WHERE run_id=?"
+)
+_DAILY_ROW_SQL = (
+    "SELECT code, open, high, low, close, pre_close, pct_change, volume_lots, "
+    "amount_thousand_cny FROM daily_rows WHERE run_id=?"
+)
 
 
 def _fingerprint(conn: sqlite3.Connection, day: str) -> dict[str, Any]:
     """一天的封存指纹：两侧用同一段代码算，才谈得上"拉完校验"。"""
     out: dict[str, Any] = {"trade_date": day, "tables": {}}
-    for table in ("limit_runs", "daily_runs"):
+    for table, row_sql in (("limit_runs", _LIMIT_ROW_SQL), ("daily_runs", _DAILY_ROW_SQL)):
         row = conn.execute(
             f"SELECT COUNT(*), MAX(id) FROM {table} WHERE trade_date=?", (day,)
         ).fetchone()
-        entry: dict[str, Any] = {"runs": int(row[0] or 0), "latest_run_id": row[1]}
+        entry: dict[str, Any] = {
+            "runs": int(row[0] or 0), "rows": 0,
+            "payload_sha256": None, "content_sha256": None,
+        }
         if row[1] is not None:
-            sha = conn.execute(
+            run = conn.execute(
                 f"SELECT payload_sha256 FROM {table} WHERE id=?", (row[1],)
             ).fetchone()
-            entry["payload_sha256"] = sha[0] if sha else None
+            entry["payload_sha256"] = run[0] if run else None
+            rows = sorted(tuple(item) for item in conn.execute(row_sql, (row[1],)))
+            entry["rows"] = len(rows)
+            raw = json.dumps(rows, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+            entry["content_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         out["tables"][table] = entry
     return out
+
+
+def _comparable(fp: dict[str, Any]) -> dict[str, Any]:
+    """校验只比"行内容"那几项：runs / rows / content_sha256。
+
+    ``payload_sha256`` 留在指纹里做留痕，但它对行顺序敏感（见上面注释），
+    不能参与等值判定——否则同一批行换个顺序就会被判成"不一致"而拒绝替换。
+    """
+    return {
+        table: {k: v for k, v in entry.items() if k != "payload_sha256"}
+        for table, entry in (fp or {}).get("tables", {}).items()
+    }
 
 
 def _fingerprint_local(db: Path | str, day: str) -> dict[str, Any]:
@@ -67,16 +96,24 @@ def _fingerprint_local(db: Path | str, day: str) -> dict[str, Any]:
 
 
 _REMOTE_FINGERPRINT = '''
-import json, sqlite3, sys
+import hashlib, json, sqlite3, sys
 db, day = sys.argv[1], sys.argv[2]
 conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+ROW_SQL = {
+    "limit_runs": "SELECT kind, code, name, board_count, price, pct_change, break_times, industry FROM limit_events WHERE run_id=?",
+    "daily_runs": "SELECT code, open, high, low, close, pre_close, pct_change, volume_lots, amount_thousand_cny FROM daily_rows WHERE run_id=?",
+}
 out = {"trade_date": day, "tables": {}}
-for table in ("limit_runs", "daily_runs"):
+for table, row_sql in ROW_SQL.items():
     row = conn.execute("SELECT COUNT(*), MAX(id) FROM %s WHERE trade_date=?" % table, (day,)).fetchone()
-    entry = {"runs": int(row[0] or 0), "latest_run_id": row[1]}
+    entry = {"runs": int(row[0] or 0), "rows": 0, "payload_sha256": None, "content_sha256": None}
     if row[1] is not None:
-        sha = conn.execute("SELECT payload_sha256 FROM %s WHERE id=?" % table, (row[1],)).fetchone()
-        entry["payload_sha256"] = sha[0] if sha else None
+        run = conn.execute("SELECT payload_sha256 FROM %s WHERE id=?" % table, (row[1],)).fetchone()
+        entry["payload_sha256"] = run[0] if run else None
+        rows = sorted(tuple(item) for item in conn.execute(row_sql, (row[1],)))
+        entry["rows"] = len(rows)
+        raw = json.dumps(rows, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        entry["content_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     out["tables"][table] = entry
 print(json.dumps(out, ensure_ascii=False))
 '''
@@ -267,11 +304,19 @@ def sync_sealed(
             receipt["message"] = f"拉回来的副本打不开：{type(exc).__name__}"
             return receipt
         receipt["local_fingerprint"] = local_fp
-        if remote_fp and local_fp != remote_fp:
+        if remote_fp and _comparable(local_fp) != _comparable(remote_fp):
             receipt["status"] = "verify_failed"
             receipt["gap_code"] = "MARKET-FACTS-PULL-FINGERPRINT-MISMATCH-001"
             receipt["message"] = "副本与 Hermes 的封存指纹不一致，不替换本地库"
             return receipt
+        payload_differs = sorted(
+            t for t in (remote_fp or {}).get("tables", {})
+            if remote_fp["tables"][t].get("payload_sha256")
+            != local_fp["tables"].get(t, {}).get("payload_sha256")
+        )
+        if payload_differs:
+            # 只留痕：行内容一致、provider 返回顺序不同（payload_sha256 顺序敏感）
+            receipt["payload_sha256_differs"] = payload_differs
         if target.is_file():
             shutil.copy2(target, backup)
             receipt["backup"] = str(backup)

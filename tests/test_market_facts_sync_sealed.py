@@ -205,6 +205,56 @@ class SyncSealedTest(unittest.TestCase):
         self.assertEqual([], leftovers)
 
 
+class FingerprintEqualityTest(unittest.TestCase):
+    """跨机等值判据必须是"行内容"，不能是 daily_runs.payload_sha256。
+
+    2026-10-05 对账实测：9-24/28/29/30 两次抓取的行集完全相同，payload_sha256 却不同
+    ——那个哈希对 provider 返回的行顺序敏感。下面用同一批行、不同插入顺序复现。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _db_with_daily_order(self, name, order_reversed):
+        path = self.root / name
+        items = _daily_result(DAY)["data"]["items"]
+        if order_reversed:
+            items = list(reversed(items))
+        payload = {"data": {"items": items, "truncated": False, "total_present": False},
+                   "_meta": {"status": "success", "provider_used": "stocktoday",
+                             "fetched_at": "2026-09-30T17:00:00+08:00"}}
+        MarketFactStore(path).ingest_daily(DAY, payload)
+        return path
+
+    def test_reordered_rows_have_same_content_digest_but_different_payload_hash(self):
+        a = self._db_with_daily_order("a.sqlite3", order_reversed=False)
+        b = self._db_with_daily_order("b.sqlite3", order_reversed=True)
+        fa = sync._fingerprint_local(a, DAY)["tables"]["daily_runs"]
+        fb = sync._fingerprint_local(b, DAY)["tables"]["daily_runs"]
+        self.assertEqual(fa["rows"], fb["rows"])
+        self.assertEqual(fa["content_sha256"], fb["content_sha256"],
+                         "同一批行换个顺序，内容指纹必须一样")
+        self.assertNotEqual(fa["payload_sha256"], fb["payload_sha256"],
+                            "payload_sha256 是顺序敏感的，不能当跨机判据")
+
+    def test_pull_verifies_when_only_the_row_order_differs(self):
+        remote = self._db_with_daily_order("hermes.sqlite3", order_reversed=True)
+        target = self.root / "mac.sqlite3"
+        target.write_bytes(b"old")
+        probe_fp = sync._fingerprint_local(
+            self._db_with_daily_order("hermes-other.sqlite3", order_reversed=False), DAY)
+        receipt = sync.sync_sealed(
+            DAY, target_db=target,
+            probe=lambda: {"ready": True, "reason": "sealed", "fingerprint": probe_fp},
+            fetch=lambda: remote.read_bytes(),
+        )
+        self.assertEqual("pulled", receipt["status"], receipt)
+        self.assertIn("daily_runs", receipt.get("payload_sha256_differs", []),
+                      "顺序导致的信封哈希差要留痕，但不拦替换")
+
+
 class MacLocalSealRefusalTest(unittest.TestCase):
     """Mac 上 `market-facts refresh` 默认拒绝，报错指向 sync-sealed。"""
 
