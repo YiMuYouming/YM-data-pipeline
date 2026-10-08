@@ -18,7 +18,7 @@ from ..sources.pytdx import fetch_quotes as _pytdx_quotes, fetch_breadth, \
     fetch_sector, api_session, _format_amount
 
 _OUTPUT = Path(__file__).resolve().parent.parent.parent / "outputs" / "dashboard_live_new.json"
-_DASHBOARD_DATA = Path.home() / "Documents/YM_Capital/live-dashboard/data/dashboard_data.json"
+_DASHBOARD_DATA = Path(__file__).resolve().parents[4] / "live-dashboard" / "data" / "dashboard_data.json"
 
 
 def get_stock_codes():
