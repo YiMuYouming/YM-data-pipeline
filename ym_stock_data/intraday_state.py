@@ -133,6 +133,32 @@ def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
     return limits
 
 
+def _limit_metadata(provider, trade_date: str):
+    """Dated metadata only; snapshot membership and counts stay authoritative."""
+    try:
+        outcome = provider._request_table("limit_list_d", {"trade_date": trade_date, "limit_type": "U"})
+    except Exception:
+        return {}
+    if outcome.status != "success" or not isinstance(outcome.data, dict):
+        return {}
+    rows = {}
+    for row in outcome.data.get("items") or []:
+        if str(row.get("trade_date")) != trade_date:
+            continue
+        code = str(row.get("ts_code") or "").split(".")[0]
+        if len(code) != 6 or not code.isdigit():
+            continue
+        first = str(row.get("first_time") or "")
+        seal_time = ""
+        if len(first) == 6 and first.isdigit():
+            try:
+                seal_time = datetime.strptime(first, "%H%M%S").strftime("%H:%M:%S")
+            except ValueError:
+                pass
+        rows[code] = {"industry": str(row.get("industry") or ""), "seal_time": seal_time}
+    return rows
+
+
 def _previous_ladder(previous_date: str, db_path=None):
     """Sealed previous-session non-ST up pool with board counts, and broken codes."""
 
@@ -322,6 +348,14 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     )
     for code, board in current_boards.items():
         detail[code]["board"] = board
+    metadata = _limit_metadata(provider, trade_date)
+    for code in limit_sets["up"]:
+        row = metadata.get(code) or {}
+        if row.get("seal_time") and row["seal_time"] > data_as_of.strftime("%H:%M:%S"):
+            row = {}
+        detail[code].update(industry=row.get("industry") or "", seal_time=row.get("seal_time") or "")
+    if any(not detail[c].get("industry") or not detail[c].get("seal_time") for c in limit_sets["up"]):
+        gaps.append("limit_up_metadata_incomplete")
 
     def listing(kind):
         return sorted((detail[c] for c in limit_sets[kind]),
