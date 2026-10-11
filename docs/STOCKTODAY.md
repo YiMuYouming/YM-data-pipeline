@@ -74,7 +74,7 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 服务环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、`YM_STOCKTODAY_PER_DAY=18000`。
 上游返回的 429、限流或 breaker 状态仍会保留，跨进程预算锁也继续生效。
 
-2026-09-27 实测（`shared/research/ssot-audit-2026-09-27/raw/phase0/stocktoday_probe_20260927.txt`）：
+2026-09-27 实测（`shared/archive/research/ssot-audit-2026-09-27/raw/phase0/stocktoday_probe_20260927.txt`）：
 
 - `token_info` 在本网关返回 HTTP 404“接口不存在”，无法用它核对套餐和额度；
   额度按上段供应商文档执行，待弈沐确认实际购买档位。

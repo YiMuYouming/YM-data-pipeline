@@ -1,5 +1,7 @@
 # ym-stock-data
 
+[弈沐资本导航](../README.md) · [文档与历史资料](docs/README.md)
+
 弈沐资本 A 股统一数据通道。canonical checkout 是
 `/Users/yimu/Projects/YM_Capital/YM-data-pipeline`。正式公共入口只有
 `from ym_stock_data import query` 与仓库根 `./ym-data`；所有成功、合法空集和失败都返回
