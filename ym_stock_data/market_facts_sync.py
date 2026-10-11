@@ -193,14 +193,16 @@ def seal_status(
     remote_db: str = DEFAULT_REMOTE_DB,
     prefer_http: bool = True,
 ) -> dict[str, Any]:
-    """就绪判定：先问只读接口；接口连不上才退回 SSH 只读查询。
-
-    接口连得上、但它说这一天没封存，就是明确结论（不再问 SSH）——两个探针问的
-    是同一个库，不需要"两种都认"。
-    """
+    """先问接口；不可达或只返回另一日时，按目标日查权威库。"""
     if prefer_http:
         status = http_seal_status(day, base_url=base_url)
-        if status.get("ready") or not str(status.get("reason") or "").startswith("unreachable:"):
+        served_day = str(status.get("served_trade_date") or "")
+        needs_dated_probe = (
+            str(status.get("reason") or "").startswith("unreachable:")
+            or status.get("reason") == "date_mismatch"
+            or served_day != day
+        )
+        if status.get("ready") or not needs_dated_probe:
             return status
     return ssh_seal_status(day, remote=remote, remote_db=remote_db)
 
