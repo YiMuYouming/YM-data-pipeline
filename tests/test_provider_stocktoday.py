@@ -56,6 +56,32 @@ class StockTodayTests(unittest.TestCase):
     def call(self, **kwargs):
         return query("stocktoday_data", api_name="daily", params={"ts_code": "600519.SH", "trade_date": "20260921"}, **kwargs)
 
+    def test_duplicate_daily_rows_do_not_displace_distinct_sessions(self):
+        rows = [{"ts_code": "600519.SH", "trade_date": day,
+                 "open": 10, "high": 11, "low": 9, "close": 10,
+                 "vol": 100, "amount": 1000}
+                for day in ["20260918", "20260921", "20260922"]]
+        self.response.json.return_value = {"code": 0, "data": rows + [rows[-1]] * 4,
+                                           "columns": list(rows[0]), "total": 7}
+        result = self.provider.call("stock_kline", {"code": "600519", "period": "daily",
+            "count": 3, "end_date": "20260922", "adjustment": "none", "source": "stocktoday"})
+        self.assertEqual(["2026-09-18", "2026-09-21", "2026-09-22"],
+                         [b["datetime"] for b in result.data["bars"]])
+        self.assertEqual(4, result.data["_stocktoday"]["duplicate_bar_count"])
+        public = query("stock_kline", code="600519", period="daily", count=3,
+                       end_date="20260922", adjustment="none", source="stocktoday")
+        self.assertIn("duplicate_bars_removed", public["_meta"]["quality"]["reason_codes"])
+        self.assertEqual(3, public["_meta"]["quality"]["returned_count"])
+
+    def test_conflicting_daily_rows_are_rejected(self):
+        row = {"ts_code": "600519.SH", "trade_date": "20260922",
+               "open": 10, "high": 11, "low": 9, "close": 10, "vol": 100, "amount": 1000}
+        self.response.json.return_value = {"code": 0, "data": [row, {**row, "close": 11}],
+                                           "columns": list(row), "total": 2}
+        result = self.provider.call("stock_kline", {"code": "600519", "period": "daily",
+            "count": 2, "end_date": "20260922", "adjustment": "none", "source": "stocktoday"})
+        self.assertEqual("DUPLICATE_BAR_CONFLICT", result.error_code)
+
     def test_public_dataset_and_bounded_https_transport(self):
         result = self.call()
         self.assertEqual("success", result["_meta"]["status"])

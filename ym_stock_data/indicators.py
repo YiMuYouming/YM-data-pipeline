@@ -9,6 +9,7 @@ functions, so a formula change happens here and nowhere else.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -299,6 +300,21 @@ def summarize(
 # 覆盖率下限：可参与计算的只数 / 样本数 低于它，中军比例就不给数（N2）。
 # 初始值 0.8；覆盖不足时给 null 与 typed gap，比给一个没意义的比例诚实。
 MIN_COVERAGE_FOR_PCT = 0.8
+
+
+def daily_bar_averages(bars: list[Mapping]) -> dict[str, float]:
+    """MA5/MA20 and mean daily amount from one complete 20-bar window."""
+    if len(bars) < 20:
+        raise ValueError("daily indicator window incomplete")
+    window = bars[-20:]
+    for row in window:
+        for key in ("close", "amount"):
+            value = row.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError(f"daily indicator {key} missing or invalid")
+    return {"ma5": sum(row["close"] for row in window[-5:]) / 5,
+            "ma20": sum(row["close"] for row in window) / 20,
+            "mean20_amount": sum(row["amount"] for row in window) / 20}
 
 
 def midcap_score(pct: float | None) -> int | None:

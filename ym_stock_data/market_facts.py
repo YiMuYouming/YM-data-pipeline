@@ -582,7 +582,17 @@ class MarketFactStore:
             turnover_trend = None
             volume_volatility = None
             market_volume = None
-            if len(t_rows) >= 1:
+            volume_day = t_rows[0]["trade_date"] if t_rows else None
+            volume_evidence = {key: {"data_as_of": (
+                f"{volume_day[:4]}-{volume_day[4:6]}-{volume_day[6:]}" if volume_day else None),
+                "status": "ok" if volume_day == day_str else ("stale" if volume_day else "missing")}
+                for key in ("市场量能", "成交额趋势", "量能波动率")}
+            if volume_day != day_str:
+                for key, cell in volume_evidence.items():
+                    cell["source_gap"] = {"gap_code": "market_volume_target_daily_missing", "scope": "advisory",
+                        "severity": "advisory", "affected_actions": ["d0_assessment"], "affected_side": "",
+                        "affected_candidates": [], "evidence_time": cell["data_as_of"], "affected_review_cells": [key]}
+            if volume_day == day_str:
                 amounts = [r["amount_yi"] for r in reversed(t_rows)]
                 market_volume = f"{amounts[-1] / 10000.0:.2f}万亿"
                 if len(t_rows) >= 5:
@@ -709,6 +719,7 @@ class MarketFactStore:
 
         return {
             "市场量能": market_volume,
+            "field_evidence": volume_evidence,
             "成交额趋势": turnover_trend,
             "量能波动率": volume_volatility,
             "昨日涨停家数3日均值": limit_up_count_avg_3d,

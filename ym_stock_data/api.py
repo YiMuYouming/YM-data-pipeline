@@ -1454,6 +1454,11 @@ def _query_with(
     if provider_used == "stocktoday" and isinstance(data, dict):
         observation = data.get("_stocktoday", {})
         result["_meta"]["observation"] = dict(observation)
+        if observation.get("duplicate_bar_count") and result["_meta"]["status"] in {"success", "degraded"}:
+            result["_meta"]["status"] = "degraded"
+            if result["_meta"]["quality"]["status"] == "normal":
+                result["_meta"]["quality"]["status"] = "partial"
+            result["_meta"]["quality"]["reason_codes"].append("duplicate_bars_removed")
         if result["_meta"]["status"] == "success" and observation.get("status") in {"stale", "unknown", "unverified_bar_time"}:
             result["_meta"]["status"] = "degraded"
             result["_meta"]["quality"]["status"] = "semantic_degraded"

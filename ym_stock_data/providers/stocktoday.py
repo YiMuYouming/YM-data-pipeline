@@ -1135,12 +1135,24 @@ class StockTodayProvider:
         if outcome.error_code:
             return outcome
         raw = outcome.data if isinstance(outcome.data, dict) else {}
+        rows = [row for row in raw.get("items", []) if isinstance(row, dict)]
+        wanted_codes = {str(code).split(".")[0] for code in codes}
+        items = [row for row in rows if row.get("type") == INDUSTRY_BOARD_TYPE
+                 and (not wanted_codes or str(row.get("ts_code") or "").split(".")[0] in wanted_codes)
+                 and (not names or row.get("name") in names)]
+        found_codes = {str(row.get("ts_code") or "").split(".")[0] for row in items}
+        found_names = {row.get("name") for row in items}
+        rejected = sorted(wanted_codes - found_codes) + sorted(set(names) - found_names)
+        evidence = {str(row.get("ts_code") or "").split(".")[0]: {
+            "data_as_of": row.get("updated_at") or row.get("trade_time") or row.get("trade_date") or "",
+            "source": "stocktoday:ths_index"} for row in items}
         return ProviderOutcome(
             self.name,
             outcome.status,
             data={
                 "items": items,
                 "missing": rejected,
+                "field_evidence": evidence,
                 "_stocktoday": raw.get("_stocktoday", {}),
             },
             fetched_at=outcome.fetched_at,
@@ -1614,6 +1626,22 @@ class StockTodayProvider:
                     "amount": row["amount"] * (1 if name == "stk_mins" else 1000) if row.get("amount") is not None else None,
                 }
             )
+        if name != "stk_mins":
+            by_session = {}
+            duplicates = 0
+            for bar in bars:
+                previous = by_session.get(bar["datetime"])
+                if previous is not None:
+                    if previous != bar:
+                        return self._fail(started, "DUPLICATE_BAR_CONFLICT")
+                    duplicates += 1
+                else:
+                    by_session[bar["datetime"]] = bar
+            bars = list(by_session.values())
+            if duplicates:
+                observation = dict(observation)
+                observation.update(duplicate_bar_count=duplicates,
+                                   returned_unique_bar_count=len(bars))
         bars = sorted(bars, key=lambda b: b["datetime"])
         if name == "stk_mins":
             requested_count = params.get("count")
