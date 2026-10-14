@@ -349,6 +349,9 @@ def normalize_success(
             missing=[],
         )
         quality["gaps"] = gaps
+        if gaps:
+            quality["status"] = "partial"
+            quality["reason_codes"] = sorted({str(gap.get("gap_code") or "BOARD_FIELD_UNAVAILABLE") for gap in gaps if isinstance(gap, dict)}) or ["BOARD_FIELD_UNAVAILABLE"]
     elif intent == "stock_kline":
         rows = data.get("bars", [])
         quality = assess_quality(

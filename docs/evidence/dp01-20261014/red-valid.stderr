@@ -1,0 +1,132 @@
+test_D10_five_indices_keep_turnover_total_scoped (tests.test_dp01.DP01Tests.test_D10_five_indices_keep_turnover_total_scoped) ... FAIL
+test_D1_suffix_matches_bare_industry_code (tests.test_dp01.DP01Tests.test_D1_suffix_matches_bare_industry_code) ... FAIL
+test_D2_board_strength_gaps_degrade_envelope (tests.test_dp01.DP01Tests.test_D2_board_strength_gaps_degrade_envelope) ... FAIL
+test_D3_http_or_unparseable_page_is_failure (tests.test_dp01.DP01Tests.test_D3_http_or_unparseable_page_is_failure) ... FAIL
+test_D3_legal_empty_has_stable_attempt_code (tests.test_dp01.DP01Tests.test_D3_legal_empty_has_stable_attempt_code) ... FAIL
+test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) ... 
+  test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'status': 'unknown'}) ... FAIL
+  test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'status': 'stale'}) ... FAIL
+  test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'truncated': True}) ... FAIL
+  test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'duplicate_code_count': 1}) ... FAIL
+test_D5_failed_snapshot_empty_preserves_specific_code (tests.test_dp01.DP01Tests.test_D5_failed_snapshot_empty_preserves_specific_code) ... FAIL
+test_D6_empty_board_members_is_legal_empty (tests.test_dp01.DP01Tests.test_D6_empty_board_members_is_legal_empty) ... FAIL
+test_D7_all_failed_kline_reasons_are_preserved (tests.test_dp01.DP01Tests.test_D7_all_failed_kline_reasons_are_preserved) ... ok
+
+======================================================================
+FAIL: test_D10_five_indices_keep_turnover_total_scoped (tests.test_dp01.DP01Tests.test_D10_five_indices_keep_turnover_total_scoped)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 111, in test_D10_five_indices_keep_turnover_total_scoped
+    self.assertEqual(100, data.get("科创50"))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 100 != None
+
+======================================================================
+FAIL: test_D1_suffix_matches_bare_industry_code (tests.test_dp01.DP01Tests.test_D1_suffix_matches_bare_industry_code)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 40, in test_D1_suffix_matches_bare_industry_code
+    self.assertEqual("success", result["_meta"]["status"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'success' != 'empty'
+- success
++ empty
+
+
+======================================================================
+FAIL: test_D2_board_strength_gaps_degrade_envelope (tests.test_dp01.DP01Tests.test_D2_board_strength_gaps_degrade_envelope)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 48, in test_D2_board_strength_gaps_degrade_envelope
+    self.assertEqual("degraded", result["_meta"]["status"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'degraded' != 'success'
+- degraded
++ success
+
+
+======================================================================
+FAIL: test_D3_http_or_unparseable_page_is_failure (tests.test_dp01.DP01Tests.test_D3_http_or_unparseable_page_is_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 62, in test_D3_http_or_unparseable_page_is_failure
+    self.assertEqual("provider_error", outcome.status)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'provider_error' != 'empty'
+- provider_error
++ empty
+
+
+======================================================================
+FAIL: test_D3_legal_empty_has_stable_attempt_code (tests.test_dp01.DP01Tests.test_D3_legal_empty_has_stable_attempt_code)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 56, in test_D3_legal_empty_has_stable_attempt_code
+    self.assertEqual("EMPTY_UPSTREAM", result["_meta"]["attempts"][0]["error_code"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'EMPTY_UPSTREAM' != None
+
+======================================================================
+FAIL: test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'status': 'unknown'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 74, in test_D4_degraded_observations_always_explain_reason
+    self.assertIn(reason, result["_meta"]["quality"]["reason_codes"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'DATA_TIME_UNKNOWN' not found in []
+
+======================================================================
+FAIL: test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'status': 'stale'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 74, in test_D4_degraded_observations_always_explain_reason
+    self.assertIn(reason, result["_meta"]["quality"]["reason_codes"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'DATA_STALE' not found in []
+
+======================================================================
+FAIL: test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'truncated': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 74, in test_D4_degraded_observations_always_explain_reason
+    self.assertIn(reason, result["_meta"]["quality"]["reason_codes"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'UPSTREAM_TRUNCATED' not found in []
+
+======================================================================
+FAIL: test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) (observation={'duplicate_code_count': 1})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 74, in test_D4_degraded_observations_always_explain_reason
+    self.assertIn(reason, result["_meta"]["quality"]["reason_codes"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'DUPLICATE_CODES' not found in []
+
+======================================================================
+FAIL: test_D5_failed_snapshot_empty_preserves_specific_code (tests.test_dp01.DP01Tests.test_D5_failed_snapshot_empty_preserves_specific_code)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 81, in test_D5_failed_snapshot_empty_preserves_specific_code
+    self.assertEqual("SNAPSHOT_BATCH_EMPTY", result["_meta"]["attempts"][0]["error_code"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'SNAPSHOT_BATCH_EMPTY' != 'INVALID_EMPTY'
+- SNAPSHOT_BATCH_EMPTY
++ INVALID_EMPTY
+
+
+======================================================================
+FAIL: test_D6_empty_board_members_is_legal_empty (tests.test_dp01.DP01Tests.test_D6_empty_board_members_is_legal_empty)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 86, in test_D6_empty_board_members_is_legal_empty
+    self.assertEqual("empty", result["_meta"]["status"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'empty' != 'error'
+- empty
++ error
+
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.022s
+
+FAILED (failures=11)

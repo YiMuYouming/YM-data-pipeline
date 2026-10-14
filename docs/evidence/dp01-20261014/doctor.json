@@ -1,0 +1,227 @@
+{
+  "providers": {
+    "board_strength": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "board_strength",
+      "status": "configured_unverified"
+    },
+    "cls": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "cls",
+      "status": "configured_unverified"
+    },
+    "cninfo": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "cninfo",
+      "status": "configured_unverified"
+    },
+    "eastmoney": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney",
+      "status": "configured_unverified"
+    },
+    "eastmoney_breadth": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_breadth",
+      "status": "configured_unverified"
+    },
+    "eastmoney_datacenter": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_datacenter",
+      "status": "configured_unverified"
+    },
+    "eastmoney_index": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_index",
+      "status": "configured_unverified"
+    },
+    "eastmoney_limit_pool": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_limit_pool",
+      "status": "configured_unverified"
+    },
+    "eastmoney_research": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_research",
+      "status": "configured_unverified"
+    },
+    "eastmoney_stock": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "eastmoney_stock",
+      "status": "configured_unverified"
+    },
+    "iwencai_openapi": {
+      "auth": {
+        "required": true,
+        "status": "present"
+      },
+      "breaker": false,
+      "provider": "iwencai_openapi",
+      "status": "configured_unverified"
+    },
+    "market_facts": {
+      "provider": "market_facts",
+      "status": "configured_unverified"
+    },
+    "northbound": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "northbound",
+      "status": "configured_unverified"
+    },
+    "pytdx": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "pytdx",
+      "status": "configured_unverified"
+    },
+    "pytdx_breadth": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "pytdx_breadth",
+      "status": "configured_unverified"
+    },
+    "pytdx_index": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "pytdx_index",
+      "status": "configured_unverified"
+    },
+    "pytdx_screener": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "pytdx_screener",
+      "status": "configured_unverified"
+    },
+    "pywencai": {
+      "provider": "pywencai",
+      "runtime_source": "managed",
+      "status": "configured_unverified"
+    },
+    "sina": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "sina",
+      "status": "configured_unverified"
+    },
+    "sina_index": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "sina_index",
+      "status": "configured_unverified"
+    },
+    "stocktoday": {
+      "auth": {
+        "required": true,
+        "status": "present"
+      },
+      "provider": "stocktoday",
+      "status": "configured_unverified"
+    },
+    "tencent": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "tencent",
+      "status": "configured_unverified"
+    },
+    "ths_hot": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "ths_hot",
+      "status": "configured_unverified"
+    },
+    "ths_industry": {
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "provider": "ths_industry",
+      "status": "configured_unverified"
+    },
+    "wind_documents": {
+      "auth": {
+        "required": true,
+        "status": "unverified"
+      },
+      "provider": "wind_documents",
+      "runtime_scope": "project_compat",
+      "status": "configured_unverified"
+    },
+    "wind_mcp": {
+      "auth": {
+        "required": true,
+        "status": "unverified"
+      },
+      "provider": "wind_mcp",
+      "runtime_scope": "project_compat",
+      "status": "configured_unverified"
+    },
+    "wind_screener": {
+      "auth": {
+        "required": true,
+        "status": "unverified"
+      },
+      "provider": "wind_screener",
+      "runtime_scope": "project_compat",
+      "status": "configured_unverified"
+    }
+  },
+  "schema_version": "1",
+  "summary": {
+    "auth_expired": 0,
+    "auth_missing": 0,
+    "breaker_open": 0,
+    "configured_unverified": 27,
+    "dependency_missing": 0,
+    "ready": 0,
+    "unavailable": 0
+  }
+}

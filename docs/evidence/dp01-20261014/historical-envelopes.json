@@ -1,0 +1,453 @@
+{
+  "market_intraday_state:error:INVALID_EMPTY": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-challenger-0-R3.stdout",
+    "source_sha256": "aa6b7b264df353c9dc387c5d4c5ffae5de4c26ddea54dcb4ee894542335719b8",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "ok": true,
+      "data": null,
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "market_intraday_state",
+        "status": "error",
+        "provider_used": null,
+        "source": null,
+        "source_chain": [
+          "stocktoday"
+        ],
+        "attempts": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "INVALID_EMPTY",
+            "latency_ms": 867
+          }
+        ],
+        "fetched_at": "2026-10-14T11:03:45+08:00",
+        "data_as_of": null,
+        "data_scope": "盘中全市场宽度、情绪、涨跌停、炸板与连板；指标口径见 indicators 登记表",
+        "quality": {
+          "status": "error",
+          "row_shape": "unknown",
+          "expected_row_shape": null,
+          "requested_count": null,
+          "returned_count": 0,
+          "coverage": null,
+          "missing": [],
+          "missing_count": 0,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "source_error",
+            "empty_result"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 600,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": true,
+          "status": "unverified"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "primary",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "INVALID_EMPTY"
+          }
+        ]
+      }
+    }
+  },
+  "sector_index:empty:None": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-challenger-1-R2.stdout",
+    "source_sha256": "52c3095e0470e7009f55178349c30e06b8c93d941194abc8c86304cac4d2855a",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "ok": true,
+      "data": {
+        "items": [],
+        "by_code": {},
+        "by_name": {},
+        "missing": [
+          "881001"
+        ],
+        "source": "ths_industry"
+      },
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "sector_index",
+        "status": "empty",
+        "provider_used": "ths_industry",
+        "source": "ths_industry",
+        "source_chain": [
+          "ths_industry"
+        ],
+        "attempts": [
+          {
+            "provider": "ths_industry",
+            "status": "empty",
+            "error_code": null,
+            "latency_ms": 3566
+          }
+        ],
+        "fetched_at": "2026-10-14T10:01:35+08:00",
+        "data_as_of": null,
+        "data_scope": "同花顺881行业板块指数",
+        "quality": {
+          "status": "empty",
+          "row_shape": "unknown",
+          "expected_row_shape": "sector_rows",
+          "requested_count": 1,
+          "returned_count": 0,
+          "coverage": 0.0,
+          "missing": [
+            "881001"
+          ],
+          "missing_count": 1,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "empty_result",
+            "missing_items",
+            "coverage_shortfall"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 300,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": false,
+          "status": "not_required"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "primary",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "ths_industry",
+            "status": "empty",
+            "error_code": null
+          }
+        ]
+      }
+    }
+  },
+  "board_members:error:STATUS_DATA_MISMATCH": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-market-2-R2.stdout",
+    "source_sha256": "c6c7a71025d04bca346cf0867b78dc8a5cac87a6a4b4fd622357825d0eeeafd8",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "ok": true,
+      "data": null,
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "board_members",
+        "status": "error",
+        "provider_used": null,
+        "source": null,
+        "source_chain": [
+          "stocktoday"
+        ],
+        "attempts": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "STATUS_DATA_MISMATCH",
+            "latency_ms": 949
+          }
+        ],
+        "fetched_at": "2026-10-14T10:08:34+08:00",
+        "data_as_of": null,
+        "data_scope": "同花顺板块成分股（ths_member）；行业与概念共用本意图，按交易日缓存，输出成员代码列表与 data_as_of",
+        "quality": {
+          "status": "error",
+          "row_shape": "unknown",
+          "expected_row_shape": null,
+          "requested_count": null,
+          "returned_count": 0,
+          "coverage": null,
+          "missing": [],
+          "missing_count": 0,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "source_error",
+            "empty_result"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 86400,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": true,
+          "status": "ok"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "primary",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "STATUS_DATA_MISMATCH"
+          }
+        ]
+      }
+    }
+  },
+  "stocktoday_data:empty:None": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-market-3-R2.stdout",
+    "source_sha256": "d9f9c1d0c0b1cbb83470ce4faf376f5208074e2d42967b0f4143862c72107986",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "data": {
+        "api_name": "ths_daily",
+        "items": [],
+        "fields": [],
+        "total": null,
+        "total_present": false,
+        "truncated": false,
+        "_stocktoday": {
+          "endpoint": "https://tushare.citydata.club/ths_daily",
+          "api_name": "ths_daily",
+          "status": "historical_or_reference",
+          "returned_count": 0,
+          "filter_violations": [],
+          "truncated": false
+        }
+      },
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "stocktoday_data",
+        "status": "empty",
+        "provider_used": "stocktoday",
+        "source": "stocktoday",
+        "source_chain": [
+          "stocktoday"
+        ],
+        "attempts": [
+          {
+            "provider": "stocktoday",
+            "status": "empty",
+            "error_code": null
+          }
+        ],
+        "fetched_at": "2026-10-14T10:09:53+08:00",
+        "data_as_of": null,
+        "data_scope": "StockToday 显式只读数据集；时点与完整性见 observation",
+        "quality": {
+          "status": "empty",
+          "row_shape": "unknown",
+          "expected_row_shape": null,
+          "requested_count": null,
+          "returned_count": 0,
+          "coverage": null,
+          "missing": [],
+          "missing_count": 0,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "empty_result"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 60,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": true,
+          "status": "ok"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "explicit",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "stocktoday",
+            "status": "empty",
+            "error_code": null
+          }
+        ],
+        "observation": {
+          "endpoint": "https://tushare.citydata.club/ths_daily",
+          "api_name": "ths_daily",
+          "status": "historical_or_reference",
+          "returned_count": 0,
+          "filter_violations": [],
+          "truncated": false
+        }
+      }
+    }
+  },
+  "stock_kline:error:INVALID_RESPONSE,QUALITY_KLINE_FIELDS": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-stock-0-R2.stdout",
+    "source_sha256": "b952cdfcec59a649227d8bc693a02d69985ed267a688f32309580611f1df54d1",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "ok": true,
+      "data": null,
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "stock_kline",
+        "status": "error",
+        "provider_used": null,
+        "source": null,
+        "source_chain": [
+          "stocktoday",
+          "tencent"
+        ],
+        "attempts": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "INVALID_RESPONSE",
+            "latency_ms": 730
+          },
+          {
+            "provider": "tencent",
+            "status": "quality_failure",
+            "error_code": "QUALITY_KLINE_FIELDS",
+            "latency_ms": 34
+          }
+        ],
+        "fetched_at": "2026-10-14T10:11:05+08:00",
+        "data_as_of": null,
+        "data_scope": "A股个股日周月K线",
+        "quality": {
+          "status": "error",
+          "row_shape": "unknown",
+          "expected_row_shape": null,
+          "requested_count": null,
+          "returned_count": 0,
+          "coverage": null,
+          "missing": [],
+          "missing_count": 0,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "source_error",
+            "empty_result"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 86400,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": true,
+          "status": "unverified"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "fallback",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "stocktoday",
+            "status": "provider_error",
+            "error_code": "INVALID_RESPONSE"
+          },
+          {
+            "provider": "tencent",
+            "status": "quality_failure",
+            "error_code": "QUALITY_KLINE_FIELDS"
+          }
+        ]
+      }
+    }
+  },
+  "sector_index:error:PROVIDER_ERROR": {
+    "source_file": "/Users/yimu/Projects/YM_Capital/_wt/tb01-20261013/trading-bots/docs/evidence/tb01-20261013/Grok-G3-stock-0-R2.stdout",
+    "source_sha256": "b952cdfcec59a649227d8bc693a02d69985ed267a688f32309580611f1df54d1",
+    "kind": "historical public envelope; not a fresh DP01 query",
+    "result": {
+      "ok": true,
+      "data": null,
+      "_meta": {
+        "contract_version": "1.0",
+        "intent": "sector_index",
+        "status": "error",
+        "provider_used": null,
+        "source": null,
+        "source_chain": [
+          "ths_industry"
+        ],
+        "attempts": [
+          {
+            "provider": "ths_industry",
+            "status": "provider_error",
+            "error_code": "PROVIDER_ERROR",
+            "latency_ms": 10458
+          }
+        ],
+        "fetched_at": "2026-10-14T10:11:16+08:00",
+        "data_as_of": null,
+        "data_scope": "同花顺881行业板块指数",
+        "quality": {
+          "status": "error",
+          "row_shape": "unknown",
+          "expected_row_shape": null,
+          "requested_count": null,
+          "returned_count": 0,
+          "coverage": null,
+          "missing": [],
+          "missing_count": 0,
+          "semantic_equivalence": "unknown",
+          "reason_codes": [
+            "source_error",
+            "empty_result"
+          ]
+        },
+        "freshness": {
+          "status": "unknown",
+          "age_sec": null,
+          "max_age_sec": 300,
+          "basis": "no_data_time"
+        },
+        "auth": {
+          "required": false,
+          "status": "not_required"
+        },
+        "trade_usage": "辅助，不单独触发交易",
+        "pipeline_version": "3.0",
+        "route_policy_version": "3.0",
+        "source_tier": "primary",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "attempt_classification_trace": [
+          {
+            "provider": "ths_industry",
+            "status": "provider_error",
+            "error_code": "PROVIDER_ERROR"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "baseline_version": "e472227fca5cb53d56caddab54f2dd3a93509056",
+  "baseline_execution": "same isolated worktree before source changes; excludes DP01 new tests",
+  "baseline_tests_run": 874,
+  "candidate_tests_run": 887,
+  "baseline_unique_test_ids": 874,
+  "candidate_unique_test_ids": 887,
+  "new_failures": [],
+  "lost_prior_passes": [],
+  "missing_ids": [],
+  "added_ids": [
+    "test_dp01.DP01Tests.test_D10_five_indices_keep_turnover_total_scoped",
+    "test_dp01.DP01Tests.test_D1_suffix_matches_bare_industry_code",
+    "test_dp01.DP01Tests.test_D2_board_strength_gaps_degrade_envelope",
+    "test_dp01.DP01Tests.test_D3_builder_fills_missing_failure_code",
+    "test_dp01.DP01Tests.test_D3_http_or_unparseable_page_is_failure",
+    "test_dp01.DP01Tests.test_D3_legal_empty_has_stable_attempt_code",
+    "test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason",
+    "test_dp01.DP01Tests.test_D4_fallback_retry_reports_previous_failure",
+    "test_dp01.DP01Tests.test_D5_failed_snapshot_empty_preserves_specific_code",
+    "test_dp01.DP01Tests.test_D5_limit_latency_counts_entire_composite",
+    "test_dp01.DP01Tests.test_D6_empty_board_members_is_legal_empty",
+    "test_dp01.DP01Tests.test_D7_all_failed_kline_reasons_are_preserved",
+    "test_dp01.DP01Tests.test_D9_volume_and_average_price_are_not_index_points"
+  ],
+  "baseline_nonpassing": {
+    "unittest.loader._FailedTest.test_global_skill_v3": "error",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query": "skipped",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query_rank": "skipped",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query_stocks": "skipped",
+    "test_midcap_indicator.TestMidcapIndicator.test_market_facts_style_inputs_real_db": "error",
+    "test_pytdx.PytdxLiveIntegrationTests.test_connection_and_read_matrix": "skipped",
+    "test_sources.LegacySourceLiveIntegrationTests.test_zero_auth_source_matrix": "skipped"
+  },
+  "candidate_nonpassing": {
+    "unittest.loader._FailedTest.test_global_skill_v3": "error",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query": "skipped",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query_rank": "skipped",
+    "test_iwencai.IWenCaiLiveIntegrationTests.test_query_stocks": "skipped",
+    "test_midcap_indicator.TestMidcapIndicator.test_market_facts_style_inputs_real_db": "error",
+    "test_pytdx.PytdxLiveIntegrationTests.test_connection_and_read_matrix": "skipped",
+    "test_sources.LegacySourceLiveIntegrationTests.test_zero_auth_source_matrix": "skipped"
+  },
+  "passed": true
+}

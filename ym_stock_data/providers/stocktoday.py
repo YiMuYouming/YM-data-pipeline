@@ -864,6 +864,7 @@ class StockTodayProvider:
         from ..sources.limit_state import derive_limit_promotion
         from ..trading_calendar import previous_trading_day
 
+        started = self.clock.monotonic()
         requested = params.get("date")
         trade_date = self._limit_target_date(requested)
         current, last = self._collect_limit_pools(trade_date)
@@ -910,7 +911,7 @@ class StockTodayProvider:
             "success" if current else "empty",
             data=data,
             fetched_at=last.fetched_at if last else None,
-            latency_ms=last.latency_ms if last else 0,
+            latency_ms=int((self.clock.monotonic() - started) * 1000),
             auth=last.auth if last else None,
             provenance=last.provenance if last else None,
         )
@@ -924,7 +925,9 @@ class StockTodayProvider:
                 self, now=datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI)
             )
         except intraday_state.IntradayStateError as error:
-            return self._fail(started, error.code, error.status)
+            # A missing mandatory snapshot batch is a failed composite, not a
+            # legitimate empty table. Keep the specific source error intact.
+            return self._fail(started, error.code, "provider_error" if error.status == "empty" else error.status)
         if intent == "review_sentiment":
             summary = state["indicators"]
             data = {

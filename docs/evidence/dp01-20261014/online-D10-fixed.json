@@ -1,0 +1,91 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D10-fixed",
+  "intent": "realtime_market",
+  "params": {},
+  "started_at": "2026-10-14T06:48:58.775637+00:00",
+  "result": {
+    "data": {
+      "上证指数": 3765.78,
+      "上证指数涨幅": "-0.92%",
+      "上证指数成交额": "6207.84亿",
+      "上证指数振幅": "1.31%",
+      "深证指数": 12106.69,
+      "深证指数涨幅": "-2.00%",
+      "深证指数成交额": "7047.91亿",
+      "深证指数振幅": "2.32%",
+      "创业指数": 2864.95,
+      "创业指数涨幅": "-3.16%",
+      "创业指数成交额": "3368.82亿",
+      "创业指数振幅": "3.31%",
+      "科创50": 1379.38,
+      "科创50涨幅": "-3.35%",
+      "科创50成交额": "532.10亿",
+      "科创50振幅": "3.50%",
+      "上证50": 2775.87,
+      "上证50涨幅": "-1.12%",
+      "上证50成交额": "957.90亿",
+      "上证50振幅": "1.16%",
+      "成交额": "1.33万亿",
+      "_source": "tencent_index_fallback",
+      "quote_time": "2026-10-14T14:48:54+08:00"
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "realtime_market",
+      "status": "success",
+      "provider_used": "tencent",
+      "source": "tencent",
+      "source_chain": [
+        "tencent"
+      ],
+      "attempts": [
+        {
+          "provider": "tencent",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 214
+        }
+      ],
+      "fetched_at": "2026-10-14T14:48:59+08:00",
+      "data_as_of": "2026-10-14T14:48:54+08:00",
+      "data_scope": "A股三大指数、成交额与涨跌家数；当前 StockToday 套餐不含指数实时，腾讯为首要源",
+      "quality": {
+        "status": "normal",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 1,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": []
+      },
+      "freshness": {
+        "age_sec": 5,
+        "max_age_sec": 600,
+        "basis": "data_as_of",
+        "status": "fresh"
+      },
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "tencent",
+          "status": "success",
+          "error_code": null
+        }
+      ]
+    }
+  },
+  "elapsed_ms": 241,
+  "transport_timing": []
+}

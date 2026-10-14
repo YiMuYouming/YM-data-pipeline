@@ -62,6 +62,7 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
             "by_name": {},
             "missing": list(codes or []) + list(names or []),
             "error": rows["error"],
+            "error_type": rows.get("error_type", "PROVIDER_ERROR"),
             "source": "ths_industry",
         }
 
@@ -71,7 +72,7 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
     missing = []
 
     for code in codes or []:
-        normalized = str(code).strip()
+        normalized = str(code).strip().removesuffix(".TI")
         row = by_code.get(normalized)
         if row:
             selected.append(row)
@@ -112,13 +113,17 @@ def _fetch_all_industry_rows(max_pages: int = 5) -> list[dict] | dict:
     try:
         for page in range(1, max_pages + 1):
             resp = requests.get(_URL_TEMPLATE.format(page=page), headers=_HEADERS, timeout=10)
+            if resp.status_code != 200:
+                return {"error": "industry HTTP failure", "error_type": f"HTTP_{resp.status_code}"}
             resp.encoding = "gbk"
             page_rows = _parse_industry_rows(resp.text)
             if not page_rows:
+                if not rows:
+                    return {"error": "industry table not parsed", "error_type": "PARSE_FAILED"}
                 break
             rows.extend(page_rows)
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "industry request failed", "error_type": "TIMEOUT" if isinstance(e, requests.Timeout) else "NETWORK_ERROR"}
     return rows
 
 
@@ -164,13 +169,17 @@ def _parse_industry_rows(html: str) -> list[dict]:
             "code": code,
             "name": name,
             "change_pct": change_pct,
-            "latest": _parse_float(tds[3]),
+            # This summary page has volume here, not index points. Preserve
+            # the old key as unavailable rather than relabeling volume as price.
+            "latest": None,
+            "volume_wan_lots": _parse_float(tds[3]),
             "turnover_yi": _parse_float(tds[4]),
             "net_inflow_yi": net_inflow,
             "main_net_inflow_yi": net_inflow,
             "up_count": _parse_int(tds[6]),
             "down_count": _parse_int(tds[7]),
-            "flat_count": _parse_int(tds[8]) if len(tds) >= 9 else 0,
+            "flat_count": None,
+            "avg_price": _parse_float(tds[8]) if len(tds) >= 9 else None,
             "leader": leader,
             "leader_price": leader_price,
             "leader_change_pct": leader_chg,

@@ -1,0 +1,25 @@
+test_D5_limit_latency_counts_entire_composite (tests.test_dp01.DP01Tests.test_D5_limit_latency_counts_entire_composite) ... FAIL
+test_D9_volume_and_average_price_are_not_index_points (tests.test_dp01.DP01Tests.test_D9_volume_and_average_price_are_not_index_points) ... FAIL
+
+======================================================================
+FAIL: test_D5_limit_latency_counts_entire_composite (tests.test_dp01.DP01Tests.test_D5_limit_latency_counts_entire_composite)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 109, in test_D5_limit_latency_counts_entire_composite
+    self.assertEqual(5000, outcome.latency_ms)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 5000 != 400
+
+======================================================================
+FAIL: test_D9_volume_and_average_price_are_not_index_points (tests.test_dp01.DP01Tests.test_D9_volume_and_average_price_are_not_index_points)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline/tests/test_dp01.py", line 114, in test_D9_volume_and_average_price_are_not_index_points
+    self.assertIsNone(row["latest"])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+AssertionError: 910.64 is not None
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.005s
+
+FAILED (failures=2)

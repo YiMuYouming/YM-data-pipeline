@@ -1,0 +1,94 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D4-event",
+  "intent": "stock_event",
+  "params": {
+    "code": "301041",
+    "event": "lockup"
+  },
+  "started_at": "2026-10-14T06:43:47.926382+00:00",
+  "result": {
+    "data": {
+      "event": "lockup",
+      "code": "301041",
+      "total": 3,
+      "items": [
+        {
+          "date": "2024-08-12",
+          "type": "首发原股东限售股份",
+          "shares": 7890.3764,
+          "able_shares": 4492.4232
+        },
+        {
+          "date": "2022-08-11",
+          "type": "首发原股东限售股份",
+          "shares": 5119.8768,
+          "able_shares": 3507.5768
+        },
+        {
+          "date": "2022-02-11",
+          "type": "首发机构配售股份",
+          "shares": 2668,
+          "able_shares": 137.4568
+        }
+      ],
+      "source": "eastmoney_datacenter"
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "stock_event",
+      "status": "success",
+      "provider_used": "eastmoney_datacenter",
+      "source": "eastmoney_datacenter",
+      "source_chain": [
+        "eastmoney_datacenter"
+      ],
+      "attempts": [
+        {
+          "provider": "eastmoney_datacenter",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 129
+        }
+      ],
+      "fetched_at": "2026-10-14T14:43:48+08:00",
+      "data_as_of": null,
+      "data_scope": "个股白名单低频事件",
+      "quality": {
+        "status": "normal",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 3,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": []
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 86400,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "eastmoney_datacenter",
+          "status": "success",
+          "error_code": null
+        }
+      ]
+    }
+  },
+  "elapsed_ms": 158
+}

@@ -57,6 +57,45 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 完整 ownership、setup、doctor 状态、capability 和 automatic fallback 表见 `README.md`。
 
+## DP-01 空、失败、降级与板块口径
+
+`attempts[].error_code`：成功可为 null；合法空表使用 `EMPTY_UPSTREAM`，不表示源不可用。
+失败保留具体原因：`INVALID_RESPONSE`（无效 wire/table 或业务 shape）、
+`INVALID_EMPTY`（声明空但 shape 无效）、`STATUS_DATA_MISMATCH`（声明空但含业务行）、
+`PARSE_FAILED`（同花顺第一页未能解析）、`HTTP_<status>`、`DEPENDENCY_MISSING`、
+`PLAN_NOT_ENTITLED`、`AUTH_DENIED`、`RATE_LIMITED` 与具体 `QUALITY_*`。不得从无效页、
+缺依赖或缺必需快照批次推断合法空。`board_members` 的业务行容器是 `boards`；
+空 `boards` 与缺少该容器不同。盘中全市场必需批次空报 `SNAPSHOT_BATCH_EMPTY`，
+整个复合意图为 error，保留最后正常值的决定仍由消费者执行。
+
+每个 degraded 信封必须带 `quality.reason_codes`。降级链保留先前失败码；
+StockToday 的 unknown/stale 时间、截断、缺代码、重复代码分别写
+`DATA_TIME_UNKNOWN`、`DATA_STALE`、`UPSTREAM_TRUNCATED`、`MISSING_CODES`、
+`DUPLICATE_CODES`。字段覆盖短缺沿用 `missing_items` / `coverage_shortfall`；
+板块强度的 typed gap 同时进入 `quality.gaps` 和 reason_codes，不能用 normal
+包裹全字段 missing。无法细分的已有 partial 原因用 `QUALITY_PARTIAL`，不冒充套餐或鉴权错误。
+
+`sector_index` 的行业代码允许裸 `881xxx` 或 `.TI` 后缀；网页输出仍是裸 code。
+同花顺行业摘要不含行业指数点位：第 4 列是 `volume_wan_lots`（万手），第 9 列是
+`avg_price`（元），不是点位或平盘家数。兼容字段 `latest` / `flat_count` 留 null。
+`stocktoday_data(api_name="ths_daily", params=...)` 的 OHLC 则是供应商行业指数日线点位，
+`avg_price` 是另一个字段。两边数据时间和量纲不同，不能拿成交量与日线 close 比价。
+
+`market_board_strength` 必须给 `board_ids` 或 definitions 才有选择集；空选择集是
+empty，不表示全市场无板块。`member_coverage` 由持有成员证据的调用方给，缺失或
+低于 0.8 时字段保持 null；不自动赋 1.0。相对五日线、逐板块中军尚无生产者，
+概念不使用行业资金流替代。源缺口如实保留，相关能力方案见 DP-01 证据目录。
+
+`market_limit_state` 读取按日发布的 `limit_list_d` / `limit_step`，盘中当天表可能
+尚无行；合法上游空不证明实时涨跌停为零。盘中状态使用 `market_intraday_state`，
+不得把每日空表当成实时值。`latency_ms` 对成功/合法空的涨跌停复合查询记录全部
+子请求耗时；既有空池三次读取策略本次不增加重试、不改额度。
+
+`realtime_market` 的腾讯快照增加科创50（000688.SH）、上证50（000016.SH），保持
+原上证、深成、创业板字段。成交额仍只累加上证和深成，避免子集指数重复计入；
+它是现有沪深口径，不是含北交所的全市场成交额。科创50/上证50按供应商响应提供，
+本次不新建 N1 实时指数意图、不扩指数分钟 K 线路由。
+
 ## 下游与回滚
 
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。

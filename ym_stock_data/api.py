@@ -690,7 +690,7 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
-    if intent == "market_board_strength":
+    if intent in {"market_board_strength", "board_members"}:
         boards = data.get("boards")
         count = len(boards) if isinstance(boards, list) else 0
         return isinstance(boards, list), isinstance(boards, list) and not boards, count
@@ -1347,7 +1347,7 @@ def _query_with(
                 empty_attempt = ProviderAttempt(
                     actual,
                     terminal,
-                    None,
+                    "EMPTY_UPSTREAM",
                     max(0, int(outcome.latency_ms)),
                 )
                 if (
@@ -1367,7 +1367,7 @@ def _query_with(
                 spec=spec,
                 attempts=attempts,
             )
-            attempts.append(ProviderAttempt(actual, terminal, None, max(0, int(outcome.latency_ms))))
+            attempts.append(ProviderAttempt(actual, terminal, "EMPTY_UPSTREAM" if is_empty else None, max(0, int(outcome.latency_ms))))
             provider_used = actual
             final_count = count
             fetched_at = outcome.fetched_at
@@ -1492,6 +1492,23 @@ def _query_with(
             result["_meta"]["status"] = "degraded"
         if result["_meta"]["quality"]["status"] == "normal":
             result["_meta"]["quality"]["status"] = "semantic_degraded"
+    if result["_meta"]["status"] in {"success", "degraded"}:
+        reasons = result["_meta"]["quality"]["reason_codes"]
+        observation = result["_meta"].get("observation") or {}
+        observed_reasons = []
+        state_reason = {"stale": "DATA_STALE", "unknown": "DATA_TIME_UNKNOWN", "unverified_bar_time": "QUALITY_KLINE_BAR_TIME"}.get(observation.get("status"))
+        if state_reason:
+            observed_reasons.append(state_reason)
+        for key, code in (("truncated", "UPSTREAM_TRUNCATED"), ("missing_codes", "MISSING_CODES"), ("duplicate_code_count", "DUPLICATE_CODES")):
+            if observation.get(key):
+                observed_reasons.append(code)
+        for code in observed_reasons:
+            if code not in reasons:
+                reasons.append(code)
+        if intent == "market_board_strength" and result["_meta"]["quality"].get("gaps"):
+            result["_meta"]["status"] = "degraded"
+        if result["_meta"]["status"] == "degraded" and not reasons:
+            reasons.append("QUALITY_PARTIAL")
     return result
 
 

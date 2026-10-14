@@ -1,0 +1,148 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D6",
+  "intent": "board_members",
+  "params": {
+    "codes": [
+      "881270.TI"
+    ],
+    "trade_date": "20261014"
+  },
+  "started_at": "2026-10-14T06:43:42.901954+00:00",
+  "result": {
+    "data": {
+      "data_as_of": "20261014",
+      "boards": [
+        {
+          "board_id": "881270.TI",
+          "members": [
+            "002938.SZ",
+            "002579.SZ",
+            "920128.BJ",
+            "300476.SZ",
+            "001389.SZ",
+            "002636.SZ",
+            "002199.SZ",
+            "603459.SH",
+            "920821.BJ",
+            "002916.SZ",
+            "603175.SH",
+            "301176.SZ",
+            "301282.SZ",
+            "300964.SZ",
+            "000823.SZ",
+            "600237.SH",
+            "002484.SZ",
+            "002436.SZ",
+            "603228.SH",
+            "603186.SH",
+            "603920.SH",
+            "300408.SZ",
+            "300852.SZ",
+            "920641.BJ",
+            "002463.SZ",
+            "002384.SZ",
+            "300739.SZ",
+            "605258.SH",
+            "301458.SZ",
+            "301628.SZ",
+            "920060.BJ",
+            "600183.SH",
+            "002141.SZ",
+            "002134.SZ",
+            "300460.SZ",
+            "300936.SZ",
+            "002552.SZ",
+            "920981.BJ",
+            "605058.SH",
+            "001232.SZ",
+            "301366.SZ",
+            "688655.SH",
+            "002815.SZ",
+            "600601.SH",
+            "301132.SZ",
+            "301251.SZ",
+            "603328.SH",
+            "300319.SZ",
+            "300903.SZ",
+            "301041.SZ",
+            "300814.SZ",
+            "002138.SZ",
+            "688183.SH",
+            "603386.SH",
+            "301566.SZ",
+            "688519.SH",
+            "603738.SH",
+            "002913.SZ",
+            "600563.SH",
+            "603936.SH",
+            "603989.SH",
+            "000636.SZ",
+            "300657.SZ"
+          ],
+          "member_count": 63,
+          "fetched_at": "2026-10-14T14:43:43+08:00"
+        }
+      ],
+      "missing": [],
+      "source": "stocktoday:ths_member"
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "board_members",
+      "status": "success",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 356
+        }
+      ],
+      "fetched_at": "2026-10-14T14:43:43+08:00",
+      "data_as_of": null,
+      "data_scope": "同花顺板块成分股（ths_member）；行业与概念共用本意图，按交易日缓存，输出成员代码列表与 data_as_of",
+      "quality": {
+        "status": "normal",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": 1,
+        "returned_count": 1,
+        "coverage": 1.0,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": []
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 86400,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null
+        }
+      ],
+      "observation": {}
+    }
+  },
+  "elapsed_ms": 384
+}

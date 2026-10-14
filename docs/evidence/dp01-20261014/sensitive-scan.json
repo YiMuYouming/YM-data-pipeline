@@ -1,0 +1,8 @@
+{
+  "observed_at": "2026-10-14T06:58:45.726661+00:00",
+  "scope": "changed delivery files only; no credential stores read",
+  "file_count": 67,
+  "blocked_sensitive_paths": [],
+  "literal_findings": [],
+  "passed": true
+}

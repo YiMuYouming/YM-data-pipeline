@@ -1,0 +1,16 @@
+test_D10_five_indices_keep_turnover_total_scoped (tests.test_dp01.DP01Tests.test_D10_five_indices_keep_turnover_total_scoped) ... ok
+test_D1_suffix_matches_bare_industry_code (tests.test_dp01.DP01Tests.test_D1_suffix_matches_bare_industry_code) ... ok
+test_D2_board_strength_gaps_degrade_envelope (tests.test_dp01.DP01Tests.test_D2_board_strength_gaps_degrade_envelope) ... ok
+test_D3_builder_fills_missing_failure_code (tests.test_dp01.DP01Tests.test_D3_builder_fills_missing_failure_code) ... ok
+test_D3_http_or_unparseable_page_is_failure (tests.test_dp01.DP01Tests.test_D3_http_or_unparseable_page_is_failure) ... ok
+test_D3_legal_empty_has_stable_attempt_code (tests.test_dp01.DP01Tests.test_D3_legal_empty_has_stable_attempt_code) ... ok
+test_D4_degraded_observations_always_explain_reason (tests.test_dp01.DP01Tests.test_D4_degraded_observations_always_explain_reason) ... ok
+test_D4_fallback_retry_reports_previous_failure (tests.test_dp01.DP01Tests.test_D4_fallback_retry_reports_previous_failure) ... ok
+test_D5_failed_snapshot_empty_preserves_specific_code (tests.test_dp01.DP01Tests.test_D5_failed_snapshot_empty_preserves_specific_code) ... ok
+test_D6_empty_board_members_is_legal_empty (tests.test_dp01.DP01Tests.test_D6_empty_board_members_is_legal_empty) ... ok
+test_D7_all_failed_kline_reasons_are_preserved (tests.test_dp01.DP01Tests.test_D7_all_failed_kline_reasons_are_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.020s
+
+OK

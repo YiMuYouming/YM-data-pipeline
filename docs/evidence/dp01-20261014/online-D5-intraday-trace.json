@@ -1,0 +1,81 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D5-intraday-trace",
+  "intent": "market_intraday_state",
+  "params": {},
+  "started_at": "2026-10-14T06:48:59.354616+00:00",
+  "result": {
+    "data": null,
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "market_intraday_state",
+      "status": "error",
+      "provider_used": null,
+      "source": null,
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "provider_error",
+          "error_code": "SNAPSHOT_BATCH_EMPTY",
+          "latency_ms": 1268
+        }
+      ],
+      "fetched_at": "2026-10-14T14:49:00+08:00",
+      "data_as_of": null,
+      "data_scope": "盘中全市场宽度、情绪、涨跌停、炸板与连板；指标口径见 indicators 登记表",
+      "quality": {
+        "status": "error",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 0,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": [
+          "source_error",
+          "empty_result"
+        ]
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 600,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": true,
+        "status": "unverified"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "provider_error",
+          "error_code": "SNAPSHOT_BATCH_EMPTY"
+        }
+      ]
+    }
+  },
+  "elapsed_ms": 1294,
+  "transport_timing": [
+    {
+      "api_name": "rt_k",
+      "http_status": 200,
+      "elapsed_ms": 1040
+    },
+    {
+      "api_name": "rt_k",
+      "http_status": 200,
+      "elapsed_ms": 197
+    }
+  ]
+}

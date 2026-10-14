@@ -1,0 +1,10 @@
+{
+  "observed_at": "2026-10-14T06:53:55.561470+00:00",
+  "main_path": "/Users/yimu/Projects/YM_Capital/YM-data-pipeline",
+  "expected_head": "e472227fca5cb53d56caddab54f2dd3a93509056",
+  "actual_head": "e472227fca5cb53d56caddab54f2dd3a93509056",
+  "status": "",
+  "tracked_file_count": 192,
+  "tracked_content_drift": [],
+  "worktree_baseline_version": "e472227fca5cb53d56caddab54f2dd3a93509056"
+}

@@ -63,7 +63,7 @@ _ROUTES = {
     "realtime_market": RouteSpec(
         intent="realtime_market",
         providers=("tencent",),
-        data_scope="A股三大指数、成交额与涨跌家数；当前 StockToday 套餐不含指数实时，腾讯为首要源",
+        data_scope="上证、深成、创业板、科创50、上证50及沪深成交额；当前 StockToday 套餐不含指数实时，腾讯为首要源",
         trade_usage=_TRADE_USAGE,
         max_age_sec=600,
         empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -71,7 +71,7 @@ _ROUTES = {
     "sector_index": RouteSpec(
         intent="sector_index",
         providers=("ths_industry",),
-        data_scope="同花顺881行业板块指数",
+        data_scope="同花顺881行业涨跌幅、成交量/额、资金流与均价；行业摘要不含指数点位",
         trade_usage=_TRADE_USAGE,
         max_age_sec=300,
     ),

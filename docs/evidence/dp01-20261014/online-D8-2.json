@@ -1,0 +1,162 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D8-2",
+  "intent": "stocktoday_data",
+  "params": {
+    "api_name": "ths_daily",
+    "params": {
+      "ts_code": "881270.TI",
+      "start_date": "20261009",
+      "end_date": "20261014"
+    }
+  },
+  "started_at": "2026-10-14T06:43:45.487947+00:00",
+  "result": {
+    "data": {
+      "api_name": "ths_daily",
+      "items": [
+        {
+          "ts_code": "881270.TI",
+          "trade_date": "20261013",
+          "open": 23432.625,
+          "high": 25686.675,
+          "low": 23140.129,
+          "close": 25391.424,
+          "pre_close": 24175.759,
+          "avg_price": 49.6351,
+          "change": 1215.665,
+          "pct_change": 5.0284,
+          "vol": 19799996.0,
+          "turnover_rate": 5.482091,
+          "total_mv": null,
+          "float_mv": null
+        },
+        {
+          "ts_code": "881270.TI",
+          "trade_date": "20261012",
+          "open": 24878.953,
+          "high": 25173.333,
+          "low": 24170.282,
+          "close": 24175.759,
+          "pre_close": 25118.875,
+          "avg_price": 52.7624,
+          "change": -943.116,
+          "pct_change": -3.7546,
+          "vol": 15918361.0,
+          "turnover_rate": 4.40737,
+          "total_mv": null,
+          "float_mv": null
+        },
+        {
+          "ts_code": "881270.TI",
+          "trade_date": "20261009",
+          "open": 25808.168,
+          "high": 25808.168,
+          "low": 24042.65,
+          "close": 25118.875,
+          "pre_close": 26064.384,
+          "avg_price": 51.5297,
+          "change": -945.509,
+          "pct_change": -3.6276,
+          "vol": 20252454.0,
+          "turnover_rate": 5.607365,
+          "total_mv": null,
+          "float_mv": null
+        }
+      ],
+      "fields": [
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "pre_close",
+        "avg_price",
+        "change",
+        "pct_change",
+        "vol",
+        "turnover_rate",
+        "total_mv",
+        "float_mv"
+      ],
+      "total": null,
+      "total_present": false,
+      "truncated": false,
+      "_stocktoday": {
+        "endpoint": "https://tushare.citydata.club/ths_daily",
+        "api_name": "ths_daily",
+        "status": "historical_or_reference",
+        "returned_count": 3,
+        "filter_violations": [],
+        "latest_trade_date": "20261013",
+        "truncated": false
+      }
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "stocktoday_data",
+      "status": "success",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 425
+        }
+      ],
+      "fetched_at": "2026-10-14T14:43:45+08:00",
+      "data_as_of": null,
+      "data_scope": "StockToday 显式只读数据集；时点与完整性见 observation",
+      "quality": {
+        "status": "normal",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 3,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": []
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 60,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "explicit",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null
+        }
+      ],
+      "observation": {
+        "endpoint": "https://tushare.citydata.club/ths_daily",
+        "api_name": "ths_daily",
+        "status": "historical_or_reference",
+        "returned_count": 3,
+        "filter_violations": [],
+        "latest_trade_date": "20261013",
+        "truncated": false
+      }
+    }
+  },
+  "elapsed_ms": 454
+}

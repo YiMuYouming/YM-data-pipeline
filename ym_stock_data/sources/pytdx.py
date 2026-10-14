@@ -344,7 +344,7 @@ def _tencent_quote_time(value: str) -> str | None:
 
 def _fallback_index_tencent() -> dict:
     """Second no-auth index fallback when Eastmoney is unavailable."""
-    url = "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006"
+    url = "https://qt.gtimg.cn/q=sh000001,sz399001,sz399006,sh000688,sh000016"
     try:
         req = urllib.request.Request(url, headers={
             "User-Agent": "Mozilla/5.0",
@@ -359,6 +359,8 @@ def _fallback_index_tencent() -> dict:
         "sh000001": "上证指数",
         "sz399001": "深证指数",
         "sz399006": "创业指数",
+        "sh000688": "科创50",
+        "sh000016": "上证50",
     }
     result = {}
     amount_total = 0.0

@@ -1,0 +1,127 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D4-snapshot",
+  "intent": "stock_snapshot",
+  "params": {
+    "codes": [
+      "301041"
+    ]
+  },
+  "started_at": "2026-10-14T06:43:46.859615+00:00",
+  "result": {
+    "data": {
+      "_stocktoday": {
+        "endpoint": "https://tushare.citydata.club/rt_k",
+        "api_name": "rt_k",
+        "status": "fresh",
+        "returned_count": 1,
+        "filter_violations": [],
+        "unique_code_count": 1,
+        "duplicate_code_count": 0,
+        "timestamp_kind": "provider_updated_at_or_trade_time",
+        "missing_codes": [],
+        "timestamp_coverage": 1.0,
+        "oldest_at": "2026-10-14T14:43:15+08:00",
+        "latest_at": "2026-10-14T14:43:15+08:00",
+        "age_sec": 32,
+        "max_age_sec": 600,
+        "truncated": false
+      },
+      "301041": {
+        "name": "金百泽",
+        "price": 38.98,
+        "last_close": 40.14,
+        "open": 40.72,
+        "high": 41.5,
+        "low": 38.64,
+        "change_pct": -2.8898854010961705,
+        "amount": 787627945,
+        "amount_wan": 78762.7945,
+        "volume": 19691042,
+        "quote_time": "2026-10-14T14:43:15+08:00",
+        "source": "stocktoday"
+      }
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "stock_snapshot",
+      "status": "success",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 339
+        }
+      ],
+      "fetched_at": "2026-10-14T14:43:47+08:00",
+      "data_as_of": "2026-10-14T14:43:15+08:00",
+      "data_scope": "A股个股实时行情与标准化报价字段",
+      "quality": {
+        "status": "normal",
+        "row_shape": "stock_rows",
+        "expected_row_shape": "stock_rows",
+        "requested_count": 1,
+        "returned_count": 1,
+        "coverage": 1.0,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "exact",
+        "reason_codes": []
+      },
+      "freshness": {
+        "age_sec": 32,
+        "max_age_sec": 600,
+        "basis": "data_as_of",
+        "status": "fresh"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null
+        }
+      ],
+      "filled_by_fallback": [],
+      "fill_attempt": {
+        "provider": "tencent",
+        "requested": [],
+        "filled": [],
+        "status": null,
+        "error_code": null
+      },
+      "observation": {
+        "endpoint": "https://tushare.citydata.club/rt_k",
+        "api_name": "rt_k",
+        "status": "fresh",
+        "returned_count": 1,
+        "filter_violations": [],
+        "unique_code_count": 1,
+        "duplicate_code_count": 0,
+        "timestamp_kind": "provider_updated_at_or_trade_time",
+        "missing_codes": [],
+        "timestamp_coverage": 1.0,
+        "oldest_at": "2026-10-14T14:43:15+08:00",
+        "latest_at": "2026-10-14T14:43:15+08:00",
+        "age_sec": 32,
+        "max_age_sec": 600,
+        "truncated": false
+      }
+    }
+  },
+  "elapsed_ms": 367
+}

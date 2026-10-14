@@ -88,6 +88,22 @@ def build_result(
     """
 
     timestamp = fetched_at or _now_iso()
+    defaults = {
+        "empty": "EMPTY_UPSTREAM", "auth_error": "AUTH_ERROR",
+        "dependency_missing": "DEPENDENCY_MISSING", "timeout": "TIMEOUT",
+        "network_error": "NETWORK_ERROR", "provider_error": "PROVIDER_ERROR",
+        "quality_failure": "QUALITY_FAILED", "breaker_open": "BREAKER_OPEN",
+        "incompatible": "INCOMPATIBLE_PROVIDER",
+    }
+    attempts = [ProviderAttempt(a.provider, a.status, a.error_code or defaults.get(a.status), a.latency_ms) for a in attempts]
+    quality = dict(quality)
+    quality["reason_codes"] = list(quality.get("reason_codes") or [])
+    if status == "degraded":
+        for attempt in attempts:
+            if attempt.status != "success" and attempt.error_code not in quality["reason_codes"]:
+                quality["reason_codes"].append(attempt.error_code)
+        if not quality["reason_codes"]:
+            quality["reason_codes"].append("QUALITY_PARTIAL")
     result = {
         "data": data,
         "_meta": {

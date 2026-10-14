@@ -1,0 +1,143 @@
+{
+  "commands": [
+    {
+      "label": "compileall",
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/0a4927e98ddf758747b69f871bdc8811fb1487b4b8278d7bf328818099a37f79/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "ym_stock_data",
+        "scripts",
+        "tests",
+        "docs/evidence/dp01-20261014"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_at": "2026-10-14T07:04:28.279021+00:00",
+      "elapsed_ms": 43,
+      "exit_code": 0,
+      "stdout": "compileall.stdout",
+      "stderr": "compileall.stderr"
+    },
+    {
+      "label": "diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "HEAD",
+        "--check",
+        "--",
+        ".",
+        ":(exclude)docs/evidence/dp01-20261014/ths-page-*.html",
+        ":(exclude)docs/evidence/dp01-20261014/*.stderr"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_at": "2026-10-14T07:04:28.322291+00:00",
+      "elapsed_ms": 17,
+      "exit_code": 0,
+      "stdout": "diff-check.stdout",
+      "stderr": "diff-check.stderr"
+    },
+    {
+      "label": "sensitive-scan",
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/0a4927e98ddf758747b69f871bdc8811fb1487b4b8278d7bf328818099a37f79/bin/python",
+        "docs/evidence/dp01-20261014/scan_sensitive.py"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_at": "2026-10-14T07:04:28.340246+00:00",
+      "elapsed_ms": 92,
+      "exit_code": 0,
+      "stdout": "sensitive-scan.stdout",
+      "stderr": "sensitive-scan.stderr"
+    },
+    {
+      "label": "main-head",
+      "argv": [
+        "git",
+        "-C",
+        "/Users/yimu/Projects/YM_Capital/YM-data-pipeline",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_at": "2026-10-14T07:04:28.432664+00:00",
+      "elapsed_ms": 10,
+      "exit_code": 0,
+      "stdout": "main-head.stdout",
+      "stderr": "main-head.stderr"
+    },
+    {
+      "label": "main-status",
+      "argv": [
+        "git",
+        "-C",
+        "/Users/yimu/Projects/YM_Capital/YM-data-pipeline",
+        "status",
+        "--short"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_at": "2026-10-14T07:04:28.443523+00:00",
+      "elapsed_ms": 12,
+      "exit_code": 0,
+      "stdout": "main-status.stdout",
+      "stderr": "main-status.stderr"
+    },
+    {
+      "label": "baseline",
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/0a4927e98ddf758747b69f871bdc8811fb1487b4b8278d7bf328818099a37f79/bin/python",
+        "docs/evidence/dp01-20261014/run_tests.py",
+        "baseline"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_unix": 1791960375.212233,
+      "elapsed_seconds": 58.16628384590149,
+      "exit_code": 1,
+      "stdout": "baseline.stdout",
+      "stderr": "baseline.stderr"
+    },
+    {
+      "label": "candidate",
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/0a4927e98ddf758747b69f871bdc8811fb1487b4b8278d7bf328818099a37f79/bin/python",
+        "docs/evidence/dp01-20261014/run_tests.py",
+        "candidate"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_unix": 1791960532.7746902,
+      "elapsed_seconds": 60.60204267501831,
+      "exit_code": 1,
+      "stdout": "candidate.stdout",
+      "stderr": "candidate.stderr"
+    },
+    {
+      "label": "final",
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/0a4927e98ddf758747b69f871bdc8811fb1487b4b8278d7bf328818099a37f79/bin/python",
+        "docs/evidence/dp01-20261014/run_tests.py",
+        "final"
+      ],
+      "cwd": "/Users/yimu/Projects/YM_Capital/_wt/dp01-20261014/YM-data-pipeline",
+      "started_unix": 1791960778.524123,
+      "elapsed_seconds": 79.735032081604,
+      "exit_code": 1,
+      "stdout": "final.stdout",
+      "stderr": "final.stderr"
+    },
+    {
+      "label": "full-raw-diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "HEAD",
+        "--check"
+      ],
+      "exit_code": 2,
+      "stdout": "raw-evidence-whitespace.json",
+      "interpretation": "Raw HTTP HTML and failed-test stderr retain original trailing whitespace; scoped code/docs/fixtures check above is the acceptance check"
+    }
+  ],
+  "test_id_comparison_passed": true,
+  "verification_passed": true
+}

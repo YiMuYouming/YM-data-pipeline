@@ -1,0 +1,972 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D5-intraday-1",
+  "intent": "market_intraday_state",
+  "params": {},
+  "started_at": "2026-10-14T06:43:48.430707+00:00",
+  "result": {
+    "data": {
+      "trade_date": "20261014",
+      "previous_trade_date": "20261013",
+      "data_as_of": "2026-10-14T14:43:05+08:00",
+      "vendor_stamp_corrected": false,
+      "age_seconds": 43,
+      "freshness_tier": "normal",
+      "coverage": {
+        "covered": 5574,
+        "universe": 5574,
+        "pct": 100.0
+      },
+      "filled_by_fallback": [
+        "003000",
+        "003001",
+        "003002",
+        "003003",
+        "003004",
+        "003005",
+        "003006",
+        "003007",
+        "003008",
+        "003009",
+        "003010",
+        "003011",
+        "003012",
+        "003013",
+        "003015",
+        "003016",
+        "003017",
+        "003018",
+        "003019",
+        "003020",
+        "003021",
+        "003022",
+        "003023",
+        "003025",
+        "003026",
+        "003027",
+        "003028",
+        "003029",
+        "003030",
+        "003031",
+        "003032",
+        "003033",
+        "003035",
+        "003036",
+        "003037",
+        "003038",
+        "003039",
+        "003040",
+        "003041",
+        "003042",
+        "003043",
+        "003816"
+      ],
+      "fill_ms": 238,
+      "indicators": {
+        "indicator_version": "indicators.v1",
+        "emotion": 17.810963,
+        "emotion_band": "冰点",
+        "up_count": 978,
+        "down_count": 4513,
+        "flat_count": 72,
+        "traded_count": 5563,
+        "up_down_ratio": 0.216707,
+        "limit_up_count": 33,
+        "limit_down_count": 9,
+        "broken_count": 32,
+        "broken_rate": 49.230769,
+        "broken_rate_band": "退潮信号",
+        "seal_rate": 50.769231,
+        "board_highest": null,
+        "board_second_highest": null,
+        "consecutive_count": null,
+        "promotion": null,
+        "limit_up_return": null,
+        "consecutive_return": null,
+        "broken_return": null,
+        "money_effect": null,
+        "board_risk": null
+      },
+      "limit_up": [
+        {
+          "code": "000530",
+          "name": "冰山冷热",
+          "price": 6.3,
+          "pct": 9.9476,
+          "amount": 110645375.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "000573",
+          "name": "粤宏远Ａ",
+          "price": 4.33,
+          "pct": 9.8985,
+          "amount": 210886499.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "000601",
+          "name": "韶能股份",
+          "price": 6.82,
+          "pct": 10.0,
+          "amount": 1051956332.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "000668",
+          "name": "荣丰控股",
+          "price": 22.62,
+          "pct": 10.0195,
+          "amount": 46710300.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "000823",
+          "name": "超声电子",
+          "price": 24.55,
+          "pct": 9.991,
+          "amount": 727335570.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "001299",
+          "name": "美能能源",
+          "price": 10.92,
+          "pct": 9.9698,
+          "amount": 175300956.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "001318",
+          "name": "阳光乳业",
+          "price": 15.43,
+          "pct": 9.9786,
+          "amount": 614888967.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002029",
+          "name": "七 匹 狼",
+          "price": 10.58,
+          "pct": 9.9792,
+          "amount": 438780457.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002343",
+          "name": "慈文传媒",
+          "price": 8.1,
+          "pct": 10.0543,
+          "amount": 452425186.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002469",
+          "name": "三维化学",
+          "price": 6.86,
+          "pct": 9.9359,
+          "amount": 161589356.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002552",
+          "name": "宝鼎科技",
+          "price": 45.8,
+          "pct": 9.9904,
+          "amount": 216354620.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002696",
+          "name": "百洋股份",
+          "price": 9.75,
+          "pct": 10.0451,
+          "amount": 31414890.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002813",
+          "name": "路畅科技",
+          "price": 29.02,
+          "pct": 10.0076,
+          "amount": 292313479.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002860",
+          "name": "星帅尔",
+          "price": 20.23,
+          "pct": 10.0054,
+          "amount": 30240855.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "002917",
+          "name": "金奥博",
+          "price": 12.1,
+          "pct": 10.0,
+          "amount": 276590826.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "300006",
+          "name": "莱美药业",
+          "price": 7.9,
+          "pct": 20.0608,
+          "amount": 1272829174.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600097",
+          "name": "开创国际",
+          "price": 10.2,
+          "pct": 10.0324,
+          "amount": 135466033.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600121",
+          "name": "郑州煤电",
+          "price": 5.86,
+          "pct": 9.9437,
+          "amount": 1355414628.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600202",
+          "name": "哈空调",
+          "price": 6.15,
+          "pct": 10.0179,
+          "amount": 348400627.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600252",
+          "name": "中恒集团",
+          "price": 2.48,
+          "pct": 10.2222,
+          "amount": 470557583.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600391",
+          "name": "航发科技",
+          "price": 42.66,
+          "pct": 10.0052,
+          "amount": 759142430.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600408",
+          "name": "安泰集团",
+          "price": 4.06,
+          "pct": 10.0271,
+          "amount": 1117463595.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "600847",
+          "name": "万里股份",
+          "price": 15.43,
+          "pct": 9.9786,
+          "amount": 155635466.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "601188",
+          "name": "龙江交通",
+          "price": 3.53,
+          "pct": 9.9688,
+          "amount": 674519059.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "601811",
+          "name": "新华文轩",
+          "price": 23.25,
+          "pct": 9.9811,
+          "amount": 1400355263.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "601858",
+          "name": "中国科传",
+          "price": 26.11,
+          "pct": 9.9832,
+          "amount": 879187210.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603096",
+          "name": "新经典",
+          "price": 23.07,
+          "pct": 10.0143,
+          "amount": 766911280.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603258",
+          "name": "电魂网络",
+          "price": 16.15,
+          "pct": 10.0136,
+          "amount": 174503547.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603533",
+          "name": "掌阅科技",
+          "price": 29.92,
+          "pct": 10.0,
+          "amount": 1905865671.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603598",
+          "name": "引力传媒",
+          "price": 21.91,
+          "pct": 9.99,
+          "amount": 1115823729.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603656",
+          "name": "泰禾智能",
+          "price": 19.06,
+          "pct": 9.9827,
+          "amount": 177763524.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "603968",
+          "name": "醋化股份",
+          "price": 15.8,
+          "pct": 10.0279,
+          "amount": 593452744.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        },
+        {
+          "code": "605189",
+          "name": "富春染织",
+          "price": 16.23,
+          "pct": 10.0339,
+          "amount": 95034538.0,
+          "source": "stocktoday",
+          "board": 1,
+          "industry": "",
+          "seal_time": ""
+        }
+      ],
+      "limit_down": [
+        {
+          "code": "001231",
+          "name": "农心科技",
+          "price": 25.35,
+          "pct": -10.0106,
+          "amount": 231564244.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002080",
+          "name": "中材科技",
+          "price": 46.48,
+          "pct": -9.9923,
+          "amount": 3002765601.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002487",
+          "name": "大金重工",
+          "price": 38.15,
+          "pct": -10.0024,
+          "amount": 2951823039.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002647",
+          "name": "仁东控股",
+          "price": 9.76,
+          "pct": -9.9631,
+          "amount": 285332642.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002692",
+          "name": "远程股份",
+          "price": 4.44,
+          "pct": -9.9391,
+          "amount": 484712159.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002768",
+          "name": "国恩股份",
+          "price": 55.72,
+          "pct": -9.9984,
+          "amount": 503426554.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002829",
+          "name": "星网宇达",
+          "price": 16.34,
+          "pct": -9.9725,
+          "amount": 89050863.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603661",
+          "name": "恒林股份",
+          "price": 31.64,
+          "pct": -10.0114,
+          "amount": 184670203.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603668",
+          "name": "天马科技",
+          "price": 7.62,
+          "pct": -10.0354,
+          "amount": 408251361.0,
+          "source": "stocktoday"
+        }
+      ],
+      "broken": [
+        {
+          "code": "000815",
+          "name": "美利云",
+          "price": 14.69,
+          "pct": 4.7789,
+          "amount": 1181109846.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "001216",
+          "name": "华瓷股份",
+          "price": 23.96,
+          "pct": 9.8579,
+          "amount": 953910868.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "001278",
+          "name": "一彬科技",
+          "price": 16.65,
+          "pct": -2.972,
+          "amount": 148148709.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002181",
+          "name": "粤 传 媒",
+          "price": 10.54,
+          "pct": 7.8813,
+          "amount": 1457440602.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002425",
+          "name": "凯撒文化",
+          "price": 3.54,
+          "pct": 4.7337,
+          "amount": 660036812.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002585",
+          "name": "双星新材",
+          "price": 10.32,
+          "pct": 5.8462,
+          "amount": 1629494426.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002812",
+          "name": "恩捷股份",
+          "price": 46.4,
+          "pct": 4.4575,
+          "amount": 2189113622.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002878",
+          "name": "元隆雅图",
+          "price": 14.49,
+          "pct": 1.1165,
+          "amount": 600552434.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "002886",
+          "name": "沃特股份",
+          "price": 22.01,
+          "pct": 4.1154,
+          "amount": 812770278.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "300299",
+          "name": "富春股份",
+          "price": 6.7,
+          "pct": 16.9284,
+          "amount": 1137625897.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "300516",
+          "name": "久之洋",
+          "price": 37.01,
+          "pct": 12.1515,
+          "amount": 809410439.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "301036",
+          "name": "双乐股份",
+          "price": 24.7,
+          "pct": 10.4157,
+          "amount": 257113816.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "301052",
+          "name": "果麦文化",
+          "price": 34.8,
+          "pct": 16.9748,
+          "amount": 1140504829.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "301132",
+          "name": "满坤科技",
+          "price": 75.48,
+          "pct": 19.0724,
+          "amount": 1402736373.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600152",
+          "name": "维科技术",
+          "price": 8.37,
+          "pct": 2.0732,
+          "amount": 737270731.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600303",
+          "name": "曙光股份",
+          "price": 3.14,
+          "pct": -4.8485,
+          "amount": 422616722.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600310",
+          "name": "广西能源",
+          "price": 4.97,
+          "pct": 5.9701,
+          "amount": 895921206.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600319",
+          "name": "亚星化学",
+          "price": 6.46,
+          "pct": 2.3772,
+          "amount": 142150058.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600593",
+          "name": "大连圣亚",
+          "price": 53.28,
+          "pct": 6.9235,
+          "amount": 938973433.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600693",
+          "name": "东百集团",
+          "price": 12.77,
+          "pct": 3.8211,
+          "amount": 2791474184.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600715",
+          "name": "文投控股",
+          "price": 1.88,
+          "pct": 6.2147,
+          "amount": 482030320.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "600777",
+          "name": "新潮能源",
+          "price": 4.56,
+          "pct": 4.8276,
+          "amount": 513163227.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "601116",
+          "name": "三江购物",
+          "price": 10.98,
+          "pct": 6.1896,
+          "amount": 457217899.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603058",
+          "name": "永吉股份",
+          "price": 9.37,
+          "pct": 5.7562,
+          "amount": 332545265.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603173",
+          "name": "福斯达",
+          "price": 30.14,
+          "pct": 4.2546,
+          "amount": 133588588.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603188",
+          "name": "亚邦股份",
+          "price": 5.21,
+          "pct": -4.5788,
+          "amount": 729055483.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603712",
+          "name": "七一二",
+          "price": 12.12,
+          "pct": 5.8515,
+          "amount": 458591011.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "603727",
+          "name": "博迈科",
+          "price": 20.54,
+          "pct": 6.095,
+          "amount": 286518224.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "605058",
+          "name": "澳弘电子",
+          "price": 65.01,
+          "pct": 7.6503,
+          "amount": 1383808501.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "605136",
+          "name": "丽人丽妆",
+          "price": 10.4,
+          "pct": -8.9317,
+          "amount": 987424690.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "605287",
+          "name": "德才股份",
+          "price": 48.17,
+          "pct": 5.1747,
+          "amount": 1537162488.0,
+          "source": "stocktoday"
+        },
+        {
+          "code": "605318",
+          "name": "法狮龙",
+          "price": 77.0,
+          "pct": 8.9109,
+          "amount": 288339111.0,
+          "source": "stocktoday"
+        }
+      ],
+      "ladder": {
+        "1": [
+          "000530",
+          "000573",
+          "000601",
+          "000668",
+          "000823",
+          "001299",
+          "001318",
+          "002029",
+          "002343",
+          "002469",
+          "002552",
+          "002696",
+          "002813",
+          "002860",
+          "002917",
+          "300006",
+          "600097",
+          "600121",
+          "600202",
+          "600252",
+          "600391",
+          "600408",
+          "600847",
+          "601188",
+          "601811",
+          "601858",
+          "603096",
+          "603258",
+          "603533",
+          "603598",
+          "603656",
+          "603968",
+          "605189"
+        ]
+      },
+      "breadth_buckets": {
+        "涨停": 33,
+        ">7%": 30,
+        "5~7%": 45,
+        "3~5%": 96,
+        "0~3%": 774,
+        "平盘": 72,
+        "-0~-3%": 3085,
+        "-3~-5%": 1174,
+        "-5~-7%": 187,
+        "<-7%": 58,
+        "跌停": 9,
+        "_total": 5563
+      },
+      "previous_ladder_board_source": null,
+      "source_gaps": [
+        "side_hard:lianban:previous_ladder_missing",
+        "consecutive_break_risk_missing",
+        "limit_up_metadata_incomplete"
+      ],
+      "_stocktoday": {
+        "api_name": "rt_k",
+        "batches": [
+          {
+            "ts_code": "6*.SH",
+            "status": "success",
+            "error_code": null,
+            "rows": 2937
+          },
+          {
+            "ts_code": "0*.SZ",
+            "status": "success",
+            "error_code": null,
+            "rows": 1453
+          },
+          {
+            "ts_code": "3*.SZ",
+            "status": "success",
+            "error_code": null,
+            "rows": 1410
+          },
+          {
+            "ts_code": "*.BJ",
+            "status": "success",
+            "error_code": null,
+            "rows": 349
+          }
+        ],
+        "unique_code_count": 5574,
+        "deduplicated_rows": 575,
+        "stk_limit_rows": 5653,
+        "fetched_at": "2026-10-14T14:43:50+08:00"
+      }
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "market_intraday_state",
+      "status": "degraded",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 7622
+        }
+      ],
+      "fetched_at": "2026-10-14T14:43:50+08:00",
+      "data_as_of": "2026-10-14T14:43:05+08:00",
+      "data_scope": "盘中全市场宽度、情绪、涨跌停、炸板与连板；指标口径见 indicators 登记表",
+      "quality": {
+        "status": "partial",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 1,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": [
+          "consecutive_break_risk_missing",
+          "limit_up_metadata_incomplete",
+          "side_hard:lianban:previous_ladder_missing"
+        ]
+      },
+      "freshness": {
+        "age_sec": 51,
+        "max_age_sec": 600,
+        "basis": "data_as_of",
+        "status": "fresh"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "success",
+          "error_code": null
+        }
+      ],
+      "observation": {
+        "api_name": "rt_k",
+        "batches": [
+          {
+            "ts_code": "6*.SH",
+            "status": "success",
+            "error_code": null,
+            "rows": 2937
+          },
+          {
+            "ts_code": "0*.SZ",
+            "status": "success",
+            "error_code": null,
+            "rows": 1453
+          },
+          {
+            "ts_code": "3*.SZ",
+            "status": "success",
+            "error_code": null,
+            "rows": 1410
+          },
+          {
+            "ts_code": "*.BJ",
+            "status": "success",
+            "error_code": null,
+            "rows": 349
+          }
+        ],
+        "unique_code_count": 5574,
+        "deduplicated_rows": 575,
+        "stk_limit_rows": 5653,
+        "fetched_at": "2026-10-14T14:43:50+08:00"
+      }
+    }
+  },
+  "elapsed_ms": 7651
+}

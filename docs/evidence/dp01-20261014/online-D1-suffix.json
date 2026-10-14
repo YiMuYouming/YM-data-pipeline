@@ -1,0 +1,87 @@
+{
+  "command": "python docs/evidence/dp01-20261014/reproduce.py D1-suffix",
+  "intent": "sector_index",
+  "params": {
+    "codes": [
+      "881121.TI",
+      "881270.TI"
+    ]
+  },
+  "started_at": "2026-10-14T06:42:55.984270+00:00",
+  "result": {
+    "data": {
+      "items": [],
+      "by_code": {},
+      "by_name": {},
+      "missing": [
+        "881121.TI",
+        "881270.TI"
+      ],
+      "source": "ths_industry"
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "sector_index",
+      "status": "empty",
+      "provider_used": "ths_industry",
+      "source": "ths_industry",
+      "source_chain": [
+        "ths_industry"
+      ],
+      "attempts": [
+        {
+          "provider": "ths_industry",
+          "status": "empty",
+          "error_code": null,
+          "latency_ms": 244
+        }
+      ],
+      "fetched_at": "2026-10-14T14:42:56+08:00",
+      "data_as_of": null,
+      "data_scope": "同花顺881行业板块指数",
+      "quality": {
+        "status": "empty",
+        "row_shape": "unknown",
+        "expected_row_shape": "sector_rows",
+        "requested_count": 2,
+        "returned_count": 0,
+        "coverage": 0.0,
+        "missing": [
+          "881121.TI",
+          "881270.TI"
+        ],
+        "missing_count": 2,
+        "semantic_equivalence": "unknown",
+        "reason_codes": [
+          "empty_result",
+          "missing_items",
+          "coverage_shortfall"
+        ]
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 300,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "ths_industry",
+          "status": "empty",
+          "error_code": null
+        }
+      ]
+    }
+  },
+  "elapsed_ms": 271
+}
