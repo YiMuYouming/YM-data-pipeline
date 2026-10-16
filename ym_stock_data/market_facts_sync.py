@@ -6,7 +6,7 @@
 这个模块只做三件事，不做别的：
 
 1. ``seal_status(day)``——只读探针：Hermes 上这一天封存好了没有（先试 8088 的
-   ``GET /api/live/market-facts``，不可用就退回 SSH 只读 sqlite 查询）；
+   ``GET /api/live/market-facts``，不可用或仅有已识别衍生缺价时用 SSH 只读核库）；
 2. ``sync_sealed(day)``——等就绪 → 经 SSH 用 sqlite 在线备份取一份只读副本 →
    逐日指纹校验（远程与副本的 run 条数/最新 run 与哈希必须一致）→ 旧库备份 →
    原子替换 Mac 的封存库；
@@ -119,6 +119,52 @@ print(json.dumps(out, ensure_ascii=False))
 '''
 
 
+def _degraded_core_evidence(data: dict, meta: dict, day: str) -> dict | None:
+    """Only this derivative gap can request a separate core-seal verification.
+
+    This does not make the report successful or remove its missing price. Unknown
+    quality failures, incomplete core inputs and failed attempts still deny sync.
+    """
+    quality = meta.get("quality") or {}
+    allowed = ["break_risk_price_missing"]
+    if (not isinstance(quality, dict) or quality.get("status") != "partial"
+            or quality.get("reason_codes") != allowed or quality.get("missing")
+            or quality.get("missing_count", 0) != 0
+            or data.get("source_gaps") != allowed
+            or meta.get("provider_used") != "market_facts"
+            or str(meta.get("data_as_of") or "")[:10].replace("-", "") != day):
+        return None
+    attempts = meta.get("attempts")
+    if not isinstance(attempts, list) or not attempts or any(
+        not isinstance(a, dict) or a.get("status") != "success" or a.get("error_code")
+        for a in attempts
+    ):
+        return None
+    checks = data.get("limit_daily_quality") or {}
+    for key in ("current", "previous"):
+        check = checks.get(key) if isinstance(checks, dict) else None
+        if (not isinstance(check, dict) or check.get("checked") is not True
+                or check.get("missing_codes") != [] or check.get("nonpositive_codes") != []):
+            return None
+    evidence = data.get("limit_evidence") or {}
+    current = evidence.get("current") if isinstance(evidence, dict) else None
+    if not isinstance(current, dict):
+        return None
+    digest = current.get("payload_sha256")
+    if (current.get("phase") != "post_close_observed" or not isinstance(digest, str)
+            or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+        return None
+    counts, breadth = data.get("counts"), data.get("yimu_emotion")
+    totals = []
+    for values, keys in ((counts, ("up", "down", "broken")), (breadth, ("up", "flat", "down"))):
+        if not isinstance(values, dict) or any(type(values.get(k)) is not int or values[k] < 0 for k in keys):
+            return None
+        totals.append(sum(values[k] for k in keys))
+    if not all(totals):
+        return None
+    return {"limit_rows": totals[0], "daily_rows": totals[1], "limit_payload_sha256": digest}
+
+
 def parse_live_payload(payload: Any, day: str) -> dict[str, Any]:
     """把 ``GET /api/live/market-facts`` 的返回判成就绪/未就绪。
 
@@ -138,6 +184,14 @@ def parse_live_payload(payload: Any, day: str) -> dict[str, Any]:
     if status == "success" and trade_date == day:
         return {"ready": True, "probe": "http", "reason": "sealed",
                 "data_as_of": meta.get("data_as_of")}
+    if status == "degraded" and trade_date == day:
+        evidence = _degraded_core_evidence(data, meta, day)
+        if evidence is not None:
+            return {"ready": False, "probe": "http", "reason": "core_seal_verification_required",
+                    "status": status, "served_trade_date": trade_date,
+                    "source_gaps": data["source_gaps"], "quality": meta["quality"],
+                    "attempts": meta["attempts"], "provider_used": meta["provider_used"],
+                    "data_as_of": meta["data_as_of"], "core_evidence": evidence}
     return {
         "ready": False, "probe": "http", "reason": "not_sealed",
         "status": status, "served_trade_date": trade_date, "attempt_error_codes": codes,
@@ -180,7 +234,8 @@ def ssh_seal_status(
         fp = json.loads(completed.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
         return {"ready": False, "probe": "ssh", "reason": "unparseable"}
-    sealed = all(fp["tables"][t]["runs"] > 0 for t in ("limit_runs", "daily_runs"))
+    sealed = all(fp["tables"][t]["runs"] > 0 and fp["tables"][t]["rows"] > 0
+                 for t in ("limit_runs", "daily_runs"))
     return {"ready": sealed, "probe": "ssh",
             "reason": "sealed" if sealed else "not_sealed", "fingerprint": fp}
 
@@ -193,9 +248,25 @@ def seal_status(
     remote_db: str = DEFAULT_REMOTE_DB,
     prefer_http: bool = True,
 ) -> dict[str, Any]:
-    """先问接口；不可达或只返回另一日时，按目标日查权威库。"""
+    """先问接口；单一衍生缺口只可申请独立原库核验，不改报告质量。"""
     if prefer_http:
         status = http_seal_status(day, base_url=base_url)
+        if status.get("reason") == "core_seal_verification_required":
+            raw = ssh_seal_status(day, remote=remote, remote_db=remote_db)
+            result = {**raw, "http_report": status}
+            if raw.get("ready"):
+                fp = raw.get("fingerprint") or {}
+                tables = fp.get("tables") or {}
+                limits, daily = tables.get("limit_runs") or {}, tables.get("daily_runs") or {}
+                expected = status["core_evidence"]
+                matches = (fp.get("trade_date") == day
+                           and limits.get("runs", 0) > 0 and daily.get("runs", 0) > 0
+                           and limits.get("rows") == expected["limit_rows"]
+                           and daily.get("rows") == expected["daily_rows"]
+                           and limits.get("payload_sha256") == expected["limit_payload_sha256"])
+                if not matches:
+                    result.update(ready=False, reason="core_seal_evidence_mismatch")
+            return result
         served_day = str(status.get("served_trade_date") or "")
         needs_dated_probe = (
             str(status.get("reason") or "").startswith("unreachable:")
