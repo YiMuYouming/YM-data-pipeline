@@ -1,0 +1,14 @@
+--- a/scripts/agent_api.py
++++ b/scripts/agent_api.py
+@@ -200,6 +200,11 @@
+     for key in ("codes", "names"):
+         if key in values and not isinstance(values[key], list):
+             values[key] = [values[key]]
++    if "include_promotion" in values:
++        raw = values["include_promotion"]
++        if not isinstance(raw, str) or raw.lower() not in {"true", "false"}:
++            return _fail(400, "agent_param_type_invalid", parameter="include_promotion")
++        values["include_promotion"] = raw.lower() == "true"
+     try:
+         envelope = _pipeline_query(intent, values)
+     except Exception as exc:

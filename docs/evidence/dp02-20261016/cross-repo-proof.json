@@ -1,0 +1,51 @@
+{
+  "mode": "offline proposed patch only; target worktrees not changed",
+  "gateway_before": {
+    "status": 502,
+    "body": {
+      "ok": false,
+      "code": "pipeline_query_failed",
+      "intent": "market_limit_state",
+      "detail": "market_limit_state include_promotion must be boolean"
+    }
+  },
+  "gateway_proposed": {
+    "status": 200,
+    "include_promotion_forwarded_as_boolean": true,
+    "normalized_previous_date": "20261015",
+    "repeated_parameter_status": 400
+  },
+  "bots_before": {
+    "pipeline_status": "error",
+    "attempts": [
+      {
+        "provider": "stocktoday",
+        "status": "timeout",
+        "error_code": "TIMEOUT"
+      }
+    ]
+  },
+  "bots_proposed": {
+    "pipeline_status": "error",
+    "attempts": [
+      {
+        "provider": "stocktoday",
+        "status": "timeout",
+        "error_code": "TIMEOUT",
+        "latency_ms": 15423
+      }
+    ]
+  },
+  "missing_latency_is_not_fabricated": {
+    "pipeline_status": "unavailable",
+    "attempts": [
+      {
+        "provider": "x",
+        "status": "error",
+        "error_code": "X",
+        "latency_ms": null
+      }
+    ]
+  },
+  "passed": true
+}

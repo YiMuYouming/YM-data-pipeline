@@ -301,6 +301,10 @@ def build_index_intraday_compare(
     target_dt = datetime.strptime(target_date, "%Y%m%d")
     start_date = (target_dt - timedelta(days=7)).strftime("%Y%m%d")
     now = datetime.now(TZ_SHANGHAI)
+    first_bar_minute = 9 * 60 + 30 + {"5m": 5, "15m": 15, "60m": 60}[period]
+    if target_date == now.strftime("%Y%m%d") and now.hour * 60 + now.minute < first_bar_minute:
+        return {"items": [], "trade_date": target_date, "period": period, "source": source,
+                "empty_reason": "NO_COMPLETED_INTRADAY_BARS"}
     result = {}
     items = []
     for index_code, name in _COMPARE_INDEXES:

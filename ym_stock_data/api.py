@@ -892,6 +892,30 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
         return _stamp_from(data.get("data_as_of"))
     if intent == "market_limit_state" or intent == "market_limit_board":
         return _stamp_from(data.get("date"))
+    if intent == "index_intraday_compare":
+        day = str(data.get("trade_date") or "")
+        if not re.fullmatch(r"\d{8}", day):
+            return None
+        groups = data.get("items")
+        rows_by_index = ([item.get("bars") for item in groups if isinstance(item, dict)]
+                         if isinstance(groups, list) else
+                         [data.get(name) for name in ("上证15min", "深证15min", "创业15min")])
+        if len(rows_by_index) != 3:
+            return None
+        shared_times = None
+        for rows in rows_by_index:
+            times = [_stamp_from(f"{day[:4]}-{day[4:6]}-{day[6:]}T{row['t']}:00+08:00")
+                     for row in (rows or []) if isinstance(row, dict)
+                     and re.fullmatch(r"\d{2}:\d{2}", str(row.get("t") or ""))
+                     and not row.get("_cum")]
+            times = [stamp for stamp in times if stamp is not None]
+            if not times:
+                return None
+            shared_times = set(times) if shared_times is None else shared_times.intersection(times)
+        return max(shared_times) if shared_times else None
+    if intent == "industry_flow" and params.get("use_case") == "realtime_poll":
+        # A daily table's date is not an observed intraday timestamp.
+        return _stamp_from(data.get("data_as_of") or data.get("quote_time"))
     if intent in {"market_facts", "market_hot_rank", "legacy_hot_rank",
                   "industry_flow", "fund_flow", "northbound_flow"}:
         return _stamp_from(data.get("trade_date"))
@@ -939,7 +963,11 @@ def _data_freshness(
         expected = latest_completed_trade_date(now)
     except TradeCalendarUnavailable:
         return unknown_freshness(max_age_sec)
-    return {**result, "status": "fresh" if stamp.strftime("%Y%m%d") >= expected else "stale"}
+    status = "fresh" if stamp.strftime("%Y%m%d") >= expected else "stale"
+    if status == "stale" and intent in {"stock_kline", "index_kline"} and params.get("period", "daily") == "daily":
+        return {**result, "status": status, "reason": "bars_before_latest_completed_trade_date",
+                "expected_trade_date": expected, "last_bar_trade_date": stamp.strftime("%Y%m%d")}
+    return {**result, "status": status}
 
 
 def _fill_snapshot_codes(
@@ -1494,6 +1522,19 @@ def _query_with(
             result["_meta"]["quality"]["status"] = "semantic_degraded"
     if result["_meta"]["status"] in {"success", "degraded"}:
         reasons = result["_meta"]["quality"]["reason_codes"]
+        reason = result["_meta"]["freshness"].get("reason")
+        if reason == "bars_before_latest_completed_trade_date":
+            reasons.append("BAR_TRADE_DATE_LAG")
+            result["_meta"]["status"] = "degraded"
+            if result["_meta"]["quality"]["status"] == "normal":
+                result["_meta"]["quality"]["status"] = "partial"
+        if stamp is None and (intent == "sector_index" or
+                              intent == "industry_flow" and call_params.get("use_case") == "realtime_poll"):
+            if "DATA_TIME_UNKNOWN" not in reasons:
+                reasons.append("DATA_TIME_UNKNOWN")
+            result["_meta"]["status"] = "degraded"
+            if result["_meta"]["quality"]["status"] == "normal":
+                result["_meta"]["quality"]["status"] = "semantic_degraded"
         observation = result["_meta"].get("observation") or {}
         observed_reasons = []
         state_reason = {"stale": "DATA_STALE", "unknown": "DATA_TIME_UNKNOWN", "unverified_bar_time": "QUALITY_KLINE_BAR_TIME"}.get(observation.get("status"))

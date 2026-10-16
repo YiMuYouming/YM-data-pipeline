@@ -1,0 +1,235 @@
+{
+  "argv": [
+    "docs/evidence/dp02-20261016/reproduce.py",
+    "limit"
+  ],
+  "intent": "market_limit_state",
+  "params": {
+    "date": "20261016"
+  },
+  "started_at": "2026-10-16T07:58:30.650314+00:00",
+  "code_phase": "baseline",
+  "result": {
+    "data": {
+      "date": "20261016",
+      "requested_date": "20261016",
+      "date_adjusted": false,
+      "zt_count": 0,
+      "zb_count": 0,
+      "dt_count": 0,
+      "yzt_count": 0,
+      "break_rate": 0.0,
+      "max_board": 0,
+      "pools": {
+        "zt": [],
+        "zb": [],
+        "dt": [],
+        "yzt": []
+      },
+      "_board_source": null,
+      "source": "stocktoday",
+      "_stocktoday": {
+        "api_name": "limit_list_d",
+        "status": "historical_or_reference",
+        "selected_trade_date": "20261016",
+        "returned_count": 0
+      }
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "market_limit_state",
+      "status": "empty",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "empty",
+          "error_code": "EMPTY_UPSTREAM",
+          "latency_ms": 5613
+        }
+      ],
+      "fetched_at": "2026-10-16T15:58:36+08:00",
+      "data_as_of": "2026-10-16T15:00:00+08:00",
+      "data_scope": "A股涨停、炸板与跌停池聚合；日期取数据实际交易日",
+      "quality": {
+        "status": "empty",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 0,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": [
+          "empty_result"
+        ]
+      },
+      "freshness": {
+        "age_sec": null,
+        "max_age_sec": 300,
+        "basis": "data_as_of",
+        "status": "historical"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "empty",
+          "error_code": "EMPTY_UPSTREAM"
+        }
+      ],
+      "observation": {
+        "api_name": "limit_list_d",
+        "status": "historical_or_reference",
+        "selected_trade_date": "20261016",
+        "returned_count": 0
+      }
+    }
+  },
+  "elapsed_ms": 5640,
+  "transport_trace": [
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "U"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 778
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "U"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 348
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "U"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 434
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "D"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 293
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "D"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 324
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "D"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 512
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "Z"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 1471
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "Z"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 358
+    },
+    {
+      "method": "post",
+      "api_name": "limit_list_d",
+      "params": {
+        "trade_date": "20261016",
+        "limit_type": "Z"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 238
+    },
+    {
+      "method": "post",
+      "api_name": "limit_step",
+      "params": {
+        "trade_date": "20261016"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 808
+    }
+  ]
+}

@@ -32,7 +32,9 @@ def fetch_industry_summary(top_n: int = 20) -> dict:
     """
     rows = _fetch_all_industry_rows()
     if isinstance(rows, dict) and rows.get("error"):
-        return {"total": 0, "top": [], "bottom": [], "note": rows["error"], "source": "ths_industry"}
+        return {"total": 0, "top": [], "bottom": [], "note": rows["error"],
+                "error": rows["error"], "error_type": rows.get("error_type", "PROVIDER_ERROR"),
+                "source": "ths_industry"}
 
     rows.sort(key=lambda r: r["change_pct"], reverse=True)
 

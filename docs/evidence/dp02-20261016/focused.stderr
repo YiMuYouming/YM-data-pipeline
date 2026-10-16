@@ -1,0 +1,179 @@
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101db790>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbb50>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbd30>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbe20>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dba60>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbf10>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c040>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c130>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c220>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c310>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c400>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c5e0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c6d0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c7c0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c8b0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027c9a0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027ca90>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027cb80>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027cc70>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027cd60>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027ce50>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027cf40>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d030>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d120>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d210>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d300>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d3f0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d4e0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d5d0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d6c0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d7b0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d8a0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027d990>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027da80>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027db70>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027dc60>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027dd50>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027de40>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027df30>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e020>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e110>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e200>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e2f0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/ym_stock_data/trading_calendar.py:99: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e3e0>
+  return sum(max(0.0, min(second, end) - start) for start, end in sessions)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbf10>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dba60>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbe20>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbd30>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbb50>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101db790>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e3e0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e2f0>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e200>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e110>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x11027e020>
+  obj, end = self.scan_once(s, idx)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen os>:709: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10e65f6a0>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen os>:709: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101db790>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen os>:709: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbb50>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen os>:709: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbd30>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen os>:709: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x1101dbe20>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+----------------------------------------------------------------------
+Ran 171 tests in 0.409s
+
+OK

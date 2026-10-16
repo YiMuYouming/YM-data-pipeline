@@ -1,0 +1,22 @@
+test_compare_time_requires_a_bar_shared_by_all_three_indices (tests.test_dp02.DP02Tests.test_compare_time_requires_a_bar_shared_by_all_three_indices) ... FAIL
+
+======================================================================
+FAIL: test_compare_time_requires_a_bar_shared_by_all_three_indices (tests.test_dp02.DP02Tests.test_compare_time_requires_a_bar_shared_by_all_three_indices)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 98, in test_compare_time_requires_a_bar_shared_by_all_three_indices
+    self.assertEqual("2026-10-16T09:35:00+08:00",
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                     api._data_as_of("index_intraday_compare", {"period": "5m"}, data).isoformat())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '2026-10-16T09:35:00+08:00' != '2026-10-16T09:40:00+08:00'
+- 2026-10-16T09:35:00+08:00
+?               ^^
++ 2026-10-16T09:40:00+08:00
+?               ^^
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

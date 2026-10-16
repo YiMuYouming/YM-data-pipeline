@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/prove_cross_repo.py", line 76, in <module>
+    main()
+    ~~~~^^
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/prove_cross_repo.py", line 62, in main
+    assert fixed_status == 200 and fixed_payload["data"]["include_promotion"] is True
+                                   ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'include_promotion'

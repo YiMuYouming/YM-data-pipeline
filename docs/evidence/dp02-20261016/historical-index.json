@@ -1,0 +1,182 @@
+[
+  {
+    "source": "/Users/yimu/Projects/YM_Capital/_wt/tb06-20261016/trading-bots/docs/evidence/tb06-20261016/cross-repo.md",
+    "copy": "docs/evidence/dp02-20261016/historical/cross-repo.md",
+    "sha256": "44cbcaf8861f4454af770e7f7669d63a756c78c1597b55d04fc4b549f1aded2d"
+  },
+  {
+    "source": "/Users/yimu/Projects/YM_Capital/_wt/tb06-20261016/trading-bots/docs/evidence/tb06-20261016/trial-parameter-index.json",
+    "copy": "docs/evidence/dp02-20261016/historical/trial-parameter-index.json",
+    "sha256": "783a53c1ad3decfb887da849acad087b261ed0ffd4acd5539d175708e2eb8c5d"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/record-req-20261016-8129d27d6ee6b4d4.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-0-record.json",
+    "sha256": "99043ffbd3527f2ebdecd75ffd037d64e2552eacb8ad0d939d1c7bb97d6aab9f"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/gap-43022a56ecccfb9cf9e9730880204731906f018de42ec337f6ea6ba1bf38383a.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-0-payload.json",
+    "sha256": "27f9c9ed5225005fabb6fc4409db8f2ebc547cb54538f792dd6eedb3a7b614e0"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/record-req-20261016-447d32e4417811b1.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-1-record.json",
+    "sha256": "5a209225d35e1d0f1c73a1ad07bba107b2a2f4e065945d6eeb89ce6b94580e64"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/gap-5d1df37c4acccb93bba8b5ca100cd03e1caea07202e1bd3b296f2cb986485d83.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-1-payload.json",
+    "sha256": "3da9b698abd01675fdf42d6ca27e342aa222dc7794803d8b420ff947480f9fca"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/record-req-20261016-e5559ba4fda5f5a1.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-2-record.json",
+    "sha256": "5fed5465b1fb46a3ee10e8939e69beeb2ece22305350c94409bbc60f378ab11f"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/gap-e8440a8a3d2a4e4ce74d00b522a556b3af55815acefc230403f23f07a0e38158.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_limit_state-2-payload.json",
+    "sha256": "73a47256ba39deb11aa4d72f4bd62c4075bc71e8fc99af7707713703738024e2"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/record-req-20261016-45b2b7003a8d95bb.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-0-record.json",
+    "sha256": "ae2fb6292267b392f049b49ca479050430ff8df06755b7aa481d503c4f47ab3f"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/result-c1758a1adf95c12a5079370fcbdfa32e20894375bc31c322a3a3aede817bd33e.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-0-payload.json",
+    "sha256": "8d1cc41e775a0162a4593fb9f1743b05445b7a862acb2b0dd061baa86fb4caaf"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/record-req-20261016-42775cfad4ba0449.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-1-record.json",
+    "sha256": "0b624b0f42efd63cf51a5ac0a34c5bbf0c5bd8b2baf85c687524cc50bbe1d798"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/result-9abb6436f6a03f3ca00111dbef94254e7edfaab9a9e2109c7d1498b5a6cf73bf.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-1-payload.json",
+    "sha256": "97b6a985f23e5a1179cba59d3cc334757192b06525aa5ded17557f5d378fb412"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/record-req-20261016-83ffde9e437c9f0b.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-2-record.json",
+    "sha256": "6df7183c4a43cf7c8080488de6b29e0d2dd2dc81a6b6ea88ec1a0cc8d0547e8d"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/result-705934bb6c99b7c93c8c60f70ab90ce56760df3ea5e0f5d79c6d8f232bcf5af2.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-2-payload.json",
+    "sha256": "d56831d0ec7b73b9a11f8767fb3ac12cc374eb7f6740161dbbe3bb08d118a345"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-7c914b296e50/record-req-20261016-6c5a8819e725d168.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-3-record.json",
+    "sha256": "c9dc6147d0209f363ebf6a90684b52353ea700e93734d595c9cf0ddd57096358"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-7c914b296e50/gap-6f38c7f30673852d5367cff449fcd2c4ea5897ca501d5ace8eda9a7fb34fca6c.json",
+    "copy": "docs/evidence/dp02-20261016/historical/market_intraday_state-3-payload.json",
+    "sha256": "ea1d173cd40ce967f568fff04c3177a9aa7bd59011c462b195c2f3ff41919527"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/record-req-20261016-76515ad6b7018346.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-0-record.json",
+    "sha256": "dc392ce5ec3d8efa54ebca2cf787f801758841da797e59003076a5e11dfa9a92"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/gap-7672cdd7d8b91943f53b70d265cf22d0ba2491ac94fcfb335ddcaa324aca59f5.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-0-payload.json",
+    "sha256": "3fe91b6b719f8b3b7c8983874800d8f69d94f7111017d0bb6c54d6ba95c75b47"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/record-req-20261016-d1f5239af272f7f9.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-1-record.json",
+    "sha256": "97120aa3292e70380c05133037def47ad1e931eb832539673720ad1f533edbb7"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/result-abd8118995d9bc4f6a28954458ef9283032331bc234ae0c95d745b0e5e9c78a1.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-1-payload.json",
+    "sha256": "2fe04eec385efb2dfe8b83acc9217c63541eeebadbe1ee1eb341cc87cfd0a37e"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/record-req-20261016-353da97eb7530734.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-2-record.json",
+    "sha256": "984ec2f95f8f53d986b3cc2bc36f5211dbb172735ef62ec4d562fa59921ae4a8"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/result-86479e3a008e4f3f12cb3250a8ee52974f550285855baa8765dcc18accc4d2f9.json",
+    "copy": "docs/evidence/dp02-20261016/historical/sector_index-2-payload.json",
+    "sha256": "5c5cca7087b6fc3153b510435ebd80040417c6fc1e91e70b9e03b3a983e40a4d"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/record-req-20261016-bb31c6c79e1e3c49.json",
+    "copy": "docs/evidence/dp02-20261016/historical/index_intraday_compare-0-record.json",
+    "sha256": "2b97b8b51371c581c501a34dfb5a382a3c46210795ac34c07f6aaaef4b2c38c8"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-463acbd4ac6b/gap-1e63f8c8985f5769e810c1a3112069395ea04fd8fcef3f12d15fca14682567bd.json",
+    "copy": "docs/evidence/dp02-20261016/historical/index_intraday_compare-0-payload.json",
+    "sha256": "4715075da1e4477408e8cf0f9990cd81e3db9f7a2649e711bfec77174138096a"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/record-req-20261016-7e46c890ad2b5680.json",
+    "copy": "docs/evidence/dp02-20261016/historical/index_intraday_compare-1-record.json",
+    "sha256": "fd028eed26eb1db0e5dcbf7150511ac33d7d560e95a6736b194bd612f9cbceeb"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/result-46a6c703a6266c029af1170191d004aed03e4b4799f13867f82e991bde34ee05.json",
+    "copy": "docs/evidence/dp02-20261016/historical/index_intraday_compare-1-payload.json",
+    "sha256": "631c0f12c46c370d346865ae85bd67bdaefcbecf90a1f80c04f1b9d2ac35fb10"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-de18273ddeaf/record-req-20261016-159a1f918095e1ed.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stocktoday_data-0-record.json",
+    "sha256": "6777ab7571b1fa388b0374130295f4738d4d18dd90d86bdbf7b1ba2480e3e6a5"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-de18273ddeaf/gap-dadef6de9c1531961c84c2656b1fac7a4b8da4e659f8c092b4ec130268d20557.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stocktoday_data-0-payload.json",
+    "sha256": "58a085e241357c50af85c9c1cfd83062ad570dbeb9975a8a618ba09a7176fb08"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/record-req-20261016-150d629e53ef26e0.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-0-record.json",
+    "sha256": "490c341ed93c744bfede67acea9dad4ef14f4f691af34a9e49867ac8e282ff5d"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-1987df8706ad/result-30839cf0257444b3c00fb1fb39684fa490c83a459a375c54cfc6644a0df3913b.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-0-payload.json",
+    "sha256": "f7a63d2779e904153209fc99d5c92436009fe3011ed19ed391fb37c2d65d9f33"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-7c914b296e50/record-req-20261016-7ade1986c43fb5fd.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-1-record.json",
+    "sha256": "252307d51c9e07dea01fdaee9572f91a64a0e40a715f02e3a77918998d32fe5b"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-7c914b296e50/result-b376c0b115bf0c6aa5c0719a936c860c263a1823c8e50bb626595fc86ee1c348.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-1-payload.json",
+    "sha256": "f4f9da124139514ec23800c11d0199e41d2a0b15c5d5e01b5d08e5693125a545"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-de18273ddeaf/record-req-20261016-7e5032abc32a74a3.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-2-record.json",
+    "sha256": "c208a06d912fe35f0e262fc777e6bf7939ce8d98cd3792d0a9f17d8017568787"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-de18273ddeaf/result-e67949343d0d0e54c592653aebba35555904fe0fb2fb726a075dca0a3faa223d.json",
+    "copy": "docs/evidence/dp02-20261016/historical/stock_kline-2-payload.json",
+    "sha256": "fa4993dbd5c1a5e0f58d94062168b4927384cdae0311aedf16ca74b54cdc538a"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/record-req-20261016-e99e18e99fa6cbc3.json",
+    "copy": "docs/evidence/dp02-20261016/historical/industry_flow-0-record.json",
+    "sha256": "07f5036600192586ee3ed1358d2aa4c5377f882010f385126a279752ddbdba91"
+  },
+  {
+    "source": "/private/var/folders/99/lddylp394r5dzlphgbxl87_40000gn/T/YM-TB-trial/20261016/turns/turn-20261016-4edd92df7231/result-689733c56f759342bf49e189fa84cdae2b7a802ed69698dc103b60e831ca0466.json",
+    "copy": "docs/evidence/dp02-20261016/historical/industry_flow-0-payload.json",
+    "sha256": "cf008f650f4ee61a337a0729aa0e240cd67f05483010326cbdcc642f39adcf5c"
+  }
+]

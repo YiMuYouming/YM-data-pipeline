@@ -1,0 +1,1 @@
+{"diagnostics":{"attempts":[{"error_code":"EMPTY_UPSTREAM","provider":"stocktoday","status":"empty"}],"code":"pipeline_gap","message":"Pipeline reported a gap; no alternate source.","pipeline_status":"empty","reason":"Pipeline reported missing or failed data.","upstream_error_type":"PipelineEnvelope"},"gap_ref":"dadef6de9c1531961c84c2656b1fac7a4b8da4e659f8c092b4ec130268d20557"}

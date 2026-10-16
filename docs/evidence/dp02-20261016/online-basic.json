@@ -1,0 +1,117 @@
+{
+  "argv": [
+    "docs/evidence/dp02-20261016/reproduce.py",
+    "basic"
+  ],
+  "intent": "stocktoday_data",
+  "params": {
+    "api_name": "daily_basic",
+    "max_rows": 1,
+    "params": {
+      "trade_date": "20261015",
+      "ts_code": "600825.SH"
+    }
+  },
+  "started_at": "2026-10-16T07:59:15.505507+00:00",
+  "code_phase": "baseline",
+  "result": {
+    "data": {
+      "api_name": "daily_basic",
+      "items": [],
+      "fields": [],
+      "total": null,
+      "total_present": false,
+      "truncated": false,
+      "_stocktoday": {
+        "endpoint": "https://tushare.citydata.club/daily_basic",
+        "api_name": "daily_basic",
+        "status": "historical_or_reference",
+        "returned_count": 0,
+        "filter_violations": [],
+        "truncated": false
+      }
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "stocktoday_data",
+      "status": "empty",
+      "provider_used": "stocktoday",
+      "source": "stocktoday",
+      "source_chain": [
+        "stocktoday"
+      ],
+      "attempts": [
+        {
+          "provider": "stocktoday",
+          "status": "empty",
+          "error_code": "EMPTY_UPSTREAM",
+          "latency_ms": 368
+        }
+      ],
+      "fetched_at": "2026-10-16T15:59:15+08:00",
+      "data_as_of": null,
+      "data_scope": "StockToday 显式只读数据集；时点与完整性见 observation",
+      "quality": {
+        "status": "empty",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 0,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": [
+          "empty_result"
+        ]
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 60,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": true,
+        "status": "ok"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "explicit",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "stocktoday",
+          "status": "empty",
+          "error_code": "EMPTY_UPSTREAM"
+        }
+      ],
+      "observation": {
+        "endpoint": "https://tushare.citydata.club/daily_basic",
+        "api_name": "daily_basic",
+        "status": "historical_or_reference",
+        "returned_count": 0,
+        "filter_violations": [],
+        "truncated": false
+      }
+    }
+  },
+  "elapsed_ms": 398,
+  "transport_trace": [
+    {
+      "method": "post",
+      "api_name": "daily_basic",
+      "params": {
+        "trade_date": "20261015",
+        "ts_code": "600825.SH"
+      },
+      "http_status": 200,
+      "upstream_code": 0,
+      "fields": [],
+      "rows": 0,
+      "elapsed_ms": 351
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import sqlite3
 import time
 from collections import Counter
 from contextlib import closing
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -869,7 +870,7 @@ class StockTodayProvider:
         trade_date = self._limit_target_date(requested)
         current, last = self._collect_limit_pools(trade_date)
         if current is None:
-            return last
+            return replace(last, latency_ms=int((self.clock.monotonic() - started) * 1000))
         pools = current.get("pools") or {"zt": [], "zb": [], "dt": []}
         zt, zb, dt = pools.get("zt", []), pools.get("zb", []), pools.get("dt", [])
         rate = indicators.broken_rate(len(zb), len(zt))
@@ -890,14 +891,14 @@ class StockTodayProvider:
                             "selected_trade_date": trade_date,
                             "returned_count": len(zt) + len(zb) + len(dt)},
         }
-        if current and params.get("include_promotion"):
+        if current and (params.get("include_promotion") or params.get("previous_date")):
             previous_date = params.get("previous_date") or previous_trading_day(
                 datetime.strptime(trade_date, "%Y%m%d").date()
             ).strftime("%Y%m%d")
             previous, failure = self._collect_limit_pools(previous_date)
             if not previous:
-                return failure if previous is None else self._fail(
-                    self.clock.monotonic(), "LIMIT_PROMOTION_SOURCE_UNAVAILABLE"
+                return replace(failure, latency_ms=int((self.clock.monotonic() - started) * 1000)) if previous is None else self._fail(
+                    started, "LIMIT_PROMOTION_SOURCE_UNAVAILABLE"
                 )
             try:
                 data["promotion"] = derive_limit_promotion(
@@ -905,7 +906,7 @@ class StockTodayProvider:
                 )
                 data["promotion"]["source"] = self.name
             except ValueError as error:
-                return self._fail(self.clock.monotonic(), str(error))
+                return self._fail(started, str(error))
         return ProviderOutcome(
             self.name,
             "success" if current else "empty",
@@ -1296,6 +1297,8 @@ class StockTodayProvider:
 
     def _call_flow(self, *, api_name, params):
         nested = {"trade_date": params.get("trade_date")}
+        if params.get("current_session") is True and not nested["trade_date"]:
+            nested["trade_date"] = datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI).strftime("%Y%m%d")
         nested = {key: value for key, value in nested.items() if value}
         outcome = self._request_table(api_name, nested)
         if api_name == "moneyflow_mkt_dc" and outcome.error_code == "INVALID_RESPONSE":

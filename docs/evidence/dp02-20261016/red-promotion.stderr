@@ -1,0 +1,20 @@
+test_canonical_promotion_uses_normalized_previous_date (tests.test_dp02.DP02Tests.test_canonical_promotion_uses_normalized_previous_date) ... FAIL
+
+======================================================================
+FAIL: test_canonical_promotion_uses_normalized_previous_date (tests.test_dp02.DP02Tests.test_canonical_promotion_uses_normalized_previous_date)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 128, in test_canonical_promotion_uses_normalized_previous_date
+    self.assertEqual("20261015", provider._collect_limit_pools.call_args_list[-1].args[0])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '20261015' != '20261016'
+- 20261015
+?        ^
++ 20261016
+?        ^
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

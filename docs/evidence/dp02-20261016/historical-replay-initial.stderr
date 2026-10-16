@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/replay_historical.py", line 49, in <module>
+    main()
+    ~~~~^^
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/replay_historical.py", line 43, in main
+    assert bars["freshness"]["status"] == "stale" and "BAR_TRADE_DATE_LAG" in bars["quality"]["reason_codes"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

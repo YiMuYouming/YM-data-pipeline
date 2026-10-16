@@ -383,6 +383,8 @@ def normalize_success(
             provider=provider,
             primary=primary,
         )
+    elif intent == "index_intraday_compare" and data.get("items") == []:
+        quality = assess_quality([])
     elif intent == "market_limit_state":
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         quality = assess_quality([data] if count else [])
@@ -421,4 +423,6 @@ def normalize_success(
     if provider == "stocktoday" and data.get("_stocktoday", {}).get("truncated"):
         quality["status"] = "partial"
         quality["truncated"] = True
+    if intent == "index_intraday_compare" and data.get("empty_reason") == "NO_COMPLETED_INTRADAY_BARS":
+        quality["reason_codes"].append("NO_COMPLETED_INTRADAY_BARS")
     return data, _fallback_quality(quality, provider=provider, primary=primary)

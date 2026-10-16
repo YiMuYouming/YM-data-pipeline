@@ -556,7 +556,9 @@ class CoreRepairTests(unittest.TestCase):
         )
 
         self.assertEqual("ths_industry", result["_meta"]["provider_used"])
-        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertIn("DATA_TIME_UNKNOWN", result["_meta"]["quality"]["reason_codes"])
+        self.assertIsNone(result["_meta"]["data_as_of"])
 
     def test_query_realtime_compare_rejects_incomplete_shape(self):
         compare_row = {"t": "09:35", "chg": 1.0, "vol": 100, "volRatio": 1.2,

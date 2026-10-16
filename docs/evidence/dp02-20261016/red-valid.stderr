@@ -1,0 +1,133 @@
+test_after_opening_missing_provider_is_still_error (tests.test_dp02.DP02Tests.test_after_opening_missing_provider_is_still_error) ... ok
+test_compare_has_common_completed_bar_time (tests.test_dp02.DP02Tests.test_compare_has_common_completed_bar_time) ... FAIL
+test_current_flow_does_not_invent_close_time (tests.test_dp02.DP02Tests.test_current_flow_does_not_invent_close_time) ... FAIL
+test_current_flow_passes_explicit_current_date_upstream (tests.test_dp02.DP02Tests.test_current_flow_passes_explicit_current_date_upstream) ... FAIL
+test_early_compare_empty_reason_survives_public_boundary (tests.test_dp02.DP02Tests.test_early_compare_empty_reason_survives_public_boundary) ... FAIL
+test_explicit_historical_bars_remain_historical (tests.test_dp02.DP02Tests.test_explicit_historical_bars_remain_historical) ... ok
+test_flow_parse_failure_is_not_legal_empty (tests.test_dp02.DP02Tests.test_flow_parse_failure_is_not_legal_empty) ... FAIL
+test_intraday_public_observation_keeps_batch_and_metadata_details (tests.test_dp02.DP02Tests.test_intraday_public_observation_keeps_batch_and_metadata_details) ... FAIL
+test_limit_failure_latency_includes_previous_subcalls (tests.test_dp02.DP02Tests.test_limit_failure_latency_includes_previous_subcalls) ... FAIL
+test_limit_metadata_reports_missing_rows_without_filling_industry (tests.test_dp02.DP02Tests.test_limit_metadata_reports_missing_rows_without_filling_industry) ... FAIL
+test_opening_compare_before_first_closed_bar_is_legal_empty (tests.test_dp02.DP02Tests.test_opening_compare_before_first_closed_bar_is_legal_empty) ... FAIL
+test_sector_exact_name_miss_remains_legal_empty (tests.test_dp02.DP02Tests.test_sector_exact_name_miss_remains_legal_empty) ... ok
+test_sector_unverified_time_is_degraded_not_fetch_time (tests.test_dp02.DP02Tests.test_sector_unverified_time_is_degraded_not_fetch_time) ... FAIL
+test_stale_daily_bars_explain_date_lag_without_inventing_suspension (tests.test_dp02.DP02Tests.test_stale_daily_bars_explain_date_lag_without_inventing_suspension) ... FAIL
+
+======================================================================
+FAIL: test_compare_has_common_completed_bar_time (tests.test_dp02.DP02Tests.test_compare_has_common_completed_bar_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 76, in test_compare_has_common_completed_bar_time
+    self.assertEqual("2026-10-16T09:45:00+08:00", result["_meta"]["data_as_of"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '2026-10-16T09:45:00+08:00' != None
+
+======================================================================
+FAIL: test_current_flow_does_not_invent_close_time (tests.test_dp02.DP02Tests.test_current_flow_does_not_invent_close_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 131, in test_current_flow_does_not_invent_close_time
+    self.assertIsNone(result["_meta"]["data_as_of"])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '2026-10-16T15:00:00+08:00' is not None
+
+======================================================================
+FAIL: test_current_flow_passes_explicit_current_date_upstream (tests.test_dp02.DP02Tests.test_current_flow_passes_explicit_current_date_upstream)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 126, in test_current_flow_passes_explicit_current_date_upstream
+    self.assertEqual({"trade_date": "20261016"}, provider._request_table.call_args.args[1])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'trade_date': '20261016'} != {}
+- {'trade_date': '20261016'}
++ {}
+
+======================================================================
+FAIL: test_early_compare_empty_reason_survives_public_boundary (tests.test_dp02.DP02Tests.test_early_compare_empty_reason_survives_public_boundary)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 104, in test_early_compare_empty_reason_survives_public_boundary
+    self.assertIn("NO_COMPLETED_INTRADAY_BARS", result["_meta"]["quality"]["reason_codes"])
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'NO_COMPLETED_INTRADAY_BARS' not found in []
+
+======================================================================
+FAIL: test_flow_parse_failure_is_not_legal_empty (tests.test_dp02.DP02Tests.test_flow_parse_failure_is_not_legal_empty)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 118, in test_flow_parse_failure_is_not_legal_empty
+    self.assertEqual("provider_error", result.status)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'provider_error' != 'empty'
+- provider_error
++ empty
+
+
+======================================================================
+FAIL: test_intraday_public_observation_keeps_batch_and_metadata_details (tests.test_dp02.DP02Tests.test_intraday_public_observation_keeps_batch_and_metadata_details)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 159, in test_intraday_public_observation_keeps_batch_and_metadata_details
+    self.assertTrue(all(isinstance(batch.get("latency_ms"), int) for batch in observation["batches"]))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_limit_failure_latency_includes_previous_subcalls (tests.test_dp02.DP02Tests.test_limit_failure_latency_includes_previous_subcalls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 112, in test_limit_failure_latency_includes_previous_subcalls
+    self.assertEqual(6000, result.latency_ms)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 6000 != 1000
+
+======================================================================
+FAIL: test_limit_metadata_reports_missing_rows_without_filling_industry (tests.test_dp02.DP02Tests.test_limit_metadata_reports_missing_rows_without_filling_industry)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 140, in test_limit_metadata_reports_missing_rows_without_filling_industry
+    rows = intraday_state._limit_metadata(provider, "20261016", diagnostics=diagnostics)
+TypeError: _limit_metadata() got an unexpected keyword argument 'diagnostics'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 142, in test_limit_metadata_reports_missing_rows_without_filling_industry
+    self.fail("limit metadata must expose a safe diagnostic observation")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: limit metadata must expose a safe diagnostic observation
+
+======================================================================
+FAIL: test_opening_compare_before_first_closed_bar_is_legal_empty (tests.test_dp02.DP02Tests.test_opening_compare_before_first_closed_bar_is_legal_empty)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 86, in test_opening_compare_before_first_closed_bar_is_legal_empty
+    self.assertNotIn("error", data)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+AssertionError: 'error' unexpectedly found in {'error': 'tencent index compare is incomplete', 'error_type': 'INCOMPLETE_INDEX_COMPARE'}
+
+======================================================================
+FAIL: test_sector_unverified_time_is_degraded_not_fetch_time (tests.test_dp02.DP02Tests.test_sector_unverified_time_is_degraded_not_fetch_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 40, in test_sector_unverified_time_is_degraded_not_fetch_time
+    self.assertEqual("degraded", meta["status"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'degraded' != 'success'
+- degraded
++ success
+
+
+======================================================================
+FAIL: test_stale_daily_bars_explain_date_lag_without_inventing_suspension (tests.test_dp02.DP02Tests.test_stale_daily_bars_explain_date_lag_without_inventing_suspension)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 57, in test_stale_daily_bars_explain_date_lag_without_inventing_suspension
+    self.assertEqual("bars_before_latest_completed_trade_date", meta["freshness"].get("reason"))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'bars_before_latest_completed_trade_date' != None
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.028s
+
+FAILED (failures=11)

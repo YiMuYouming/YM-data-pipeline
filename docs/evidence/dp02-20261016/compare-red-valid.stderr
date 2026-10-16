@@ -1,0 +1,15 @@
+test_compare_has_common_completed_bar_time (tests.test_dp02.DP02Tests.test_compare_has_common_completed_bar_time) ... FAIL
+
+======================================================================
+FAIL: test_compare_has_common_completed_bar_time (tests.test_dp02.DP02Tests.test_compare_has_common_completed_bar_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 80, in test_compare_has_common_completed_bar_time
+    self.assertEqual("2026-10-16T09:45:00+08:00", result["_meta"]["data_as_of"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '2026-10-16T09:45:00+08:00' != None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

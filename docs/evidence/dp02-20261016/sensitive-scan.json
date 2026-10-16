@@ -1,0 +1,6 @@
+{
+  "scope": "changed delivery files only, no credential stores",
+  "file_count": 132,
+  "findings": [],
+  "passed": true
+}

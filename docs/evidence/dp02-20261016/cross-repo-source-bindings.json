@@ -1,0 +1,10 @@
+{
+  "gateway": {
+    "path": "/Users/yimu/Projects/YM_Capital/live-dashboard/scripts/agent_api.py",
+    "sha256": "d783b656e02de76da67892da07073b900839ea8461210833e49faf81c728743c"
+  },
+  "bots": {
+    "path": "/Users/yimu/Projects/YM_Capital/_wt/tb06-20261016/trading-bots/tools/read_pipeline_role.py",
+    "sha256": "115624a560a08d8d9abe3b870cee365b6f3cb7b246391c2125af14107488c5af"
+  }
+}

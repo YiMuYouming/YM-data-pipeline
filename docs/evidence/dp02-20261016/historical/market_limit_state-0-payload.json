@@ -1,0 +1,1 @@
+{"diagnostics":{"code":"pipeline_gap","detail":"market_limit_state include_promotion must be boolean","gateway_code":"pipeline_query_failed","http_status":502,"message":"Fixed pipeline call failed; no fallback.","reason":"HTTP Error 502: Bad Gateway","upstream_error_type":"HTTPError"},"gap_ref":"43022a56ecccfb9cf9e9730880204731906f018de42ec337f6ea6ba1bf38383a"}

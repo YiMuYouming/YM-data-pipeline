@@ -96,6 +96,40 @@ empty，不表示全市场无板块。`member_coverage` 由持有成员证据的
 它是现有沪深口径，不是含北交所的全市场成交额。科创50/上证50按供应商响应提供，
 本次不新建 N1 实时指数意图、不扩指数分钟 K 线路由。
 
+## DP-02 时间、空窗口与复合查询诊断（候选）
+
+本节描述 10-16 隔离修复候选，发布与生产回读另行处理。
+
+- `sector_index` 的同花顺摘要没有可验证的行情时间时，`data_as_of` 继续 null、
+  freshness 继续 unknown，结果为 degraded 并带 `DATA_TIME_UNKNOWN`；不拿 fetched_at
+  冒充行情时间。名称按源目录精确匹配，名称缺失是合法 empty / partial，不自行给
+  “出版”“出版传媒”“军工”等宽泛词补别名。
+- 默认日 K 的最新 bar 早于日历要求的最近已完成交易日时，freshness 标 stale，给
+  `reason=bars_before_latest_completed_trade_date`、expected_trade_date、last_bar_trade_date，
+  quality 带 `BAR_TRADE_DATE_LAG`、信封为 degraded。它只说明日期落后，不推断停牌；
+  显式历史日期的 freshness=historical 保持。停复牌需要独立 `suspend_d` 或正式公告证据。
+- `index_intraday_compare` 的 `data_as_of` 取三指数都存在的最后一个完成时段，累计行
+  不参与；时间行或日期不足则仍 unknown。当天首个 5/15/60 分钟时段分别在
+  09:35/09:45/10:30 完成；此前是合法 empty，reason_codes 包含
+  `NO_COMPLETED_INTRADAY_BARS`，quality.status=empty、returned_count=0，不发无意义的
+  分时查询。首个窗口之后的源失败或缺行仍保留 `INCOMPLETE_INDEX_COMPARE`，不降格为合法空。
+- `market_limit_state(include_promotion=True)` 的公共参数归一化会生成 previous_date；
+  StockToday 适配器必须消费该已校验日期，不能忽略晋级请求。复合查询失败的 attempt
+  latency_ms 包含失败前的子请求时间，不只是最后一跳的耗时。GET 网关负责把文本
+  boolean 转成 Python bool，公共 query 仍严格拒绝字符串布尔值。
+- `market_intraday_state` 的 observation.batches 增加每个 rt_k 批次的 latency_ms，
+  observation.limit_metadata 保留辅助日表的状态、稳定码、行数、匹配行数和耗时。
+  日表 empty 时 source_gaps 另带 `limit_up_metadata_empty`；错误/日期不匹配时为
+  `limit_up_metadata_unavailable`。不使用另一个来源填 industry 或 seal_time，不把源缺失写成业务零。
+- `industry_flow(trade_date=...)` 是显式日表查询，不是盘中查询。
+  `use_case="realtime_poll"` 的既有路线先读同花顺、再读 StockToday；后备请求显式
+  带当前日期、仍严格过滤非当日行。日表日期本身不证明盘中时点；没有源时间时
+  data_as_of=null + degraded/DATA_TIME_UNKNOWN。同花顺页面解析失败必须保留 PARSE_FAILED，
+  不能先变成 note/空表再冒充合法 empty。
+- 公共 `_meta.attempts` 保留四字段（provider/status/error_code/latency_ms）。消费者
+  的脱敏/裁剪层也应保留源给出的合法非负整数；若旧回执缺失延迟，不补造测量值。
+  `attempt_classification_trace` 是独立的三字段分类轨迹，不与 attempts 混用。
+
 ## 下游与回滚
 
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。

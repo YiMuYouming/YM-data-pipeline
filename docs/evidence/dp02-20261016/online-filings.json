@@ -1,0 +1,184 @@
+{
+  "argv": [
+    "docs/evidence/dp02-20261016/reproduce.py",
+    "filings"
+  ],
+  "intent": "filings",
+  "params": {
+    "code": "600825",
+    "days": 7
+  },
+  "started_at": "2026-10-16T08:08:54.383001+00:00",
+  "code_phase": "baseline",
+  "result": {
+    "data": {
+      "total": 10,
+      "filings": [
+        {
+          "date": "2026-10-16",
+          "title": "关于股票交易停牌核查结果、股票交易风险提示暨复牌的公告",
+          "type_name": null,
+          "type": "01010503||010113||012109||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-16/1225607741.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-13",
+          "title": "第十届董事会第十九次会议决议公告",
+          "type_name": null,
+          "type": "01010503||010113||01239901",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-13/1225602156.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-13",
+          "title": "股票交易风险提示暨停牌核查公告",
+          "type_name": null,
+          "type": "01010503||010113||012109||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-13/1225602155.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-13",
+          "title": "独立董事候选人声明与承诺",
+          "type_name": null,
+          "type": "01010503||01011199||010113||012303||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-13/1225602154.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-13",
+          "title": "独立董事提名人声明与承诺",
+          "type_name": null,
+          "type": "01010503||010113||012303||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-13/1225602153.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-13",
+          "title": "关于召开2026年第一次临时股东会的通知",
+          "type_name": null,
+          "type": "01010503||010113||011901",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-13/1225602152.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-10",
+          "title": "关于股票交易异常波动、严重异常波动的复函",
+          "type_name": null,
+          "type": "01010501||010113||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-10/1225599999.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-10",
+          "title": "股票交易异常波动暨严重异常波动公告",
+          "type_name": null,
+          "type": "01010503||010113||012103",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-10/1225599998.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-09",
+          "title": "股票交易严重异常波动暨股票交易风险提示公告",
+          "type_name": null,
+          "type": "01010503||010113||012103||012109",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-09/1225598273.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        },
+        {
+          "date": "2026-10-09",
+          "title": "关于股票交易严重异常波动情况的复函",
+          "type_name": null,
+          "type": "01010501||010113||012399",
+          "pdf_url": "https://static.cninfo.com.cn/finalpage/2026-10-09/1225598272.PDF",
+          "sec_code": "600825",
+          "sec_name": "新华传媒"
+        }
+      ],
+      "source": "cninfo"
+    },
+    "_meta": {
+      "contract_version": "1.0",
+      "intent": "filings",
+      "status": "success",
+      "provider_used": "cninfo",
+      "source": "cninfo",
+      "source_chain": [
+        "cninfo"
+      ],
+      "attempts": [
+        {
+          "provider": "cninfo",
+          "status": "success",
+          "error_code": null,
+          "latency_ms": 418
+        }
+      ],
+      "fetched_at": "2026-10-16T16:08:54+08:00",
+      "data_as_of": null,
+      "data_scope": "A股公告元数据与文档检索",
+      "quality": {
+        "status": "normal",
+        "row_shape": "unknown",
+        "expected_row_shape": null,
+        "requested_count": null,
+        "returned_count": 10,
+        "coverage": null,
+        "missing": [],
+        "missing_count": 0,
+        "semantic_equivalence": "unknown",
+        "reason_codes": []
+      },
+      "freshness": {
+        "status": "unknown",
+        "age_sec": null,
+        "max_age_sec": 86400,
+        "basis": "no_data_time"
+      },
+      "auth": {
+        "required": false,
+        "status": "not_required"
+      },
+      "trade_usage": "辅助，不单独触发交易",
+      "pipeline_version": "3.0",
+      "route_policy_version": "3.0",
+      "source_tier": "primary",
+      "policy_evidence_sha256": null,
+      "policy_status": "inactive",
+      "attempt_classification_trace": [
+        {
+          "provider": "cninfo",
+          "status": "success",
+          "error_code": null
+        }
+      ]
+    }
+  },
+  "elapsed_ms": 450,
+  "transport_trace": [
+    {
+      "method": "post",
+      "api_name": "public_page",
+      "params": {},
+      "http_status": 200,
+      "elapsed_ms": 231
+    },
+    {
+      "method": "post",
+      "api_name": "public_page",
+      "params": {},
+      "http_status": 200,
+      "elapsed_ms": 186
+    }
+  ]
+}

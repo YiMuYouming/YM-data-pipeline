@@ -1,0 +1,13 @@
+{
+  "source": "/tmp/intel_600825_filings.json",
+  "sha256": "1106b9094c1145cec45bf1f2a6d189c94e6601bfa347cdd724f58e9340e86ae4",
+  "user_confirmed_time": "2026-10-16T10:05:54+08:00",
+  "tool": "query_pipeline_role",
+  "params": {
+    "code": "600825",
+    "days": 7
+  },
+  "turn_id": "turn-20261016-de18273ddeaf",
+  "max_pages": "omitted",
+  "prior_envelope_rejection": "root and storage extra fields; no network"
+}

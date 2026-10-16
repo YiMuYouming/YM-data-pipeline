@@ -1,0 +1,21 @@
+test_after_opening_missing_provider_is_still_error (tests.test_dp02.DP02Tests.test_after_opening_missing_provider_is_still_error) ... ok
+test_canonical_promotion_uses_normalized_previous_date (tests.test_dp02.DP02Tests.test_canonical_promotion_uses_normalized_previous_date) ... ok
+test_compare_has_common_completed_bar_time (tests.test_dp02.DP02Tests.test_compare_has_common_completed_bar_time) ... ok
+test_compare_time_requires_a_bar_shared_by_all_three_indices (tests.test_dp02.DP02Tests.test_compare_time_requires_a_bar_shared_by_all_three_indices) ... ok
+test_current_flow_does_not_invent_close_time (tests.test_dp02.DP02Tests.test_current_flow_does_not_invent_close_time) ... ok
+test_current_flow_passes_explicit_current_date_upstream (tests.test_dp02.DP02Tests.test_current_flow_passes_explicit_current_date_upstream) ... ok
+test_early_compare_empty_reason_survives_public_boundary (tests.test_dp02.DP02Tests.test_early_compare_empty_reason_survives_public_boundary) ... ok
+test_explicit_historical_bars_remain_historical (tests.test_dp02.DP02Tests.test_explicit_historical_bars_remain_historical) ... ok
+test_flow_parse_failure_is_not_legal_empty (tests.test_dp02.DP02Tests.test_flow_parse_failure_is_not_legal_empty) ... ok
+test_intraday_public_observation_keeps_batch_and_metadata_details (tests.test_dp02.DP02Tests.test_intraday_public_observation_keeps_batch_and_metadata_details) ... ok
+test_limit_failure_latency_includes_previous_subcalls (tests.test_dp02.DP02Tests.test_limit_failure_latency_includes_previous_subcalls) ... ok
+test_limit_metadata_reports_missing_rows_without_filling_industry (tests.test_dp02.DP02Tests.test_limit_metadata_reports_missing_rows_without_filling_industry) ... ok
+test_opening_compare_before_first_closed_bar_is_legal_empty (tests.test_dp02.DP02Tests.test_opening_compare_before_first_closed_bar_is_legal_empty) ... ok
+test_sector_exact_name_miss_remains_legal_empty (tests.test_dp02.DP02Tests.test_sector_exact_name_miss_remains_legal_empty) ... ok
+test_sector_unverified_time_is_degraded_not_fetch_time (tests.test_dp02.DP02Tests.test_sector_unverified_time_is_degraded_not_fetch_time) ... ok
+test_stale_daily_bars_explain_date_lag_without_inventing_suspension (tests.test_dp02.DP02Tests.test_stale_daily_bars_explain_date_lag_without_inventing_suspension) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.026s
+
+OK

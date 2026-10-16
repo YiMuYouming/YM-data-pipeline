@@ -1,0 +1,73 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "/Users/yimu/.cache/uv/ym-stock-data-project-envs/3c46abd0eda9dc8d72e391ba61f77bd1ea486733e9fa3050cd7751fad46dbdde/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "ym_stock_data",
+        "scripts",
+        "tests",
+        "docs/evidence/dp02-20261016"
+      ],
+      "started_at": "2026-10-16T08:25:14.256156+00:00",
+      "elapsed_ms": 78,
+      "exit_code": 0,
+      "stdout": "compileall.stdout",
+      "stderr": "compileall.stderr"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "HEAD",
+        "--check",
+        "--",
+        ".",
+        ":(exclude)docs/evidence/dp02-20261016/*.stderr",
+        ":(exclude)docs/evidence/dp02-20261016/*.patch",
+        ":(exclude)docs/evidence/dp02-20261016/historical/**"
+      ],
+      "started_at": "2026-10-16T08:25:14.334867+00:00",
+      "elapsed_ms": 25,
+      "exit_code": 0,
+      "stdout": "diff-check.stdout",
+      "stderr": "diff-check.stderr"
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "/Users/yimu/Projects/YM_Capital/live-dashboard",
+        "apply",
+        "--check",
+        "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/handoff-gateway.patch"
+      ],
+      "started_at": "2026-10-16T08:25:14.360884+00:00",
+      "elapsed_ms": 15,
+      "exit_code": 0,
+      "stdout": "gateway-patch-check.stdout",
+      "stderr": "gateway-patch-check.stderr"
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "/Users/yimu/Projects/YM_Capital/_wt/tb06-20261016/trading-bots",
+        "apply",
+        "--check",
+        "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/docs/evidence/dp02-20261016/handoff-bots.patch"
+      ],
+      "started_at": "2026-10-16T08:25:14.376330+00:00",
+      "elapsed_ms": 15,
+      "exit_code": 0,
+      "stdout": "bots-patch-check.stdout",
+      "stderr": "bots-patch-check.stderr"
+    }
+  ],
+  "online_public_query_count": 17,
+  "live_attempt_latency_contract_passed": true,
+  "baseline_errors_retained": 2,
+  "passed": true
+}

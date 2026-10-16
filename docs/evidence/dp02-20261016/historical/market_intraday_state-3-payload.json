@@ -1,0 +1,1 @@
+{"diagnostics":{"code":"pipeline_gap","message":"Pipeline reported a gap; no alternate source.","reason":"Pipeline reported missing or failed data.","upstream_error_type":"PipelineEnvelope"},"gap_ref":"6f38c7f30673852d5367cff449fcd2c4ea5897ca501d5ace8eda9a7fb34fca6c"}

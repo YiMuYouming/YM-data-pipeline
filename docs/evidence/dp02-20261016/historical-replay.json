@@ -1,0 +1,1515 @@
+{
+  "mode": "offline exact original data; latencies synthetic 1ms",
+  "results": [
+    {
+      "capture": "sector_index-1",
+      "intent": "sector_index",
+      "requested_params": {
+        "names": [
+          "文化传媒",
+          "出版传媒"
+        ]
+      },
+      "effective_params": {
+        "names": [
+          "文化传媒",
+          "出版传媒"
+        ]
+      },
+      "before_meta": {
+        "attempt_classification_trace": [
+          {
+            "error_code": null,
+            "provider": "ths_industry",
+            "status": "success"
+          }
+        ],
+        "attempts": [
+          {
+            "error_code": null,
+            "latency_ms": 1936,
+            "provider": "ths_industry",
+            "status": "success"
+          }
+        ],
+        "auth": {
+          "required": false,
+          "status": "not_required"
+        },
+        "contract_version": "1.0",
+        "data_as_of": null,
+        "data_scope": "同花顺881行业涨跌幅、成交量/额、资金流与均价；行业摘要不含指数点位",
+        "fetched_at": "2026-10-16T10:01:17+08:00",
+        "freshness": {
+          "age_sec": null,
+          "basis": "no_data_time",
+          "max_age_sec": 300,
+          "status": "unknown"
+        },
+        "intent": "sector_index",
+        "pipeline_version": "3.0",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "provider_used": "ths_industry",
+        "quality": {
+          "coverage": 0.5,
+          "expected_row_shape": "sector_rows",
+          "missing": [
+            "出版传媒"
+          ],
+          "missing_count": 1,
+          "reason_codes": [
+            "missing_items",
+            "coverage_shortfall"
+          ],
+          "requested_count": 2,
+          "returned_count": 1,
+          "row_shape": "sector_rows",
+          "semantic_equivalence": "exact",
+          "status": "partial"
+        },
+        "route_policy_version": "3.0",
+        "source": "ths_industry",
+        "source_chain": [
+          "ths_industry"
+        ],
+        "source_tier": "primary",
+        "status": "success",
+        "trade_usage": "辅助，不单独触发交易"
+      },
+      "after": {
+        "data": {
+          "by_code": {
+            "881164": {
+              "avg_price": 12.55,
+              "change_pct": 2.19,
+              "code": "881164",
+              "down_count": 5,
+              "flat_count": null,
+              "latest": null,
+              "leader": "华媒控股",
+              "leader_change_pct": 10.02,
+              "leader_price": 4.61,
+              "main_net_inflow_yi": -3.5,
+              "name": "文化传媒",
+              "net_inflow_yi": -3.5,
+              "turnover_yi": 186.54,
+              "up_count": 79,
+              "volume_wan_lots": 1487.39
+            }
+          },
+          "by_name": {
+            "文化传媒": {
+              "avg_price": 12.55,
+              "change_pct": 2.19,
+              "code": "881164",
+              "down_count": 5,
+              "flat_count": null,
+              "latest": null,
+              "leader": "华媒控股",
+              "leader_change_pct": 10.02,
+              "leader_price": 4.61,
+              "main_net_inflow_yi": -3.5,
+              "name": "文化传媒",
+              "net_inflow_yi": -3.5,
+              "turnover_yi": 186.54,
+              "up_count": 79,
+              "volume_wan_lots": 1487.39
+            }
+          },
+          "items": [
+            {
+              "avg_price": 12.55,
+              "change_pct": 2.19,
+              "code": "881164",
+              "down_count": 5,
+              "flat_count": null,
+              "latest": null,
+              "leader": "华媒控股",
+              "leader_change_pct": 10.02,
+              "leader_price": 4.61,
+              "main_net_inflow_yi": -3.5,
+              "name": "文化传媒",
+              "net_inflow_yi": -3.5,
+              "turnover_yi": 186.54,
+              "up_count": 79,
+              "volume_wan_lots": 1487.39
+            }
+          ],
+          "missing": [
+            "出版传媒"
+          ],
+          "source": "ths_industry"
+        },
+        "_meta": {
+          "contract_version": "1.0",
+          "intent": "sector_index",
+          "status": "degraded",
+          "provider_used": "ths_industry",
+          "source": "ths_industry",
+          "source_chain": [
+            "ths_industry"
+          ],
+          "attempts": [
+            {
+              "provider": "ths_industry",
+              "status": "success",
+              "error_code": null,
+              "latency_ms": 1
+            }
+          ],
+          "fetched_at": "2026-10-16T10:01:17+08:00",
+          "data_as_of": null,
+          "data_scope": "同花顺881行业涨跌幅、成交量/额、资金流与均价；行业摘要不含指数点位",
+          "quality": {
+            "status": "partial",
+            "row_shape": "sector_rows",
+            "expected_row_shape": "sector_rows",
+            "requested_count": 2,
+            "returned_count": 1,
+            "coverage": 0.5,
+            "missing": [
+              "出版传媒"
+            ],
+            "missing_count": 1,
+            "semantic_equivalence": "exact",
+            "reason_codes": [
+              "missing_items",
+              "coverage_shortfall",
+              "DATA_TIME_UNKNOWN"
+            ]
+          },
+          "freshness": {
+            "status": "unknown",
+            "age_sec": null,
+            "max_age_sec": 300,
+            "basis": "no_data_time"
+          },
+          "auth": {
+            "required": false,
+            "status": "not_required"
+          },
+          "trade_usage": "辅助，不单独触发交易",
+          "pipeline_version": "3.0",
+          "route_policy_version": "3.0",
+          "source_tier": "primary",
+          "policy_evidence_sha256": null,
+          "policy_status": "inactive",
+          "attempt_classification_trace": [
+            {
+              "provider": "ths_industry",
+              "status": "success",
+              "error_code": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "capture": "stock_kline-2",
+      "intent": "stock_kline",
+      "requested_params": {
+        "code": "600825",
+        "count": 60,
+        "period": "daily"
+      },
+      "effective_params": {
+        "adjustment": "qfq",
+        "code": "600825",
+        "count": 60,
+        "period": "daily",
+        "use_case": "agent"
+      },
+      "before_meta": {
+        "attempt_classification_trace": [
+          {
+            "error_code": null,
+            "provider": "stocktoday",
+            "status": "success"
+          }
+        ],
+        "attempts": [
+          {
+            "error_code": null,
+            "latency_ms": 1091,
+            "provider": "stocktoday",
+            "status": "success"
+          }
+        ],
+        "auth": {
+          "required": true,
+          "status": "ok"
+        },
+        "contract_version": "1.0",
+        "data_as_of": "2026-10-12T15:00:00+08:00",
+        "data_scope": "A股个股日周月K线",
+        "fetched_at": "2026-10-16T10:03:51+08:00",
+        "freshness": {
+          "age_sec": null,
+          "basis": "data_as_of",
+          "max_age_sec": 86400,
+          "status": "stale"
+        },
+        "intent": "stock_kline",
+        "observation": {
+          "api_name": "pro_bar",
+          "endpoint": "https://tushare.citydata.club/pro_bar",
+          "filter_violations": [],
+          "latest_trade_date": "20261012",
+          "returned_count": 126,
+          "status": "historical_or_reference",
+          "truncated": false
+        },
+        "pipeline_version": "3.0",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "provider_used": "stocktoday",
+        "quality": {
+          "coverage": 1.0,
+          "expected_row_shape": "kline_bars",
+          "missing": [],
+          "missing_count": 0,
+          "reason_codes": [],
+          "requested_count": 60,
+          "returned_count": 60,
+          "row_shape": "kline_bars",
+          "semantic_equivalence": "exact",
+          "status": "normal"
+        },
+        "route_policy_version": "3.0",
+        "source": "stocktoday",
+        "source_chain": [
+          "stocktoday"
+        ],
+        "source_tier": "primary",
+        "status": "success",
+        "trade_usage": "辅助，不单独触发交易"
+      },
+      "after": {
+        "data": {
+          "_stocktoday": {
+            "api_name": "pro_bar",
+            "endpoint": "https://tushare.citydata.club/pro_bar",
+            "filter_violations": [],
+            "latest_trade_date": "20261012",
+            "returned_count": 126,
+            "status": "historical_or_reference",
+            "truncated": false
+          },
+          "adjustment": "qfq",
+          "amount_unit": "CNY",
+          "bars": [
+            {
+              "amount": 41797056.0,
+              "close": 4.46,
+              "datetime": "2026-06-29",
+              "high": 4.49,
+              "low": 4.31,
+              "open": 4.44,
+              "volume": 9475603.0
+            },
+            {
+              "amount": 63202985.0,
+              "close": 4.52,
+              "datetime": "2026-06-30",
+              "high": 4.58,
+              "low": 4.4,
+              "open": 4.42,
+              "volume": 14074457.999999998
+            },
+            {
+              "amount": 138382019.0,
+              "close": 4.97,
+              "datetime": "2026-07-01",
+              "high": 4.97,
+              "low": 4.49,
+              "open": 4.51,
+              "volume": 28330502.0
+            },
+            {
+              "amount": 136160962.0,
+              "close": 4.88,
+              "datetime": "2026-07-02",
+              "high": 5.1,
+              "low": 4.85,
+              "open": 4.94,
+              "volume": 27364561.0
+            },
+            {
+              "amount": 69223561.0,
+              "close": 4.87,
+              "datetime": "2026-07-03",
+              "high": 5.02,
+              "low": 4.8,
+              "open": 4.92,
+              "volume": 14157185.999999998
+            },
+            {
+              "amount": 71330532.0,
+              "close": 4.95,
+              "datetime": "2026-07-06",
+              "high": 5.04,
+              "low": 4.81,
+              "open": 4.91,
+              "volume": 14472844.0
+            },
+            {
+              "amount": 63550148.0,
+              "close": 4.71,
+              "datetime": "2026-07-07",
+              "high": 4.94,
+              "low": 4.69,
+              "open": 4.91,
+              "volume": 13300301.0
+            },
+            {
+              "amount": 52288298.0,
+              "close": 4.65,
+              "datetime": "2026-07-08",
+              "high": 4.74,
+              "low": 4.58,
+              "open": 4.7,
+              "volume": 11201800.0
+            },
+            {
+              "amount": 77231931.0,
+              "close": 4.84,
+              "datetime": "2026-07-09",
+              "high": 4.85,
+              "low": 4.63,
+              "open": 4.69,
+              "volume": 16262841.0
+            },
+            {
+              "amount": 88811362.0,
+              "close": 4.91,
+              "datetime": "2026-07-10",
+              "high": 5.02,
+              "low": 4.71,
+              "open": 4.78,
+              "volume": 18105801.0
+            },
+            {
+              "amount": 66527826.0,
+              "close": 4.66,
+              "datetime": "2026-07-13",
+              "high": 4.9,
+              "low": 4.61,
+              "open": 4.88,
+              "volume": 14134200.0
+            },
+            {
+              "amount": 44447908.0,
+              "close": 4.7,
+              "datetime": "2026-07-14",
+              "high": 4.71,
+              "low": 4.56,
+              "open": 4.62,
+              "volume": 9583199.0
+            },
+            {
+              "amount": 47132302.0,
+              "close": 4.79,
+              "datetime": "2026-07-15",
+              "high": 4.84,
+              "low": 4.67,
+              "open": 4.7,
+              "volume": 9861591.0
+            },
+            {
+              "amount": 82704451.0,
+              "close": 4.93,
+              "datetime": "2026-07-16",
+              "high": 5.08,
+              "low": 4.73,
+              "open": 4.81,
+              "volume": 16824892.0
+            },
+            {
+              "amount": 130950493.0,
+              "close": 4.89,
+              "datetime": "2026-07-17",
+              "high": 5.28,
+              "low": 4.83,
+              "open": 5.1,
+              "volume": 26052113.0
+            },
+            {
+              "amount": 117869525.0,
+              "close": 4.75,
+              "datetime": "2026-07-20",
+              "high": 5.02,
+              "low": 4.65,
+              "open": 4.89,
+              "volume": 24265300.0
+            },
+            {
+              "amount": 100693393.0,
+              "close": 4.85,
+              "datetime": "2026-07-21",
+              "high": 4.9,
+              "low": 4.67,
+              "open": 4.79,
+              "volume": 21095425.0
+            },
+            {
+              "amount": 63635146.0,
+              "close": 4.68,
+              "datetime": "2026-07-22",
+              "high": 4.79,
+              "low": 4.64,
+              "open": 4.77,
+              "volume": 13546007.999999998
+            },
+            {
+              "amount": 38779907.0,
+              "close": 4.75,
+              "datetime": "2026-07-23",
+              "high": 4.76,
+              "low": 4.62,
+              "open": 4.66,
+              "volume": 8261117.0
+            },
+            {
+              "amount": 34514167.0,
+              "close": 4.58,
+              "datetime": "2026-07-24",
+              "high": 4.72,
+              "low": 4.57,
+              "open": 4.72,
+              "volume": 7453503.999999999
+            },
+            {
+              "amount": 32505953.0,
+              "close": 4.69,
+              "datetime": "2026-07-27",
+              "high": 4.71,
+              "low": 4.56,
+              "open": 4.56,
+              "volume": 6962727.0
+            },
+            {
+              "amount": 44988072.0,
+              "close": 4.73,
+              "datetime": "2026-07-28",
+              "high": 4.82,
+              "low": 4.65,
+              "open": 4.67,
+              "volume": 9473592.0
+            },
+            {
+              "amount": 49720190.0,
+              "close": 4.84,
+              "datetime": "2026-07-29",
+              "high": 4.85,
+              "low": 4.7,
+              "open": 4.71,
+              "volume": 10323200.0
+            },
+            {
+              "amount": 51300519.0,
+              "close": 4.82,
+              "datetime": "2026-07-30",
+              "high": 4.92,
+              "low": 4.77,
+              "open": 4.82,
+              "volume": 10578201.0
+            },
+            {
+              "amount": 60494994.0,
+              "close": 4.95,
+              "datetime": "2026-07-31",
+              "high": 5.0,
+              "low": 4.82,
+              "open": 4.84,
+              "volume": 12284322.0
+            },
+            {
+              "amount": 68382855.0,
+              "close": 5.05,
+              "datetime": "2026-08-03",
+              "high": 5.07,
+              "low": 4.92,
+              "open": 4.92,
+              "volume": 13658800.0
+            },
+            {
+              "amount": 72783045.0,
+              "close": 5.12,
+              "datetime": "2026-08-04",
+              "high": 5.13,
+              "low": 5.01,
+              "open": 5.05,
+              "volume": 14310776.999999998
+            },
+            {
+              "amount": 53807801.0,
+              "close": 5.14,
+              "datetime": "2026-08-05",
+              "high": 5.15,
+              "low": 5.08,
+              "open": 5.08,
+              "volume": 10507301.0
+            },
+            {
+              "amount": 54232429.0,
+              "close": 5.09,
+              "datetime": "2026-08-06",
+              "high": 5.19,
+              "low": 5.04,
+              "open": 5.11,
+              "volume": 10644601.0
+            },
+            {
+              "amount": 52564797.0,
+              "close": 5.02,
+              "datetime": "2026-08-07",
+              "high": 5.09,
+              "low": 4.94,
+              "open": 5.08,
+              "volume": 10523950.0
+            },
+            {
+              "amount": 39362870.0,
+              "close": 5.09,
+              "datetime": "2026-08-10",
+              "high": 5.1,
+              "low": 4.97,
+              "open": 5.03,
+              "volume": 7785410.000000001
+            },
+            {
+              "amount": 31041494.0,
+              "close": 5.03,
+              "datetime": "2026-08-11",
+              "high": 5.11,
+              "low": 5.01,
+              "open": 5.11,
+              "volume": 6157100.0
+            },
+            {
+              "amount": 57801643.0,
+              "close": 5.15,
+              "datetime": "2026-08-12",
+              "high": 5.19,
+              "low": 5.03,
+              "open": 5.03,
+              "volume": 11249801.0
+            },
+            {
+              "amount": 56112690.0,
+              "close": 5.13,
+              "datetime": "2026-08-13",
+              "high": 5.25,
+              "low": 5.12,
+              "open": 5.14,
+              "volume": 10834600.0
+            },
+            {
+              "amount": 56157989.0,
+              "close": 5.06,
+              "datetime": "2026-08-14",
+              "high": 5.14,
+              "low": 4.99,
+              "open": 5.11,
+              "volume": 11120391.0
+            },
+            {
+              "amount": 32031144.0,
+              "close": 5.07,
+              "datetime": "2026-08-17",
+              "high": 5.08,
+              "low": 4.98,
+              "open": 5.08,
+              "volume": 6357900.0
+            },
+            {
+              "amount": 28411532.0,
+              "close": 5.04,
+              "datetime": "2026-08-18",
+              "high": 5.06,
+              "low": 4.98,
+              "open": 5.06,
+              "volume": 5669800.0
+            },
+            {
+              "amount": 43151215.0,
+              "close": 4.88,
+              "datetime": "2026-08-19",
+              "high": 5.02,
+              "low": 4.86,
+              "open": 5.02,
+              "volume": 8740300.0
+            },
+            {
+              "amount": 30258680.0,
+              "close": 4.95,
+              "datetime": "2026-08-20",
+              "high": 4.98,
+              "low": 4.88,
+              "open": 4.92,
+              "volume": 6115910.0
+            },
+            {
+              "amount": 32177386.0,
+              "close": 4.94,
+              "datetime": "2026-08-21",
+              "high": 4.98,
+              "low": 4.85,
+              "open": 4.89,
+              "volume": 6555660.000000001
+            },
+            {
+              "amount": 28799972.0,
+              "close": 4.88,
+              "datetime": "2026-08-24",
+              "high": 4.98,
+              "low": 4.85,
+              "open": 4.94,
+              "volume": 5882200.0
+            },
+            {
+              "amount": 44788347.0,
+              "close": 5.01,
+              "datetime": "2026-08-25",
+              "high": 5.02,
+              "low": 4.83,
+              "open": 4.83,
+              "volume": 8985204.0
+            },
+            {
+              "amount": 32935737.0,
+              "close": 5.02,
+              "datetime": "2026-08-26",
+              "high": 5.07,
+              "low": 4.99,
+              "open": 5.01,
+              "volume": 6558500.0
+            },
+            {
+              "amount": 36874773.0,
+              "close": 5.06,
+              "datetime": "2026-08-27",
+              "high": 5.07,
+              "low": 4.98,
+              "open": 4.99,
+              "volume": 7311850.999999999
+            },
+            {
+              "amount": 28269952.0,
+              "close": 5.05,
+              "datetime": "2026-08-28",
+              "high": 5.1,
+              "low": 5.04,
+              "open": 5.07,
+              "volume": 5584730.0
+            },
+            {
+              "amount": 70480574.0,
+              "close": 5.17,
+              "datetime": "2026-08-31",
+              "high": 5.17,
+              "low": 5.01,
+              "open": 5.03,
+              "volume": 13760300.0
+            },
+            {
+              "amount": 82973120.0,
+              "close": 5.3,
+              "datetime": "2026-09-01",
+              "high": 5.32,
+              "low": 5.14,
+              "open": 5.16,
+              "volume": 15714388.0
+            },
+            {
+              "amount": 52318490.0,
+              "close": 5.25,
+              "datetime": "2026-09-02",
+              "high": 5.3,
+              "low": 5.19,
+              "open": 5.25,
+              "volume": 9985800.0
+            },
+            {
+              "amount": 109201957.0,
+              "close": 5.18,
+              "datetime": "2026-09-03",
+              "high": 5.53,
+              "low": 5.18,
+              "open": 5.44,
+              "volume": 20451533.0
+            },
+            {
+              "amount": 99010384.0,
+              "close": 5.31,
+              "datetime": "2026-09-04",
+              "high": 5.42,
+              "low": 5.18,
+              "open": 5.25,
+              "volume": 18582535.0
+            },
+            {
+              "amount": 14523846.0,
+              "close": 5.84,
+              "datetime": "2026-09-21",
+              "high": 5.84,
+              "low": 5.84,
+              "open": 5.84,
+              "volume": 2486960.0
+            },
+            {
+              "amount": 22383972.0,
+              "close": 6.42,
+              "datetime": "2026-09-22",
+              "high": 6.42,
+              "low": 6.42,
+              "open": 6.42,
+              "volume": 3486600.0
+            },
+            {
+              "amount": 32333388.0,
+              "close": 7.06,
+              "datetime": "2026-09-23",
+              "high": 7.06,
+              "low": 7.06,
+              "open": 7.06,
+              "volume": 4579800.0
+            },
+            {
+              "amount": 46504942.0,
+              "close": 7.77,
+              "datetime": "2026-09-24",
+              "high": 7.77,
+              "low": 7.77,
+              "open": 7.77,
+              "volume": 5985192.0
+            },
+            {
+              "amount": 42985476.0,
+              "close": 8.55,
+              "datetime": "2026-09-28",
+              "high": 8.55,
+              "low": 8.55,
+              "open": 8.55,
+              "volume": 5027541.0
+            },
+            {
+              "amount": 147280304.0,
+              "close": 9.41,
+              "datetime": "2026-09-29",
+              "high": 9.41,
+              "low": 9.41,
+              "open": 9.41,
+              "volume": 15651467.000000002
+            },
+            {
+              "amount": 144750256.0,
+              "close": 10.35,
+              "datetime": "2026-09-30",
+              "high": 10.35,
+              "low": 10.35,
+              "open": 10.35,
+              "volume": 13985532.0
+            },
+            {
+              "amount": 64324547.0,
+              "close": 11.39,
+              "datetime": "2026-10-08",
+              "high": 11.39,
+              "low": 11.39,
+              "open": 11.39,
+              "volume": 5647458.0
+            },
+            {
+              "amount": 625610971.0,
+              "close": 12.53,
+              "datetime": "2026-10-09",
+              "high": 12.53,
+              "low": 12.53,
+              "open": 12.53,
+              "volume": 49929048.0
+            },
+            {
+              "amount": 487084168.0,
+              "close": 13.78,
+              "datetime": "2026-10-12",
+              "high": 13.78,
+              "low": 13.78,
+              "open": 13.78,
+              "volume": 35347182.0
+            }
+          ],
+          "code": "600825",
+          "period": "daily",
+          "volume_unit": "share"
+        },
+        "_meta": {
+          "contract_version": "1.0",
+          "intent": "stock_kline",
+          "status": "degraded",
+          "provider_used": "stocktoday",
+          "source": "stocktoday",
+          "source_chain": [
+            "stocktoday"
+          ],
+          "attempts": [
+            {
+              "provider": "stocktoday",
+              "status": "success",
+              "error_code": null,
+              "latency_ms": 1
+            }
+          ],
+          "fetched_at": "2026-10-16T10:03:51+08:00",
+          "data_as_of": "2026-10-12T15:00:00+08:00",
+          "data_scope": "A股个股日周月K线",
+          "quality": {
+            "status": "partial",
+            "row_shape": "kline_bars",
+            "expected_row_shape": "kline_bars",
+            "requested_count": 60,
+            "returned_count": 60,
+            "coverage": 1.0,
+            "missing": [],
+            "missing_count": 0,
+            "semantic_equivalence": "exact",
+            "reason_codes": [
+              "BAR_TRADE_DATE_LAG"
+            ]
+          },
+          "freshness": {
+            "age_sec": null,
+            "max_age_sec": 86400,
+            "basis": "data_as_of",
+            "status": "stale",
+            "reason": "bars_before_latest_completed_trade_date",
+            "expected_trade_date": "20261015",
+            "last_bar_trade_date": "20261012"
+          },
+          "auth": {
+            "required": false,
+            "status": "not_required"
+          },
+          "trade_usage": "辅助，不单独触发交易",
+          "pipeline_version": "3.0",
+          "route_policy_version": "3.0",
+          "source_tier": "primary",
+          "policy_evidence_sha256": null,
+          "policy_status": "inactive",
+          "attempt_classification_trace": [
+            {
+              "provider": "stocktoday",
+              "status": "success",
+              "error_code": null
+            }
+          ],
+          "observation": {
+            "api_name": "pro_bar",
+            "endpoint": "https://tushare.citydata.club/pro_bar",
+            "filter_violations": [],
+            "latest_trade_date": "20261012",
+            "returned_count": 126,
+            "status": "historical_or_reference",
+            "truncated": false
+          }
+        }
+      }
+    },
+    {
+      "capture": "index_intraday_compare-1",
+      "intent": "index_intraday_compare",
+      "requested_params": {
+        "trade_date": "20261016"
+      },
+      "effective_params": {
+        "trade_date": "20261016",
+        "use_case": "agent"
+      },
+      "before_meta": {
+        "attempt_classification_trace": [
+          {
+            "error_code": null,
+            "provider": "tencent",
+            "status": "success"
+          }
+        ],
+        "attempts": [
+          {
+            "error_code": null,
+            "latency_ms": 766,
+            "provider": "tencent",
+            "status": "success"
+          }
+        ],
+        "auth": {
+          "required": false,
+          "status": "not_required"
+        },
+        "contract_version": "1.0",
+        "data_as_of": null,
+        "data_scope": "三大指数分钟量价与同时间段参考比较；当前 StockToday 套餐不含指数分钟，腾讯为首要源",
+        "fetched_at": "2026-10-16T11:55:34+08:00",
+        "freshness": {
+          "age_sec": null,
+          "basis": "no_data_time",
+          "max_age_sec": 300,
+          "status": "unknown"
+        },
+        "intent": "index_intraday_compare",
+        "pipeline_version": "3.0",
+        "policy_evidence_sha256": null,
+        "policy_status": "inactive",
+        "provider_used": "tencent",
+        "quality": {
+          "coverage": null,
+          "expected_row_shape": null,
+          "missing": [],
+          "missing_count": 0,
+          "reason_codes": [],
+          "requested_count": null,
+          "returned_count": 1,
+          "row_shape": "unknown",
+          "semantic_equivalence": "unknown",
+          "status": "normal"
+        },
+        "route_policy_version": "3.0",
+        "source": "tencent",
+        "source_chain": [
+          "tencent"
+        ],
+        "source_tier": "primary",
+        "status": "success",
+        "trade_usage": "辅助，不单独触发交易"
+      },
+      "after": {
+        "data": {
+          "items": [
+            {
+              "bars": [
+                {
+                  "amount": 151444875377.5,
+                  "chg": 0.1,
+                  "t": "09:45",
+                  "vol": 9173727400.0,
+                  "volRatio": 0.8,
+                  "yesterdayAmt": 172169680992.0
+                },
+                {
+                  "amount": 70857919114.4,
+                  "chg": 0.05,
+                  "t": "10:00",
+                  "vol": 4603305800.0,
+                  "volRatio": 0.9,
+                  "yesterdayAmt": 81291001695.70001
+                },
+                {
+                  "amount": 50277759989.80002,
+                  "chg": -0.2,
+                  "t": "10:15",
+                  "vol": 3301120600.0,
+                  "volRatio": 0.86,
+                  "yesterdayAmt": 57689881042.599976
+                },
+                {
+                  "amount": 43633991768.89996,
+                  "chg": 0.42,
+                  "t": "10:30",
+                  "vol": 2847859300.0,
+                  "volRatio": 1.14,
+                  "yesterdayAmt": 37923778645.10004
+                },
+                {
+                  "amount": 36075489701.400024,
+                  "chg": 0.11,
+                  "t": "10:45",
+                  "vol": 2636778400.0,
+                  "volRatio": 1.26,
+                  "yesterdayAmt": 31390473218.599976
+                },
+                {
+                  "amount": 25686510294.900024,
+                  "chg": -0.03,
+                  "t": "11:00",
+                  "vol": 1681068100.0,
+                  "volRatio": 0.95,
+                  "yesterdayAmt": 28295659158.5
+                },
+                {
+                  "amount": 36215568240.39996,
+                  "chg": 0.37,
+                  "t": "11:15",
+                  "vol": 2328892900.0,
+                  "volRatio": 1.32,
+                  "yesterdayAmt": 26113981104.200012
+                },
+                {
+                  "amount": 31214149178.700012,
+                  "chg": -0.15,
+                  "t": "11:30",
+                  "vol": 1907373900.0,
+                  "volRatio": 1.15,
+                  "yesterdayAmt": 22674912171.700012
+                },
+                {
+                  "_cum": true,
+                  "amount": 445406263666.0,
+                  "chg": 0,
+                  "cumYesterdayAmt": 457549368028.4,
+                  "t": "累计",
+                  "vol": 0,
+                  "volRatio": 0.95
+                }
+              ],
+              "index_code": "000001.SH",
+              "period": "15m"
+            },
+            {
+              "bars": [
+                {
+                  "amount": 183166614274.48,
+                  "chg": -0.57,
+                  "t": "09:45",
+                  "vol": 11249007600.0,
+                  "volRatio": 0.83,
+                  "yesterdayAmt": 204961283275.99
+                },
+                {
+                  "amount": 83056209347.48999,
+                  "chg": -0.16,
+                  "t": "10:00",
+                  "vol": 5564878000.0,
+                  "volRatio": 0.9,
+                  "yesterdayAmt": 95421325601.70001
+                },
+                {
+                  "amount": 57700390226.56998,
+                  "chg": -0.57,
+                  "t": "10:15",
+                  "vol": 3831550800.0,
+                  "volRatio": 0.88,
+                  "yesterdayAmt": 66425510473.21002
+                },
+                {
+                  "amount": 48474045117.04004,
+                  "chg": 0.75,
+                  "t": "10:30",
+                  "vol": 3502592400.0,
+                  "volRatio": 1.29,
+                  "yesterdayAmt": 43617141410.869995
+                },
+                {
+                  "amount": 39041373160.38995,
+                  "chg": -0.04,
+                  "t": "10:45",
+                  "vol": 3085604600.0,
+                  "volRatio": 1.54,
+                  "yesterdayAmt": 32658340138.389954
+                },
+                {
+                  "amount": 27669313658.97003,
+                  "chg": -0.0,
+                  "t": "11:00",
+                  "vol": 1883564000.0,
+                  "volRatio": 1.03,
+                  "yesterdayAmt": 30626514063.79004
+                },
+                {
+                  "amount": 42098431226.380005,
+                  "chg": 0.72,
+                  "t": "11:15",
+                  "vol": 2929700100.0,
+                  "volRatio": 1.63,
+                  "yesterdayAmt": 27428760175.46997
+                },
+                {
+                  "amount": 35941294853.67999,
+                  "chg": -0.12,
+                  "t": "11:30",
+                  "vol": 2349649600.0,
+                  "volRatio": 1.55,
+                  "yesterdayAmt": 23084074430.929993
+                },
+                {
+                  "_cum": true,
+                  "amount": 517147671865.0,
+                  "chg": 0,
+                  "cumYesterdayAmt": 524222949570.35,
+                  "t": "累计",
+                  "vol": 0,
+                  "volRatio": 1.01
+                }
+              ],
+              "index_code": "399001.SZ",
+              "period": "15m"
+            },
+            {
+              "bars": [
+                {
+                  "amount": 90697113624.23,
+                  "chg": -1.11,
+                  "t": "09:45",
+                  "vol": 3625132900.0,
+                  "volRatio": 0.86,
+                  "yesterdayAmt": 98981852319.77
+                },
+                {
+                  "amount": 40217645509.61,
+                  "chg": -0.16,
+                  "t": "10:00",
+                  "vol": 1725766300.0,
+                  "volRatio": 0.86,
+                  "yesterdayAmt": 47197147193.36
+                },
+                {
+                  "amount": 27363688785.30002,
+                  "chg": -0.78,
+                  "t": "10:15",
+                  "vol": 1164287600.0,
+                  "volRatio": 0.87,
+                  "yesterdayAmt": 32431779129.26001
+                },
+                {
+                  "amount": 22707706869.619995,
+                  "chg": 0.89,
+                  "t": "10:30",
+                  "vol": 961949800.0,
+                  "volRatio": 1.16,
+                  "yesterdayAmt": 20515951921.00998
+                },
+                {
+                  "amount": 17019833973.549988,
+                  "chg": -0.23,
+                  "t": "10:45",
+                  "vol": 758056200.0,
+                  "volRatio": 1.26,
+                  "yesterdayAmt": 15248357662.100006
+                },
+                {
+                  "amount": 12383096092.809998,
+                  "chg": -0.1,
+                  "t": "11:00",
+                  "vol": 521755300.0,
+                  "volRatio": 0.91,
+                  "yesterdayAmt": 15503614439.029999
+                },
+                {
+                  "amount": 19155936008.920013,
+                  "chg": 0.9,
+                  "t": "11:15",
+                  "vol": 862258500.0,
+                  "volRatio": 1.61,
+                  "yesterdayAmt": 13281057610.920013
+                },
+                {
+                  "amount": 17089753781.959991,
+                  "chg": -0.18,
+                  "t": "11:30",
+                  "vol": 725774100.0,
+                  "volRatio": 1.7,
+                  "yesterdayAmt": 10712983031.879974
+                },
+                {
+                  "_cum": true,
+                  "amount": 246634774646.0,
+                  "chg": 0,
+                  "cumYesterdayAmt": 253872743307.33,
+                  "t": "累计",
+                  "vol": 0,
+                  "volRatio": 0.98
+                }
+              ],
+              "index_code": "399006.SZ",
+              "period": "15m"
+            }
+          ],
+          "period": "15m",
+          "source": "tencent",
+          "trade_date": "20261016",
+          "上证15min": [
+            {
+              "amount": 151444875377.5,
+              "chg": 0.1,
+              "t": "09:45",
+              "vol": 9173727400.0,
+              "volRatio": 0.8,
+              "yesterdayAmt": 172169680992.0
+            },
+            {
+              "amount": 70857919114.4,
+              "chg": 0.05,
+              "t": "10:00",
+              "vol": 4603305800.0,
+              "volRatio": 0.9,
+              "yesterdayAmt": 81291001695.70001
+            },
+            {
+              "amount": 50277759989.80002,
+              "chg": -0.2,
+              "t": "10:15",
+              "vol": 3301120600.0,
+              "volRatio": 0.86,
+              "yesterdayAmt": 57689881042.599976
+            },
+            {
+              "amount": 43633991768.89996,
+              "chg": 0.42,
+              "t": "10:30",
+              "vol": 2847859300.0,
+              "volRatio": 1.14,
+              "yesterdayAmt": 37923778645.10004
+            },
+            {
+              "amount": 36075489701.400024,
+              "chg": 0.11,
+              "t": "10:45",
+              "vol": 2636778400.0,
+              "volRatio": 1.26,
+              "yesterdayAmt": 31390473218.599976
+            },
+            {
+              "amount": 25686510294.900024,
+              "chg": -0.03,
+              "t": "11:00",
+              "vol": 1681068100.0,
+              "volRatio": 0.95,
+              "yesterdayAmt": 28295659158.5
+            },
+            {
+              "amount": 36215568240.39996,
+              "chg": 0.37,
+              "t": "11:15",
+              "vol": 2328892900.0,
+              "volRatio": 1.32,
+              "yesterdayAmt": 26113981104.200012
+            },
+            {
+              "amount": 31214149178.700012,
+              "chg": -0.15,
+              "t": "11:30",
+              "vol": 1907373900.0,
+              "volRatio": 1.15,
+              "yesterdayAmt": 22674912171.700012
+            },
+            {
+              "_cum": true,
+              "amount": 445406263666.0,
+              "chg": 0,
+              "cumYesterdayAmt": 457549368028.4,
+              "t": "累计",
+              "vol": 0,
+              "volRatio": 0.95
+            }
+          ],
+          "创业15min": [
+            {
+              "amount": 90697113624.23,
+              "chg": -1.11,
+              "t": "09:45",
+              "vol": 3625132900.0,
+              "volRatio": 0.86,
+              "yesterdayAmt": 98981852319.77
+            },
+            {
+              "amount": 40217645509.61,
+              "chg": -0.16,
+              "t": "10:00",
+              "vol": 1725766300.0,
+              "volRatio": 0.86,
+              "yesterdayAmt": 47197147193.36
+            },
+            {
+              "amount": 27363688785.30002,
+              "chg": -0.78,
+              "t": "10:15",
+              "vol": 1164287600.0,
+              "volRatio": 0.87,
+              "yesterdayAmt": 32431779129.26001
+            },
+            {
+              "amount": 22707706869.619995,
+              "chg": 0.89,
+              "t": "10:30",
+              "vol": 961949800.0,
+              "volRatio": 1.16,
+              "yesterdayAmt": 20515951921.00998
+            },
+            {
+              "amount": 17019833973.549988,
+              "chg": -0.23,
+              "t": "10:45",
+              "vol": 758056200.0,
+              "volRatio": 1.26,
+              "yesterdayAmt": 15248357662.100006
+            },
+            {
+              "amount": 12383096092.809998,
+              "chg": -0.1,
+              "t": "11:00",
+              "vol": 521755300.0,
+              "volRatio": 0.91,
+              "yesterdayAmt": 15503614439.029999
+            },
+            {
+              "amount": 19155936008.920013,
+              "chg": 0.9,
+              "t": "11:15",
+              "vol": 862258500.0,
+              "volRatio": 1.61,
+              "yesterdayAmt": 13281057610.920013
+            },
+            {
+              "amount": 17089753781.959991,
+              "chg": -0.18,
+              "t": "11:30",
+              "vol": 725774100.0,
+              "volRatio": 1.7,
+              "yesterdayAmt": 10712983031.879974
+            },
+            {
+              "_cum": true,
+              "amount": 246634774646.0,
+              "chg": 0,
+              "cumYesterdayAmt": 253872743307.33,
+              "t": "累计",
+              "vol": 0,
+              "volRatio": 0.98
+            }
+          ],
+          "深证15min": [
+            {
+              "amount": 183166614274.48,
+              "chg": -0.57,
+              "t": "09:45",
+              "vol": 11249007600.0,
+              "volRatio": 0.83,
+              "yesterdayAmt": 204961283275.99
+            },
+            {
+              "amount": 83056209347.48999,
+              "chg": -0.16,
+              "t": "10:00",
+              "vol": 5564878000.0,
+              "volRatio": 0.9,
+              "yesterdayAmt": 95421325601.70001
+            },
+            {
+              "amount": 57700390226.56998,
+              "chg": -0.57,
+              "t": "10:15",
+              "vol": 3831550800.0,
+              "volRatio": 0.88,
+              "yesterdayAmt": 66425510473.21002
+            },
+            {
+              "amount": 48474045117.04004,
+              "chg": 0.75,
+              "t": "10:30",
+              "vol": 3502592400.0,
+              "volRatio": 1.29,
+              "yesterdayAmt": 43617141410.869995
+            },
+            {
+              "amount": 39041373160.38995,
+              "chg": -0.04,
+              "t": "10:45",
+              "vol": 3085604600.0,
+              "volRatio": 1.54,
+              "yesterdayAmt": 32658340138.389954
+            },
+            {
+              "amount": 27669313658.97003,
+              "chg": -0.0,
+              "t": "11:00",
+              "vol": 1883564000.0,
+              "volRatio": 1.03,
+              "yesterdayAmt": 30626514063.79004
+            },
+            {
+              "amount": 42098431226.380005,
+              "chg": 0.72,
+              "t": "11:15",
+              "vol": 2929700100.0,
+              "volRatio": 1.63,
+              "yesterdayAmt": 27428760175.46997
+            },
+            {
+              "amount": 35941294853.67999,
+              "chg": -0.12,
+              "t": "11:30",
+              "vol": 2349649600.0,
+              "volRatio": 1.55,
+              "yesterdayAmt": 23084074430.929993
+            },
+            {
+              "_cum": true,
+              "amount": 517147671865.0,
+              "chg": 0,
+              "cumYesterdayAmt": 524222949570.35,
+              "t": "累计",
+              "vol": 0,
+              "volRatio": 1.01
+            }
+          ]
+        },
+        "_meta": {
+          "contract_version": "1.0",
+          "intent": "index_intraday_compare",
+          "status": "success",
+          "provider_used": "tencent",
+          "source": "tencent",
+          "source_chain": [
+            "tencent"
+          ],
+          "attempts": [
+            {
+              "provider": "tencent",
+              "status": "success",
+              "error_code": null,
+              "latency_ms": 1
+            }
+          ],
+          "fetched_at": "2026-10-16T11:55:34+08:00",
+          "data_as_of": "2026-10-16T11:30:00+08:00",
+          "data_scope": "三大指数分钟量价与同时间段参考比较；当前 StockToday 套餐不含指数分钟，腾讯为首要源",
+          "quality": {
+            "status": "normal",
+            "row_shape": "unknown",
+            "expected_row_shape": null,
+            "requested_count": null,
+            "returned_count": 1,
+            "coverage": null,
+            "missing": [],
+            "missing_count": 0,
+            "semantic_equivalence": "unknown",
+            "reason_codes": []
+          },
+          "freshness": {
+            "age_sec": null,
+            "max_age_sec": 300,
+            "basis": "data_as_of",
+            "status": "historical"
+          },
+          "auth": {
+            "required": false,
+            "status": "not_required"
+          },
+          "trade_usage": "辅助，不单独触发交易",
+          "pipeline_version": "3.0",
+          "route_policy_version": "3.0",
+          "source_tier": "primary",
+          "policy_evidence_sha256": null,
+          "policy_status": "inactive",
+          "attempt_classification_trace": [
+            {
+              "provider": "tencent",
+              "status": "success",
+              "error_code": null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "passed": true
+}

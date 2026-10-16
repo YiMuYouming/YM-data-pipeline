@@ -1,0 +1,18 @@
+test_early_compare_empty_reason_survives_public_boundary (tests.test_dp02.DP02Tests.test_early_compare_empty_reason_survives_public_boundary) ... FAIL
+
+======================================================================
+FAIL: test_early_compare_empty_reason_survives_public_boundary (tests.test_dp02.DP02Tests.test_early_compare_empty_reason_survives_public_boundary)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/yimu/Projects/YM_Capital/_wt/dp02-20261016/YM-data-pipeline/tests/test_dp02.py", line 115, in test_early_compare_empty_reason_survives_public_boundary
+    self.assertEqual("empty", result["_meta"]["quality"]["status"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'empty' != 'normal'
+- empty
++ normal
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)

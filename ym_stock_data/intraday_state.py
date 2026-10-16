@@ -133,16 +133,26 @@ def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
     return limits
 
 
-def _limit_metadata(provider, trade_date: str):
+def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = None):
     """Dated metadata only; snapshot membership and counts stay authoritative."""
     try:
         outcome = provider._request_table("limit_list_d", {"trade_date": trade_date, "limit_type": "U"})
     except Exception:
+        if diagnostics is not None:
+            diagnostics.update(status="provider_error", error_code="METADATA_REQUEST_FAILED",
+                               returned_count=0, matched_count=0, latency_ms=None)
         return {}
+    if diagnostics is not None:
+        diagnostics.update(status=outcome.status,
+                           error_code=outcome.error_code or ("EMPTY_UPSTREAM" if outcome.status == "empty" else None),
+                           returned_count=0, matched_count=0, latency_ms=outcome.latency_ms)
     if outcome.status != "success" or not isinstance(outcome.data, dict):
         return {}
     rows = {}
-    for row in outcome.data.get("items") or []:
+    items = outcome.data.get("items") or []
+    if diagnostics is not None:
+        diagnostics["returned_count"] = len(items)
+    for row in items:
         if str(row.get("trade_date")) != trade_date:
             continue
         code = str(row.get("ts_code") or "").split(".")[0]
@@ -156,6 +166,10 @@ def _limit_metadata(provider, trade_date: str):
             except ValueError:
                 pass
         rows[code] = {"industry": str(row.get("industry") or ""), "seal_time": seal_time}
+    if diagnostics is not None:
+        diagnostics["matched_count"] = len(rows)
+        if items and not rows:
+            diagnostics["error_code"] = "DATE_OR_CODE_MISMATCH"
     return rows
 
 
@@ -241,7 +255,8 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         outcome = provider._request_table("rt_k", {"ts_code": pattern})
         items = (outcome.data or {}).get("items") if isinstance(outcome.data, dict) else None
         batches.append({"ts_code": pattern, "status": outcome.status,
-                        "error_code": outcome.error_code, "rows": len(items or [])})
+                        "error_code": outcome.error_code, "rows": len(items or []),
+                        "latency_ms": outcome.latency_ms})
         if outcome.status != "success" or not items:
             raise IntradayStateError(outcome.error_code or "SNAPSHOT_BATCH_EMPTY",
                                      "provider_error" if outcome.error_code else "empty")
@@ -348,7 +363,11 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     )
     for code, board in current_boards.items():
         detail[code]["board"] = board
-    metadata = _limit_metadata(provider, trade_date)
+    metadata_observation: dict = {}
+    metadata = _limit_metadata(provider, trade_date, diagnostics=metadata_observation)
+    if limit_sets["up"] and not metadata:
+        gaps.append("limit_up_metadata_empty" if metadata_observation.get("status") == "empty"
+                    else "limit_up_metadata_unavailable")
     for code in limit_sets["up"]:
         row = metadata.get(code) or {}
         if row.get("seal_time") and row["seal_time"] > data_as_of.strftime("%H:%M:%S"):
@@ -384,6 +403,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         "previous_ladder_board_source": board_source,
         "source_gaps": gaps,
         "_stocktoday": {"api_name": "rt_k", "batches": batches, "unique_code_count": len(latest),
+                        "limit_metadata": metadata_observation,
                         "deduplicated_rows": len(rows) - len(latest),
                         "stk_limit_rows": len(limits), "fetched_at": fetched_at},
     }

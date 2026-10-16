@@ -37,7 +37,9 @@ class DP01Tests(unittest.TestCase):
              patch.object(api, "_provider_state", return_value=self.state), \
              patch.object(api, "load_compiled_policy", return_value=CompiledPolicy(None, "inactive", None)):
             result = query("sector_index", codes=["881121.TI"])
-        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertIn("DATA_TIME_UNKNOWN", result["_meta"]["quality"]["reason_codes"])
+        self.assertIsNone(result["_meta"]["data_as_of"])
         self.assertEqual(["881121"], [row["code"] for row in result["data"]["items"]])
 
     def test_D2_board_strength_gaps_degrade_envelope(self):

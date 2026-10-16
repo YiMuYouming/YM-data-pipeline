@@ -146,7 +146,7 @@ class PublicApiTests(unittest.TestCase):
             (
                 "stock_kline",
                 {"code": "600519", "period": "daily", "count": 1},
-                full_kline_data(),
+                full_kline_data(bar_datetime="2026-09-23 15:00:00"),
             ),
             (
                 "stock_kline",
@@ -273,7 +273,9 @@ class PublicApiTests(unittest.TestCase):
         )
         with self.provider_patch({"ths_industry": sector}):
             result = query("sector_index", names=["半导体"])
-        self.assertEqual("success", result["_meta"]["status"])
+        self.assertEqual("degraded", result["_meta"]["status"])
+        self.assertIn("DATA_TIME_UNKNOWN", result["_meta"]["quality"]["reason_codes"])
+        self.assertIsNone(result["_meta"]["data_as_of"])
         self.assertEqual("ths_industry", result["_meta"]["provider_used"])
         self.assertEqual("primary", result["_meta"]["source_tier"])
 
