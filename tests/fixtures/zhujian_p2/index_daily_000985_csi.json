@@ -1,0 +1,90 @@
+{
+  "_fixture_note": "铸剑 P2-A 离线回归夹具：中证全指 000985.CSI 日线最小脱敏子集。由 P1 封存真实响应 probe-index-daily-000985-CSI.json 逐行裁剪而来，只保留公共市场必要字段；非新的在线证据。",
+  "_source_sealed_file": "probe-index-daily-000985-CSI.json",
+  "_source_sealed_sha256": "16579ffc8329ce489c4b1a0a037479be6b796da60fcb337f5e27b733e6ebf23d",
+  "_source_collected_at": "2026-10-18T09:45:09+08:00",
+  "_source_endpoint": "https://tushare.citydata.club/index_daily",
+  "_source_trade_date": "20261016",
+  "fields": [
+    "ts_code",
+    "trade_date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "vol",
+    "amount"
+  ],
+  "items": [
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261016",
+      "open": 5336.62,
+      "high": 5369.26,
+      "low": 5241.5,
+      "close": 5289.37,
+      "vol": 987412000.0,
+      "amount": 1497700000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261015",
+      "open": 5290.64,
+      "high": 5333.61,
+      "low": 5242.1,
+      "close": 5282.71,
+      "vol": 1023660000.0,
+      "amount": 1578130000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261014",
+      "open": 5473.41,
+      "high": 5500.99,
+      "low": 5399.53,
+      "close": 5404.81,
+      "vol": 901245000.0,
+      "amount": 1367030000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261013",
+      "open": 5412.04,
+      "high": 5537.46,
+      "low": 5361.33,
+      "close": 5491.23,
+      "vol": 1005660000.0,
+      "amount": 1612630000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261012",
+      "open": 5555.06,
+      "high": 5573.58,
+      "low": 5485.7,
+      "close": 5491.06,
+      "vol": 958055000.0,
+      "amount": 1487460000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261009",
+      "open": 5539.33,
+      "high": 5585.56,
+      "low": 5423.32,
+      "close": 5570.32,
+      "vol": 1126680000.0,
+      "amount": 1837300000.0
+    },
+    {
+      "ts_code": "000985.CSI",
+      "trade_date": "20261008",
+      "open": 5648.39,
+      "high": 5687.37,
+      "low": 5528.33,
+      "close": 5560.01,
+      "vol": 974518000.0,
+      "amount": 1614500000.0
+    }
+  ]
+}

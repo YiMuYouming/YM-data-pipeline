@@ -130,6 +130,53 @@ empty，不表示全市场无板块。`member_coverage` 由持有成员证据的
   的脱敏/裁剪层也应保留源给出的合法非负整数；若旧回执缺失延迟，不补造测量值。
   `attempt_classification_trace` 是独立的三字段分类轨迹，不与 attempts 混用。
 
+## 铸剑 P2-A 数据标准化（000985.CSI 与最后封板时间）
+
+本节是 2026-10-18 隔离树的最小施工记录，只覆盖两项字段/归一化暴露，
+不改路由、不扩 provider、不新增依赖。
+
+回归证据在**仓库内**：`tests/fixtures/zhujian_p2/` 的两份最小脱敏夹具
+（`index_daily_000985_csi.json`、`limit_list_d_up_20261016.json`）与
+`tests/test_zhujian_p2_standardization.py`。夹具由 P1 封存响应逐行裁剪而来，
+并在 `_source_sealed_file` / `_source_sealed_sha256` / `_source_collected_at` 中
+记录来源与原封存文件 hash，可离线复核。测试在 socket 层断网运行，
+**不需要任何 Scratch 目录即可在干净 clone 中复现**。这些是**已封存响应的离线重放**，
+不是新的在线证据；施工期的外部证据 JSON 只作本地审计记录，不随仓库发布。
+
+### `index_kline` 的 CSI 后缀
+
+`normalize_index_code`（`api.py`）与 `StockTodayProvider._index_code`（`providers/stocktoday.py`）
+接受 `\d{6}\.(?:SH|SZ|CSI)`。要点：
+
+- **SH/SZ 与裸代码行为完全不变**：裸 6 位仍按既有规则推断（`000001`→`.SH`，
+  其余→`.SZ`）。裸 `000985` 仍归一化为 `000985.SZ`，**不会**静默变成 CSI 基准。
+- **CSI 是显式第三种后缀，不是 SH/SZ 的别名**。接受它只放宽客户端校验，
+  不等于给后备源发明的映射。
+- **只有 canonical StockToday 日线路径被证实**（`index_daily` 以 `000985.CSI`
+  取到真实日线）。`eastmoney_index._INDEX_MARKETS` 仍只登记
+  `000001.SH/399001.SZ/399006.SZ`，对 `000985.CSI` 诚实返回 `INVALID_PARAMS`；
+  本次**没有**为腾讯/东方财富发明 CSI 映射。
+- **分钟线仍是明确 gap**：CSI + 分钟周期不经过 StockToday（`idx_mins` 不在套餐内），
+  后备源又无 CSI 映射，因此诚实失败。周/月线未在本次证据范围内。
+- **基准缺失不换指数**：上游空就是合法空（`EMPTY_UPSTREAM`），
+  不得改用上证/沪深300 冒充中证全指。
+
+### 涨停行封板时点
+
+`limit_list_d` 的 `first_time`/`last_time` 逐条透传为标准命名的
+`first_limit_time`/`last_limit_time`（沿现有 `code/name/price/pct/limit_days/industry`
+行形状追加，不改动既有字段）：
+
+- **两个字段语义独立**，不折叠、不互相回填。真实样本 20261016 涨停池 61 行里
+  **30 行 first≠last**，正是「早盘首封、盘中炸板、下午再封」的反例。
+- **原来源时点按上游字符串原样透传**（`HHMMSS`，如 `"130012"`），不重写格式、
+  不补零、不按时区换算。
+- **两态，不是三态**：`null` → `None`，空串 → `""`。**整列缺失与显式 `null`
+  同归 `None`**，本契约不区分这两者（都需要先定 wire 层是否区分缺失列再改）。
+  任一情况下都**不回落**到 `first_limit_time`，也不写成 0。
+- 阻断条款仍然有效：**不得用首封冒充最后封板**；历史封存数据不回填，保持 unknown。
+- `fd_amount` 语义仍未证实，本包**不推断**其含义，也不据此产出封成比。
+
 ## 下游与回滚
 
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。

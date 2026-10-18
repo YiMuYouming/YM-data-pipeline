@@ -550,9 +550,14 @@ def _validate_params(intent: str, params: dict) -> None:
         def normalize_index_code(value):
             text = str(value).upper()
             if re.fullmatch(r"\d{6}", text):
+                #裸代码既有规则不变：只有显式后缀才能表达非 SH/SZ 基准。
                 text = f"{text}.SH" if text == "000001" else f"{text}.SZ"
-            if not re.fullmatch(r"\d{6}\.(?:SH|SZ)", text):
-                raise ValueError("index_kline codes must use 6 digits with SH or SZ")
+            # CSI 是显式的第三种后缀（如中证全指 000985.CSI），不是
+            # SH/SZ 的别名；接受它不等于给后备源发明的 CSI 映射。
+            if not re.fullmatch(r"\d{6}\.(?:SH|SZ|CSI)", text):
+                raise ValueError(
+                    "index_kline codes must use 6 digits with SH, SZ, or CSI"
+                )
             return text
 
         if codes is not None:

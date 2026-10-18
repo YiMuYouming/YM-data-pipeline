@@ -795,6 +795,15 @@ class StockTodayProvider:
                     return value
             return None
 
+        def source_time(key):
+            # 首封与最后封是两个独立事实：既不互相折叠，也不在缺失时拿
+            # 其中一个补另一个。None（列缺失或 null）与空串按上游原样保留，
+            # 让消费者能区分“没有证据”和“上游给了空值”。
+            value = row.get(key)
+            if value is None:
+                return None
+            return value if isinstance(value, str) else str(value)
+
         return {
             "code": str(row.get("ts_code") or row.get("code") or "").split(".")[0],
             "name": str(row.get("name") or row.get("ts_name") or ""),
@@ -802,6 +811,8 @@ class StockTodayProvider:
             "pct": number("pct_chg", "pct_change", "change_pct"),
             "limit_days": int(number("limit_times", "open_times") or 1),
             "industry": str(row.get("industry") or row.get("tag") or ""),
+            "first_limit_time": source_time("first_time"),
+            "last_limit_time": source_time("last_time"),
         }
 
     def _limit_target_date(self, requested):
@@ -972,7 +983,7 @@ class StockTodayProvider:
             nested,
             fields=(
                 "ts_code,trade_date,industry,name,close,pct_chg,"
-                "open_times,up_stat,limit_times"
+                "open_times,up_stat,limit_times,first_time,last_time"
             ),
         )
         if outcome.error_code:
@@ -1353,7 +1364,9 @@ class StockTodayProvider:
     @staticmethod
     def _index_code(value):
         text = str(value or "").upper()
-        if not re.fullmatch(r"\d{6}\.(?:SH|SZ)", text):
+        # CSI 后缀按上游自己的 ts_code 透传（index_daily 实测认这个写法）；
+        # 不在此处把它改写成 SH/SZ，那会换掉基准。
+        if not re.fullmatch(r"\d{6}\.(?:SH|SZ|CSI)", text):
             raise ValueError("StockToday requires an exchange-qualified index code")
         return text
 
