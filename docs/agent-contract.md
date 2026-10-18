@@ -235,6 +235,72 @@ empty，不表示全市场无板块。`member_coverage` 由持有成员证据的
   `build_index_intraday_compare`，一次改动覆盖全部当前 provider；
   该路径不适用的 provider 不伪造覆盖。
 
+## 铸剑 P2-C1：连板数与炸板次数语义分离
+
+涨停明细的 `limit_days`（几板）与 `break_times`（炸板几次）是两个不同事实。
+回归见 `tests/test_p2c_limit_count_semantics.py`，夹具
+`tests/fixtures/p2c/limit_list_d_up_20261016.json`。
+
+### 字段口径
+
+- `limit_days` **只取来源明确的 `limit_times`**。缺失/null、`0`、`bool`、
+  小数、NaN/Inf、负数一律为 `None`（未知）：**不回退 `open_times`、不补 1、不取整**。
+  涨停池里连板数至少为 1，故 `0` 不是合法板数。
+- `break_times` **独立取 `open_times`**；合法 `0` 保持 `0`，非法同样为 `None`。
+- 既有 `code/name/price/pct/limit_days/industry/first_limit_time/last_limit_time`
+  语义不变；未取到第二份数据源，`break_times` 与 `market_limit_state` 池里的
+  同名字段同源同义。
+
+### 最高板与 known_max_board
+
+- `max_board` = **完整已知**板数的最大值。非空池只要有一行 `limit_days` 未知，
+  `max_board` 即 `None`——**不把已知子集的最大值当全体最大**。
+- `known_max_board` 另行给出可观察的子集最大值，供观察用，**不冒充完整最高板**。
+- **真正空的涨停池仍返回 `0`**；加载失败（error）不是空池，不产生 `max_board`。
+- 下游 `intent_normalizers` 只做 `max_board` 透传，未再兜底。
+
+### 与封存库写入路径的关系（round3 更正）
+
+**更正前一版结论**：此前写「`market_limit_state` 不经过 `_limit_row`，
+所以本包的 `None` 语义不会流入该路径」——**该结论错误**。
+`normalize_stocktoday_limits` 自己就会造板数：原实现在 `limit_times` 缺失时
+回退 `step_boards.get(code, (1, ""))[0]`，即**STEP 参考板数，或字面量 1**，
+`_call_limit_state` 随后聚合这些数。所以「不经过本包路径」并不等于「完整」。
+
+round3 修正后的口径，终修补充质量贯穿与字段独立：
+
+- `normalize_stocktoday_limits` 的 `limit_days` **只取 `limit_times`**
+  （非 bool 整数且 `>= 1`）；缺失为 `None`，
+  **不回退 STEP、也不补 1**。行被结构错位拒绝时整池失败；`close` 缺值
+  **不会**把合法板数写成未知。
+- STEP 仍作**参考来源**参与交叉核验，`_board_source` 标记保留供追溯
+  （如 `limit_step_partial_reference_unverified`、`limit_list_d_ladder_disagreement`），
+  但 `reference_unverified` 的 STEP **不是确定板数**，不进入 `limit_days`。
+- `limit_step` 的 `nums` 只接受**无需截断**的整数：`2.5`/`"2.5"`/bool/NaN/Inf
+  一律**抛错**（`int()` 会把 2.5 洗成 2、把 True 洗成 1）。
+  纯数字字符串（如 `"3"`）按整数接受——既有合同与调用链都传这种形态，
+  封存证据不足以判定它非法。
+- 板数是否可信**只看 `limit_times` 本身**；`close` 异常只影响**价格字段**，
+  不会把一个合法板数降级成未知，也不会清空同行合法 `pct` / `break_times`
+  或同池健康行。具名完整结构里 `close=None` 不是结构错位。
+- 真正结构错位依据类型证据拒绝：例如 `close` 为字符串/bool/容器，且错位行
+  超过池大小四分之一时，normalize 抛错（公共链 `LIMIT_POOL_INVALID`）。
+- 非空池有任一未知 → `max_board` 为 `None`（unknown），
+  `known_max_board` 只含有证据的板数；名称/价格/涨跌停价/`zt_count` 等
+  可靠字段**完整保留**，只隔离板数这一个字段。
+- 未知板数必须贯穿公共 `query("market_limit_state")` 的质量信息：
+  `quality.status=partial`，`reason_codes` 含 `LIMIT_DAYS_UNKNOWN`，
+  `data.source_gaps` 标明受影响字段（`limit_days`/`max_board`）和代码。
+  不能只因业务行出现 `limit_days` 键就当作已披露缺口。
+- `break_times` 在 `_limit_row`、`market_limit_state` 与 `ingest_limits`
+  同义：严格非 bool 整数且 `>= 0`，合法 `0` 保留，非法为 `None`。store
+  对直接调用做同口径防御，避免 SQLite INTEGER 亲和性把 `2.5` 收成 real。
+- `MarketFactStore.ingest_limits` 对不完整板数**严格拒写**
+  （`limit_events.board_count` NOT NULL，报 `duplicate or malformed limit stock row`），
+  **不改存储 schema**，**既有有效 run 原子不变**；生产 refresh 拒写该部分后
+  仍可继续独立的 daily_ohlc。
+- **D/Z 池的 0 是既有口径**，本包不借此改动；无真实样本的部分标为未知。
+
 ## 下游与回滚
 
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。

@@ -835,6 +835,23 @@ class StockTodayProvider:
                     return value
             return None
 
+        def break_count():
+            """炸板次数：只接受 **非 bool 的非负整数**，0 是合法值。
+
+            缺失/null、字符串、小数、NaN/Inf、负数一律当**未知**返回 None。
+            """
+            value = row.get("open_times")
+            return value if type(value) is int and value >= 0 else None
+
+        def board_count():
+            """连板数：只接受 **非 bool 且 >= 1 的整数**。
+
+            0 不是合法连板数（涨停池里至少首板），与缺失同样当**未知**；
+            字符串、小数、NaN/Inf、负数亦然。绝不补 1，也不取整。
+            """
+            value = row.get("limit_times")
+            return value if type(value) is int and value >= 1 else None
+
         def source_time(key):
             # 首封与最后封是两个独立事实：既不互相折叠，也不在缺失时拿
             # 其中一个补另一个。None（列缺失或 null）与空串按上游原样保留，
@@ -849,11 +866,44 @@ class StockTodayProvider:
             "name": str(row.get("name") or row.get("ts_name") or ""),
             "price": number("close", "price"),
             "pct": number("pct_chg", "pct_change", "change_pct"),
-            "limit_days": int(number("limit_times", "open_times") or 1),
+            # 连板数只取来源明确的 limit_times；炸板次数独立取 open_times。
+            # 两者语义不同，绝不互相回退；缺失即 None（未知），不补 1。
+            "limit_days": board_count(),
+            "break_times": break_count(),
             "industry": str(row.get("industry") or row.get("tag") or ""),
             "first_limit_time": source_time("first_time"),
             "last_limit_time": source_time("last_time"),
         }
+
+    @staticmethod
+    def _max_board_from_rows(rows, *, with_known: bool = False):
+        """最高板 = **完整已知**板数的最大值。
+
+        非空池里只要有一行 limit_days 未知，max_board 就是 unknown——
+        不能把已知子集的最大值当全体最大（那会把"部分已知"说成"确定最高板"）。
+        真正空的池仍返回 0（空池与加载失败不是一回事）。
+
+        with_known=True 时额外返回 (complete, known_max_board)：
+        供观察的子集最大值，**不冒充完整最高板**。
+        """
+        rows = list(rows)
+        # 只认 >= 1 的整数板数：0 与负数不是合法板数，不能参与"最高板"。
+        boards = [
+            row.get("limit_days")
+            for row in rows
+            if isinstance(row, dict)
+            and type(row.get("limit_days")) is int
+            and row["limit_days"] >= 1
+        ]
+        unknown = len(boards) != len(rows)
+        known = max(boards) if boards else None
+        if not rows:
+            complete = 0            # 真正空的涨停池
+        elif unknown or known is None:
+            complete = None         # 有未知行 -> 完整最高板未知
+        else:
+            complete = known
+        return (complete, known) if with_known else complete
 
     def _limit_target_date(self, requested):
         """Requested day, or the latest session whose pools can exist.
@@ -934,7 +984,10 @@ class StockTodayProvider:
             "dt_count": len(dt),
             "yzt_count": 0,
             "break_rate": round(rate, 2) if rate is not None else 0.0,
-            "max_board": max((int(row.get("limit_days") or 1) for row in zt), default=0),
+            # 最高板只认**完整已知**的连板数；任一行未知即 unknown。
+            # known_max_board 是可观察的子集最大值，不冒充完整最高板。
+            "max_board": self._max_board_from_rows(zt),
+            "known_max_board": self._max_board_from_rows(zt, with_known=True)[1],
             "pools": {"zt": zt, "zb": zb, "dt": dt, "yzt": []},
             "_board_source": current.get("_board_source"),
             "source": self.name,
@@ -942,6 +995,28 @@ class StockTodayProvider:
                             "selected_trade_date": trade_date,
                             "returned_count": len(zt) + len(zb) + len(dt)},
         }
+        gaps = [
+            gap for gap in (current.get("source_gaps") or [])
+            if isinstance(gap, (dict, str))
+        ]
+        unknown_codes = [
+            row.get("code")
+            for row in zt
+            if isinstance(row, dict)
+            and not (type(row.get("limit_days")) is int and row["limit_days"] >= 1)
+        ]
+        if zt and unknown_codes and not any(
+            isinstance(gap, dict) and gap.get("gap_code") == "LIMIT_DAYS_UNKNOWN"
+            for gap in gaps
+        ):
+            gaps.append({
+                "gap_code": "LIMIT_DAYS_UNKNOWN",
+                "field": "limit_days",
+                "affected_fields": ["limit_days", "max_board"],
+                "affected_codes": unknown_codes,
+            })
+        if gaps:
+            data["source_gaps"] = gaps
         if current and (params.get("include_promotion") or params.get("previous_date")):
             previous_date = params.get("previous_date") or previous_trading_day(
                 datetime.strptime(trade_date, "%Y%m%d").date()

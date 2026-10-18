@@ -50,6 +50,34 @@ def _hash(value: object) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _strict_board(value):
+    return value if type(value) is int and value >= 1 else None
+
+
+def _strict_break_times(value):
+    """炸板次数：与 `_limit_row` 同义。合法 0 保留，非法为未知。"""
+    return value if type(value) is int and value >= 0 else None
+
+
+def _strict_price(value):
+    return value if type(value) in (int, float) and math.isfinite(value) and value > 0 else None
+
+
+def _strict_pct(value):
+    return value if type(value) in (int, float) and math.isfinite(value) else None
+
+
+def _close_type_wrong(value) -> bool:
+    """None 是可空缺值；bool/容器/字符串才是结构错位证据。"""
+    if value is None:
+        return False
+    if type(value) is bool:
+        return True
+    if type(value) in (int, float):
+        return False
+    return True
+
+
 def normalize_stocktoday_limits(trade_date: str, results: dict[str, dict]) -> dict:
     """Accept all three dated Tushare board pools or no historical run at all."""
     _day(trade_date)
@@ -66,15 +94,25 @@ def normalize_stocktoday_limits(trade_date: str, results: dict[str, dict]) -> di
         if not isinstance(item, dict) or item.get("trade_date") != trade_date:
             raise ValueError("historical ladder date mismatch")
         code = str(item.get("ts_code") or "").split(".")[0]
-        try:
-            board = int(item.get("nums"))
-        except (TypeError, ValueError):
-            raise ValueError("historical ladder board count invalid") from None
+        # 只接受**无需截断**的整数：bool、浮点、NaN/Inf 一律拒。
+        # 纯数字字符串（如 "3"）按整数接受——既有合同与调用链都传这种形态，
+        # 而封存证据不足以判定它是非法值；但 "2.5"/2.5 这类需要截断的一律拒绝，
+        # 不能让 int()把 2.5 洗成 2、把 True 洗成 1。
+        raw_nums = item.get("nums")
+        if type(raw_nums) is bool:
+            raise ValueError("historical ladder board count invalid")
+        if type(raw_nums) is int:
+            board = raw_nums
+        elif isinstance(raw_nums, str) and re.fullmatch(r"\d+", raw_nums.strip()):
+            board = int(raw_nums.strip())
+        else:
+            raise ValueError("historical ladder board count invalid")
         if not re.fullmatch(r"\d{6}", code) or board < 2 or code in step_boards:
             raise ValueError("historical ladder malformed")
         step_boards[code] = (board, str(item.get("name") or ""))
     fetched.append(_stamp(step_meta.get("fetched_at")))
     board_source = "limit_step_crosschecked"
+    unknown_board_codes: list[str] = []
     for limit_type, kind in _TUSHARE_KINDS.items():
         result = results.get(limit_type)
         if not isinstance(result, dict):
@@ -87,47 +125,65 @@ def normalize_stocktoday_limits(trade_date: str, results: dict[str, dict]) -> di
         if data.get("total_present") and data.get("total") != len(data["items"]):
             raise ValueError(f"historical {limit_type} pool count mismatch")
         fetched.append(_stamp(meta.get("fetched_at")))
-        shifted = (data["items"] and
-                   sum(not isinstance(row, dict) or not isinstance(row.get("close"), (int, float))
-                       or row.get("close") <= 0 for row in data["items"]) > len(data["items"]) // 4)
-        if limit_type == "U" and shifted:
-            board_source = "limit_step_reference_unverified"
-        for item in data["items"]:
+        items = data["items"]
+        type_wrong = sum(
+            not isinstance(row, dict) or _close_type_wrong(row.get("close"))
+            for row in items
+        )
+        # 结构错位按类型证据拒绝；缺 close / close<=0 只是该行价格未知。
+        if items and type_wrong > len(items) // 4:
+            raise ValueError(f"historical {limit_type} row structure mismatch")
+        for item in items:
             if (not isinstance(item, dict) or item.get("trade_date") != trade_date
                     or item.get("limit_type") not in {None, limit_type}):
                 raise ValueError(f"historical {limit_type} row date or type mismatch")
             code = str(item.get("ts_code") or "").split(".")[0]
             if not re.fullmatch(r"\d{6}", code):
                 raise ValueError(f"historical {limit_type} code invalid")
-            row_shifted = shifted or not isinstance(item.get("close"), (int, float)) or item.get("close") <= 0
-            if limit_type == "U" and row_shifted and not shifted:
-                board_source = "limit_step_partial_reference_unverified"
-            step_board = step_boards.get(code, (1, ""))[0]
+            # STEP 只是**参考**来源：缺 limit_times 时不得拿它当确定板数，
+            # 也不得回退字面量 1（那会把"未知"写成"首板"）。
+            step_board = step_boards.get(code, (None, ""))[0]
             raw_board = item.get("limit_times")
-            if limit_type == "U" and not row_shifted and type(raw_board) is int and raw_board >= 1:
+            # 板数是否可信只看 limit_times 本身；close 异常只影响**价格字段**。
+            raw_board_ok = _strict_board(raw_board) is not None
+            if limit_type == "U" and raw_board_ok:
                 board = raw_board
-                if raw_board != step_board:
+                if step_board is not None and raw_board != step_board:
                     board_source = "limit_list_d_ladder_disagreement"
-            else:
-                board = step_board if limit_type == "U" else 0
-                if limit_type == "U" and board_source == "limit_step_crosschecked":
+            elif limit_type == "U":
+                board = None
+                unknown_board_codes.append(code)
+                if board_source == "limit_step_crosschecked":
                     board_source = "limit_step_partial_reference_unverified"
+            else:
+                # D/Z 池不承载连板数；0 是既有口径，不在本包改动范围。
+                board = 0
             pools[kind].append({"code": code, "name": str(item.get("name") or ""),
-                                "limit_days": board, "price": item.get("close") if not row_shifted else None,
-                                "pct": item.get("pct_chg") if not row_shifted else None,
-                                "break_times": item.get("open_times") if not row_shifted else None,
+                                "limit_days": board, "price": _strict_price(item.get("close")),
+                                "pct": _strict_pct(item.get("pct_chg")),
+                                "break_times": _strict_break_times(item.get("open_times")),
                                 "industry": str(item.get("industry") or "")})
     up_codes = {item["code"] for item in pools["zt"]}
     if any(code not in up_codes and "ST" not in name.upper() for code, (_, name) in step_boards.items()):
         raise ValueError("historical non-ST ladder stock absent from up-pool")
     if not pools["zt"]:
         raise ValueError("historical up-pool empty; completeness unverified")
-    return {"data": {"date": trade_date, "pools": pools, "_board_source": board_source,
-                     "zt_count": len(pools["zt"]), "dt_count": len(pools["dt"]),
-                     "zb_count": len(pools["zb"])},
+    payload = {"date": trade_date, "pools": pools, "_board_source": board_source,
+               "zt_count": len(pools["zt"]), "dt_count": len(pools["dt"]),
+               "zb_count": len(pools["zb"])}
+    quality = {"status": "normal", "reason_codes": []}
+    if unknown_board_codes:
+        payload["source_gaps"] = [{
+            "gap_code": "LIMIT_DAYS_UNKNOWN",
+            "field": "limit_days",
+            "affected_fields": ["limit_days", "max_board"],
+            "affected_codes": list(unknown_board_codes),
+        }]
+        quality = {"status": "partial", "reason_codes": ["LIMIT_DAYS_UNKNOWN"]}
+    return {"data": payload,
             "_meta": {"status": "success", "provider_used": "stocktoday",
                       "fetched_at": max(fetched).isoformat(),
-                      "quality": {"status": "normal", "reason_codes": []}}}
+                      "quality": quality}}
 
 
 def st_codes_for_cohort(snapshot_names, limit_events=None, *, with_source=False):
@@ -328,7 +384,8 @@ class MarketFactStore:
                     raise ValueError("duplicate or malformed limit stock row")
                 seen.add(code)
                 rows.append((kind, code, str(item.get("name") or ""), board,
-                             item.get("price"), item.get("pct"), item.get("break_times"),
+                             item.get("price"), item.get("pct"),
+                             _strict_break_times(item.get("break_times")),
                              str(item.get("industry") or "")))
         if not counts["up"]:
             raise ValueError("limit-up pool empty; completeness unverified")

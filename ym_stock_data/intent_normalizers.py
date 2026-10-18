@@ -388,6 +388,19 @@ def normalize_success(
     elif intent == "market_limit_state":
         count = sum(int(data.get(key, 0) or 0) for key in ("zt_count", "zb_count", "dt_count"))
         quality = assess_quality([data] if count else [])
+        gaps = data.get("source_gaps") if isinstance(data.get("source_gaps"), list) else []
+        if gaps:
+            quality["status"] = "partial"
+            codes = []
+            for gap in gaps:
+                if isinstance(gap, dict):
+                    code = str(gap.get("gap_code") or "LIMIT_DAYS_UNKNOWN")
+                else:
+                    code = str(gap)
+                if code not in codes:
+                    codes.append(code)
+            quality["reason_codes"] = sorted(set(quality.get("reason_codes") or []) | set(codes))
+            quality["gaps"] = gaps
     elif intent == "market_intraday_state":
         quality = assess_quality([data.get("indicators") or {}])
         gaps = [str(gap) for gap in data.get("source_gaps") or []]

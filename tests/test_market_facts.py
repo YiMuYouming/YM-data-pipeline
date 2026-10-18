@@ -169,14 +169,24 @@ class MarketFactStoreTests(unittest.TestCase):
                   "STEP": result([{"ts_code": "000001.SZ", "trade_date": "20260922", "nums": "3"},
                                   {"ts_code": "000002.SZ", "trade_date": "20260922", "nums": "2", "name": "*ST测试"}])}
         normalized = normalize_stocktoday_limits("20260922", inputs)
-        self.assertEqual(normalized["data"]["pools"]["zt"][0]["limit_days"], 3)
+        # P2-C1 round3：该行 limit_times=0 不是合法板数（且 close=0 属shifted）。
+        # STEP 的 nums=3 只是**参考来源**，不再顶替成确定板数——旧断言 3 正是
+        # 本包要移除的回退（把 reference_unverified 当确定板数）。
+        self.assertIsNone(normalized["data"]["pools"]["zt"][0]["limit_days"],
+                          "缺合法 limit_times 时板数必须未知，不回退 STEP")
         self.assertIsNone(normalized["data"]["pools"]["zt"][0]["price"])
-        self.assertEqual(normalized["data"]["_board_source"], "limit_step_reference_unverified")
+        # close=0 只是该行价格未知，不再把整池打成 shifted/reference_unverified。
+        # 未知板数来自 limit_times=0，来源标记是部分未核验。
+        self.assertEqual(normalized["data"]["_board_source"], "limit_step_partial_reference_unverified")
         clean = {**up, "close": 10.0, "pct_chg": 10.0, "limit_times": 1}
         disagreement = normalize_stocktoday_limits("20260922", {**inputs, "U": result([clean])})
         self.assertEqual(disagreement["data"]["_board_source"], "limit_list_d_ladder_disagreement")
         self.assertEqual(disagreement["data"]["pools"]["zt"][0]["limit_days"], 1)
-        self.store.ingest_limits("20260922", normalized)
+        # 未知板数被 store 严格拒写（board_count NOT NULL），旧有效 run 原子不变。
+        with self.assertRaisesRegex(ValueError, "malformed"):
+            self.store.ingest_limits("20260922", normalized)
+        # 晋级率链路需要合法板数，故用 clean 变体继续（价格正常、板数 1）。
+        self.store.ingest_limits("20260922", disagreement)
         current = limit_result("20260923", [row("000001", 4)])
         current["_meta"]["provider_used"] = "stocktoday"
         self.store.ingest_limits("20260923", current)
