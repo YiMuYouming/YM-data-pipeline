@@ -218,6 +218,43 @@ _COMPARE_INDEXES = (
     ("399006.SZ", "创业15min"),
 )
 
+# 旧键名里的「15min」是历史遗留：键名不随 period 变，所以 5m/60m 的
+# 响应仍挂在「…15min」下。这里按实际 period 给出正确标签，供消费者自认，
+# **不改旧键、不复制行**。
+_COMPARE_LABELS = {
+    "上证15min": "上证",
+    "深证15min": "深证",
+    "创业15min": "创业",
+}
+
+# 一个完整交易日的时段 bar 数（不含累计行）。这是**期望分母**，
+# 不是"当天已完成"的证明——盘中未完成 bar 同样可能凑不满。
+_EXPECTED_BARS_PER_FULL_DAY = {"5m": 48, "15m": 16, "60m": 4}
+
+
+def _series_metadata(name: str, index_code: str, period: str,
+                     rows: list[dict]) -> dict:
+    """每个旧键一行的说明：实际 period、正确标签、bar 计数。
+
+    `bar_count` 是**返回行数**（已排除 `_cum` 累计行），不是完整性认证；
+    `bar_completeness` 恒为 unverified——本包没有盘中完成标记的证据，
+    凑满 48 行也不能据此宣称当天已收完整。
+    """
+    bars = [row for row in rows if not row.get("_cum")]
+    base = _COMPARE_LABELS.get(name, "")
+    return {
+        "legacy_key": name,
+        "index_code": index_code,
+        "period": period,
+        "correct_label": (f"{base}{period}min".replace("mmin", "min")
+                           if base else name),
+        "row_count": len(rows),
+        "bar_count": len(bars),
+        "cum_row_count": len(rows) - len(bars),
+        "expected_bars_per_full_day": _EXPECTED_BARS_PER_FULL_DAY.get(period),
+        "bar_completeness": "unverified",
+    }
+
 
 def _compare_rows(
     bars: list[dict],
@@ -307,6 +344,7 @@ def build_index_intraday_compare(
                 "empty_reason": "NO_COMPLETED_INTRADAY_BARS"}
     result = {}
     items = []
+    metadata: dict[str, dict] = {}
     for index_code, name in _COMPARE_INDEXES:
         payload = fetcher(
             index_code,
@@ -326,6 +364,8 @@ def build_index_intraday_compare(
         if not rows:
             break
         result[name] = rows
+        # 每个指数按自己的行数算，不借另一个指数的计数。
+        metadata[name] = _series_metadata(name, index_code, period, rows)
         items.append({"index_code": index_code, "period": period, "bars": rows})
     if len(items) != len(_COMPARE_INDEXES):
         return {
@@ -335,6 +375,7 @@ def build_index_intraday_compare(
     return {
         **result,
         "items": items,
+        "series_metadata": metadata,
         "trade_date": target_date,
         "period": period,
         "source": source,

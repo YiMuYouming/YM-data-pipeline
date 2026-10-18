@@ -40,6 +40,9 @@ BOARD_MEMBER_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "board_memb
 # 881121.TI 返回 187 名成员）；逗号合并多板块上游返回空，只能逐板块调。
 BOARD_INDEX_SUFFIX = ".TI"
 
+# A 股名册里已识别的交易所后缀（北交所在列：管道不判市场，只如实转述）。
+_SECURITY_CODE_SUFFIXES = frozenset({"SH", "SZ", "BJ"})
+
 # ths_index 的板块分类。type 是判据：概念与"昨日涨幅超过X%"这类选股筛选
 # 共用 864/883 前缀，光看代码分不出来。取值来自 2026-10-02 实测全量清单。
 CONCEPT_BOARD_TYPE = "N"   # 概念板块
@@ -409,6 +412,43 @@ def _session_time(stamp):
 
 def _board_member_cache_path(root: Path, trade_date: str) -> Path:
     return root / f"{trade_date}.json"
+
+
+def _is_security_code(value: object) -> bool:
+    """有效证券代码：**ASCII** 六位数字 + 已识别交易所后缀。
+
+    ths_member 原样带回成员代码，板块码也可能解析到非 A 股条目
+    （在线实测成员里有 `JOE.N` 这类）。去重口径只按有效证券代码计，
+    非法成员单列，不混进分母也不从既有 members 里删。
+
+    后缀只认 SH/SZ/BJ：不把 `123456.ZZ`、`600519.US` 当 A 股证券；
+    数字用 ASCII 判定，全角数字（`str.isdigit()` 为真）不算。
+    不做 strip：带空白的代码就是非法成员，单列而不是悄悄修剪。
+    """
+    text = str(value or "").upper()
+    return (
+        len(text) == 9
+        and text[:6].isascii()
+        and text[:6].isdigit()
+        and text[6] == "."
+        and text[7:] in _SECURITY_CODE_SUFFIXES
+    )
+
+
+def _member_roster_metrics(members: list) -> dict:
+    """去重口径字段：只按有效证券代码计，非法与重复分别单列。
+
+    在**返回投影**统一派生，所以 fresh fetch 与既有缓存命中拿到同一套
+    元数据——旧缓存里的 members 不改写、不重写缓存文件。
+    """
+    valid = [m for m in members if _is_security_code(m)]
+    invalid = [m for m in dict.fromkeys(members) if not _is_security_code(m)]
+    duplicates = sorted({m for m, n in Counter(valid).items() if n > 1})
+    return {
+        "unique_member_count": len(set(valid)),
+        "duplicate_member_codes": duplicates,
+        "invalid_member_codes": invalid,
+    }
 
 
 def _load_member_cache(root: Path, trade_date: str) -> dict:
@@ -1289,13 +1329,25 @@ class StockTodayProvider:
             boards.append({"board_id": code, **entry})
             fresh[code] = entry
         _store_member_cache(self.member_cache_root, trade_date, fresh)
+        # 去重口径在**返回投影**统一派生：fresh fetch 与既有缓存命中拿到
+        # 同一套元数据；既有缓存文件不改写，members/member_count 原样。
+        for board in boards:
+            members = board.get("members")
+            if isinstance(members, list):
+                board.update(_member_roster_metrics(members))
         stamps = [board.get("fetched_at") for board in boards
                   if board.get("fetched_at")]
         return ProviderOutcome(
             self.name,
             "success" if boards else "empty",
             data={
+                # 兼容字段：data_as_of 只是**缓存分组标签**，不是成员生效日。
                 "data_as_of": trade_date,
+                "requested_trade_date": params.get("trade_date") or trade_date,
+                "cache_trade_date": trade_date,
+                # 真实成员生效日未知：ths_member 不带时间窗，按当前名册返回。
+                "membership_as_of": None,
+                "membership_time_status": "unknown",
                 "boards": boards,
                 "missing": missing,
                 "source": "stocktoday:ths_member",

@@ -177,6 +177,64 @@ empty，不表示全市场无板块。`member_coverage` 由持有成员证据的
 - 阻断条款仍然有效：**不得用首封冒充最后封板**；历史封存数据不回填，保持 unknown。
 - `fd_amount` 语义仍未证实，本包**不推断**其含义，也不据此产出封成比。
 
+## 铸剑 P2-B 数据合同（F03 名册时点 / F09 分钟比较元数据）
+
+只增不改：既有 `members`/`member_count`/`data.data_as_of` 与
+`index_intraday_compare` 旧三键全部原样保留。回归见
+`tests/test_p2b_contract_f03.py`、`tests/test_p2b_contract_f09.py`，
+夹具 `tests/fixtures/p2b/`（含来源与原封存 hash）。
+
+### F03 board_members：成员真实时点保持 unknown
+
+`ths_member` 请求不带时间窗（`start_date`/`end_date` 皆空），上游按**当前名册**
+返回；`trade_date` 只是本地缓存分组键。因此：
+
+- **`membership_as_of` 恒为 `null`、`membership_time_status` 恒为 `"unknown"`**。
+- **不得**把请求日、缓存标签或 `fetched_at` 赋给 `_meta.data_as_of`；
+  消费者不得用缓存标签认证成员新鲜或历史成员。真实历史成员**无法验收**。
+- `data.data_as_of` 为**兼容保留**，语义仅是缓存分组标签，不是成员生效日。
+- 新增 `requested_trade_date`（请求日语义）与 `cache_trade_date`（缓存键语义），
+  两者分开命名，避免与观测时点混淆。
+- `_quality_failure_code` 对 `board_members` 的既有豁免不变：成员按交易日缓存，
+  用 `fetched_at` 判新旧会误判 `QUALITY_STALE`。
+
+**去重口径（每板块新增）**：`unique_member_count`、`duplicate_member_codes`、
+`invalid_member_codes`。唯一计数只按**有效证券代码**计——**ASCII** 六位数字 +
+已识别后缀 `SH`/`SZ`/`BJ`（`123456.ZZ`、`600519.US`、全角数字都不算）。
+无效成员只单列，**不从既有 `members` 里删**，也不做 strip 修剪。
+`members`/`member_count` 原样保留，既有消费者的分母**不变**。
+上游静默空仍进 `missing`，不回声 0 名成员；未知维度不补 0。
+
+去重元数据在**返回投影统一派生**，因此 fresh fetch 与**既有缓存命中**拿到同一套
+字段（旧缓存的 191/189 同样补齐）；既有缓存文件不改写、不靠清缓存绕过，
+缓存写入时刻也**不会**被提升为 `membership_as_of` 或 `_meta.data_as_of`。
+
+>下游 `Market_Watch` 的 `compute_member_coverage` 目前用未去重行数作分母。
+>按证券去重已获批准（D21），但**接线不在本包**，也不改 MW/LD。
+>实测口径（881121 / 20261016）：MW 的 `a_share` 与 `len(codes)` 取**同一份
+>未去重列表**，重复码在分子分母各计一次，故为 **191/191 = 1.0**；去重后
+> **189/189 = 1.0**，净差 0。是否真的影响覆盖率取决于重复码是否都带 A 股后缀，
+> **不能一概断言"虚高"**。
+
+### F09 index_intraday_compare：series_metadata 与 bar 计数
+
+旧键名里的「15min」是历史遗留（键名不随 period 变），5m/60m 的响应仍挂在
+「…15min」下。**本包不改旧键、不复制行**，只新增 `series_metadata` 映射，
+按每个旧键给出：`index_code`、`period`、`correct_label`（如 `上证5min`）、
+`row_count`、`bar_count`（**排除 `_cum`**）、`cum_row_count`、
+`expected_bars_per_full_day`（5m=48 / 15m=16 / 60m=4）、`bar_completeness`。
+
+- `bar_count` 是**返回行数**，不是完整性认证：`bar_completeness` 恒为
+  `"unverified"`。凑满 48 行**不能**据此宣称当天已完成——本包没有盘中完成
+  标记的证据。
+- `_cum` 累计行（`t="累计"`）不是 bar，不计入 `bar_count`；
+  既有 `_data_as_of` 与 `_quality_failure_code` 对 `_cum` 的过滤不变。
+- `data.period` 保留真实值。三个指数的 metadata **各按自己的行数计算**，
+  不借另一指数的计数。
+- tencent / eastmoney_index / sina_index 三个 provider 共用
+  `build_index_intraday_compare`，一次改动覆盖全部当前 provider；
+  该路径不适用的 provider 不伪造覆盖。
+
 ## 下游与回滚
 
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。
