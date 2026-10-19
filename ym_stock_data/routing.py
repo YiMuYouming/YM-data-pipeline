@@ -93,6 +93,16 @@ _ROUTES = {
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
     ),
+    "board_daily_kline": RouteSpec(
+        intent="board_daily_kline",
+        # DP-1：同花顺板块指数（881 行业 / 概念前缀）日线，源是 StockToday 的
+        # ths_daily。上游无成交额列，amount 由 vol(手)*100*avg_price 派生并在
+        # field_provenance 里标注；sector_index 是当日快照，不是日线序列。
+        providers=("stocktoday",),
+        data_scope="同花顺板块指数日线 OHLC；amount 为派生字段（见 field_provenance）",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=86400,
+    ),
     "market_board_strength": RouteSpec(
         intent="market_board_strength",
         # 本地合成：输入全部来自下面三个已注册的 capability，不新增数据源。

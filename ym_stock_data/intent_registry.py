@@ -137,6 +137,13 @@ _SPECS = (
         optional=("codes", "trade_date"),
     ),
     IntentSpec(
+        "board_daily_kline",
+        ("查板块日线", "板块日线", "板块日K"),
+        "board_daily_kline",
+        required=("codes",),
+        optional=("codes", "start_date", "end_date"),
+    ),
+    IntentSpec(
         "industry_index",
         ("查行业", "行业"),
         "sector_index",

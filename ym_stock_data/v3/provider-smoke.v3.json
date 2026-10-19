@@ -480,6 +480,14 @@
       "read_only": true
     },
     {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
+      "intent": "board_daily_kline",
+      "capability": "board_daily_kline",
+      "params": {"codes": ["881121.TI"], "start_date": "20260928", "end_date": "20260930"},
+      "read_only": true
+    },
+    {
       "provider": "board_strength",
       "operation": "direct_provider_call",
       "intent": "market_board_strength",

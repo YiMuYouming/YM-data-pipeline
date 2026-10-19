@@ -86,6 +86,7 @@ _ALLOWED_PARAMS = {
     "sector_index": frozenset({"codes", "names"}),
     "concept_index": frozenset({"codes", "names"}),
     "board_members": frozenset({"codes", "trade_date"}),
+    "board_daily_kline": frozenset({"codes", "start_date", "end_date"}),
     # member_coverage: {board_id: 比率}，由知道成员名单的一方给（如 ths_member）。
     "market_board_strength": frozenset(
         {"trade_date", "board_ids", "definitions", "member_coverage"}
@@ -375,6 +376,29 @@ def _validate_params(intent: str, params: dict) -> None:
                     r"\d{4}-\d{2}-\d{2}|\d{8}", day):
                 raise ValueError("board_members trade_date must use YYYYMMDD")
             params["trade_date"] = _normalize_ymd(day)
+    elif intent == "board_daily_kline":
+        codes = params.get("codes")
+        if isinstance(codes, str):
+            codes = [codes]
+        if not isinstance(codes, (list, tuple)) or not codes:
+            raise ValueError("board_daily_kline requires codes")
+        for code in codes:
+            bare = str(code).split(".")[0]
+            if not (bare.startswith(INDUSTRY_CODE_PREFIX)
+                    or bare.startswith(CONCEPT_CODE_PREFIXES)):
+                raise ValueError(
+                    f"board_daily_kline codes must use a THS board prefix "
+                    f"({INDUSTRY_CODE_PREFIX} or "
+                    f"{'/'.join(sorted(CONCEPT_CODE_PREFIXES))}), got {code}"
+                )
+        params["codes"] = [str(code) for code in codes]
+        for key in ("start_date", "end_date"):
+            value = params.get(key)
+            if value is not None:
+                if not isinstance(value, str) or not re.fullmatch(
+                        r"\d{4}-\d{2}-\d{2}|\d{8}", value):
+                    raise ValueError(f"board_daily_kline {key} must use YYYYMMDD")
+                params[key] = _normalize_ymd(value)
     elif intent == "stock_kline":
         if not str(params.get("code") or "").strip():
             raise ValueError("stock_kline requires code")
@@ -695,7 +719,7 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
-    if intent in {"market_board_strength", "board_members"}:
+    if intent in {"market_board_strength", "board_members", "board_daily_kline"}:
         boards = data.get("boards")
         count = len(boards) if isinstance(boards, list) else 0
         return isinstance(boards, list), isinstance(boards, list) and not boards, count
@@ -897,6 +921,9 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
         return _stamp_from(data.get("data_as_of"))
     if intent == "market_limit_state" or intent == "market_limit_board":
         return _stamp_from(data.get("date"))
+    if intent == "board_daily_kline":
+        # 板块日线的数据时点 = 返回的最新 trade_date（YYYYMMDD）。
+        return _stamp_from(data.get("data_as_of"))
     if intent == "index_intraday_compare":
         day = str(data.get("trade_date") or "")
         if not re.fullmatch(r"\d{8}", day):

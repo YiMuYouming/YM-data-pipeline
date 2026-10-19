@@ -306,3 +306,19 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 迁移消费者时保留业务 shape、provider provenance、attempts、质量 reason codes、合法 empty 语义和 observation-only 边界。旧路径若暂时保留，只能集中在一个默认 `legacy` 的 rollback switch 后；只有同一时点 side-by-side 对业务 shape、provider/attempts、空/error overwrite guard 全部通过，才可考虑切换默认值。
 
 不得对 live-dashboard 真实 8088 发 POST，不得覆盖生产 data/cache/runtime，不得把数据查询结果当成交易授权。
+
+## DP-1a（2026-10-20）：板块日线、封单额
+
+- `board_daily_kline`（`codes`、可选 `start_date`/`end_date`）：StockToday `ths_daily`，
+  返回 `data.boards[].bars[]`（升序 OHLC、`pre_close`、`pct_change`、`avg_price`、`vol`(手)）。
+  `amount` 是**派生字段**：`vol(手)*100*avg_price`（元），逐 bar `amount_derived`，
+  顶层 `data.field_provenance.amount` 记录公式与输入；`vol` 或 `avg_price` 缺失时 `amount=null`，不补 0。
+  `data.data_as_of` 为返回的最新 `trade_date`（YYYYMMDD），`_meta.data_as_of` 同取该日；
+  `close` 是指数点位，`avg_price` 是成交均价，二者量纲不同，不可互换。
+  上游约 8% 返回假空表，空表连续三次读空才接受为空（`data._stocktoday.empty_reads` 记次数）；
+  `missing` 中的板块码与 `board_id` 同为带 `.TI` 的写法。
+- `market_limit_board` 的每行在原字段（`code/name/price/pct/limit_days/break_times/industry/
+  first_limit_time/last_limit_time`）之外新增 `fd_amount`（封单额）、`first_time`、`last_time`、
+  `open_times`、`limit_times`；缺失为 `null`，不补 0。
+  `first_time`/`last_time` 是上游原样的 HHMMSS 串，不足 6 位的按左补零理解
+  （`"93009"` = 09:30:09）；本管道不改写原值。

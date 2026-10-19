@@ -75,6 +75,7 @@ CAPABILITIES = frozenset(
         "sector_index",
         "concept_index",
         "board_members",
+        "board_daily_kline",
         "market_board_strength",
         "review_sentiment",
         "market_limit_state",
@@ -111,6 +112,7 @@ _CAPABILITY_PROVIDER_ALLOWLIST = {
     # 板块成员（审计回复 11 二.2）：成员关系只有一个来源，StockToday 的
     # ths_member；行业源里没有成分股，不能借行业指数的 provider 顶替。
     "board_members": frozenset({"stocktoday"}),
+    "board_daily_kline": frozenset({"stocktoday"}),
     # 本地合成，没有任何 provider；写在这里是为了让策略层能认出这个
     # capability 不该被借用别的 adapter。
     "market_board_strength": frozenset({"board_strength"}),
@@ -134,6 +136,7 @@ _BASE_MAX_AGE_SEC = {
     "concept_index": 300,
     # 板块成员变动慢，按交易日缓存（审计回复 11 二.2）。
     "board_members": 86400,
+    "board_daily_kline": 86400,
     # 板块强度是盘后合成的，按交易日封存；时效跟着它的事实输入走。
     "market_board_strength": 86400,
     "review_sentiment": 300,
@@ -357,6 +360,7 @@ _CAPABILITY_METHODS = {
         {"ths_index", "ci_index_member", "index_classify", "index_daily", "index_dailybasic"}
     ),
     "board_members": frozenset({"ths_member"}),
+    "board_daily_kline": frozenset({"ths_daily"}),
     # 板块强度是本地合成，没有 StockToday 方法；留空集合而不是省略这个键，
     # 是为了让策略层能明确知道"这个 capability 不经 provider"。
     "market_board_strength": frozenset(),

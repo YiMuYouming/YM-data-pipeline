@@ -873,6 +873,13 @@ class StockTodayProvider:
             "industry": str(row.get("industry") or row.get("tag") or ""),
             "first_limit_time": source_time("first_time"),
             "last_limit_time": source_time("last_time"),
+            # DP-1：上游原名透出（封单额/首封/最后封/炸板次数/连板数），
+            # 缺失即 None，不补 0；与上面的规范化字段并存，原字段不变。
+            "fd_amount": number("fd_amount"),
+            "first_time": source_time("first_time"),
+            "last_time": source_time("last_time"),
+            "open_times": break_count(),
+            "limit_times": board_count(),
         }
 
     @staticmethod
@@ -1098,7 +1105,7 @@ class StockTodayProvider:
             nested,
             fields=(
                 "ts_code,trade_date,industry,name,close,pct_chg,"
-                "open_times,up_stat,limit_times,first_time,last_time"
+                "open_times,up_stat,limit_times,first_time,last_time,fd_amount"
             ),
         )
         if outcome.error_code:
@@ -1433,6 +1440,96 @@ class StockTodayProvider:
             provenance=self._provenance(),
         )
 
+    _BOARD_DAILY_AMOUNT_PROVENANCE = {
+        "derived": True,
+        "formula": "vol(手)*100*avg_price",
+        "unit": "CNY",
+        "inputs": ["vol", "avg_price"],
+        "note": "ths_daily 无成交额列；缺 vol 或 avg_price 时 amount 为 null，不补 0",
+    }
+
+    def _call_board_daily_kline(self, params):
+        """板块（881/885 等 .TI）日线：ths_daily OHLC；成交额为派生字段。
+
+        ``ts_code`` 必须带 ``.TI`` 后缀，逗号合并多板块上游行为未验证——
+        逐板块调用（与 ths_member/ths_index 同款处理）。
+        amount = vol(手) * 100 * avg_price，字段级 provenance 写在
+        ``field_provenance``；avg_price 或 vol 缺失则 amount 为 None。
+        """
+        boards: list[dict] = []
+        missing: list[str] = []
+        stamps: list[str] = []
+        latency = 0
+        last_outcome = None
+        empty_reads = 0
+        for code in [str(c) for c in (params.get("codes") or [])]:
+            bare = code.split(".")[0]
+            nested = {"ts_code": f"{bare}{BOARD_INDEX_SUFFIX}"}
+            for key in ("start_date", "end_date"):
+                if params.get(key):
+                    nested[key] = params[key]
+            # 网关对表读取约 8% 返回假空表（见 _collect_limit_pools）：
+            # 空表连续三次读空才接受为空。
+            for _ in range(3):
+                outcome = self._request_table("ths_daily", nested)
+                if outcome.error_code or outcome.status != "empty":
+                    break
+                empty_reads += 1
+            if outcome.error_code:
+                return outcome
+            last_outcome = outcome
+            rows = [
+                row for row in (outcome.data.get("items") or [])
+                if isinstance(row, dict)
+                and str(row.get("ts_code") or "").split(".")[0] == bare
+                and re.fullmatch(r"\d{8}", str(row.get("trade_date") or ""))
+            ]
+            if not rows:
+                missing.append(f"{bare}{BOARD_INDEX_SUFFIX}")  # 与 board_id 同格式
+                continue
+            bars = []
+            for row in sorted(rows, key=lambda r: str(r["trade_date"])):
+                vol = _number(row.get("vol"))
+                avg = _number(row.get("avg_price"))
+                amount = vol * 100 * avg if vol is not None and avg is not None else None
+                bars.append({
+                    "trade_date": str(row["trade_date"]),
+                    "open": _number(row.get("open")),
+                    "high": _number(row.get("high")),
+                    "low": _number(row.get("low")),
+                    "close": _number(row.get("close")),
+                    "pre_close": _number(row.get("pre_close")),
+                    "change": _number(row.get("change")),
+                    "pct_change": _number(row.get("pct_change")),
+                    "avg_price": avg,
+                    "vol": vol,
+                    "turnover_rate": _number(row.get("turnover_rate")),
+                    "amount": amount,
+                    "amount_derived": amount is not None,
+                })
+            boards.append({"board_id": f"{bare}{BOARD_INDEX_SUFFIX}", "bars": bars})
+            if outcome.fetched_at:
+                stamps.append(outcome.fetched_at)
+            latency += int(outcome.latency_ms or 0)
+        dates = [bar["trade_date"] for board in boards for bar in board["bars"]]
+        return ProviderOutcome(
+            self.name,
+            "success" if boards else "empty",
+            data={
+                "boards": boards,
+                "missing": sorted(missing),
+                "data_as_of": max(dates) if dates else None,
+                "volume_unit": "lot(手,100股)",
+                "field_provenance": {"amount": dict(self._BOARD_DAILY_AMOUNT_PROVENANCE)},
+                "source": "stocktoday:ths_daily",
+                "_stocktoday": {"api_name": "ths_daily", "empty_reads": empty_reads},
+            },
+            fetched_at=max(stamps) if stamps else (last_outcome.fetched_at if last_outcome else None),
+            latency_ms=latency,
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(),
+        )
+
     def _call_flow(self, *, api_name, params):
         nested = {"trade_date": params.get("trade_date")}
         if params.get("current_session") is True and not nested["trade_date"]:
@@ -1638,6 +1735,8 @@ class StockTodayProvider:
             return self._call_concept_index(params)
         if intent == "board_members":
             return self._call_board_members(params)
+        if intent == "board_daily_kline":
+            return self._call_board_daily_kline(params)
         if intent == "industry_flow":
             return self._call_flow(api_name="moneyflow_ind_ths", params=params)
         if intent == "fund_flow":

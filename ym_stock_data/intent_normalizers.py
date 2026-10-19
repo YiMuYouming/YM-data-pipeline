@@ -335,6 +335,14 @@ def normalize_success(
             expected_count=len(params.get("codes") or []) or None,
             missing=missing,
         )
+    elif intent == "board_daily_kline":
+        boards = data.get("boards") if isinstance(data.get("boards"), list) else []
+        missing = data.get("missing") if isinstance(data.get("missing"), list) else []
+        quality = assess_quality(
+            [{"board_id": board.get("board_id")} for board in boards if isinstance(board, dict)],
+            expected_count=len(params.get("codes") or []) or None,
+            missing=missing,
+        )
     elif intent == "market_board_strength":
         # 板块强度是逐板块的 K5 字段块，不是一张同构的行表；
         # 质量按"返回了几个板块 + 各自有没有缺口"来判，不套 sector_rows。
