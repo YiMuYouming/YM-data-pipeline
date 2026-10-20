@@ -7,6 +7,14 @@ from dataclasses import dataclass
 EMPTY_POLICY_STOP = "stop"
 EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED = "continue_until_exhausted"
 
+# 2026-10-20（J20-1）：1/5/15/60 分钟 PyTDX 后备**仅**允许显式采集/回放/影子用途。
+# 这是封闭白名单，不是"任意分钟消费者"授权；默认分钟路由保持
+# stocktoday -> tencent 不变（见 _STOCK_KLINE_MINUTE）。
+ZJ_MINUTE_EVIDENCE_USE_CASES = frozenset(
+    {"zj_collection", "zj_replay", "zj_shadow"}
+)
+ZJ_MINUTE_PERIODS = frozenset({"1m", "5m", "15m", "60m"})
+
 
 @dataclass(frozen=True)
 class RouteSpec:
@@ -252,11 +260,20 @@ _STOCK_KLINE_MINUTE = RouteSpec(
     # 9-28 自选池五节点因此走了 TDX 直连。腾讯分钟 K 早已实现
     #（pytdx._fetch_tencent_kline），这里接上后备，口径与 index_kline 的
     # 分钟级降级一致：计划内源失败后走已注册的后备源，不新增旁路。
-    # 2026-10-20（DP-1）：腾讯分钟 K 未排序且缺最新交易日（quality=partial），
-    # 不能做分钟首选；PyTDX 直连分钟 K（1m/5m/15m/60m，带 amount）已有适配器，
-    # 插在 stocktoday 与腾讯之间，腾讯仅作最后后备。
-    providers=("stocktoday", "pytdx", "tencent"),
+    providers=("stocktoday", "tencent"),
     data_scope="A股个股分钟K线",
+    trade_usage=_TRADE_USAGE,
+    max_age_sec=300,
+    empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
+)
+_STOCK_KLINE_MINUTE_EVIDENCE = RouteSpec(
+    intent="stock_kline",
+    # 2026-10-20（J20-1）：仅 zj_collection / zj_replay / zj_shadow 显式用途可走
+    # 本路由。stocktoday 套餐不含 stk_mins（PLAN_NOT_ENTITLED），PyTDX 作为后备插在
+    # stocktoday 与腾讯之间；腾讯仍是最后后备。默认分钟消费者不走本 spec。
+    # 结果的质量/降级/attempts/as_of 由既有 _fallback_quality 与 _meta 如实标记。
+    providers=("stocktoday", "pytdx", "tencent"),
+    data_scope="A股个股分钟K线（铸剑采集/回放/影子证据；PyTDX 后备）",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,
     empty_policy=EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
@@ -337,6 +354,13 @@ def route_for(intent: str, params: dict) -> RouteSpec:
         period = str(params.get("period", "daily")).lower()
         if period in {"day", "daily", "week", "weekly", "month", "monthly"}:
             return _STOCK_KLINE_DAILY
+        if (
+            period in ZJ_MINUTE_PERIODS
+            and params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES
+        ):
+            # J20-1：显式采集/回放/影子用途才允许 PyTDX 后备；
+            # 不给 use_case 的分钟消费者继续走默认 stocktoday -> tencent。
+            return _STOCK_KLINE_MINUTE_EVIDENCE
         return _STOCK_KLINE_MINUTE
     if intent == "index_kline":
         period = str(params.get("period", "daily")).lower()

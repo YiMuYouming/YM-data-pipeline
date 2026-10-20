@@ -307,12 +307,23 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 
 不得对 live-dashboard 真实 8088 发 POST，不得覆盖生产 data/cache/runtime，不得把数据查询结果当成交易授权。
 
-## DP-1（2026-10-20）：分钟 K 后备、板块日线、封单额
+## DP-1b（2026-10-20，J20-1 受限用途）：分钟 K 的显式 PyTDX 后备
 
-- 分钟 `stock_kline`（1m/5m/15m/60m）provider 顺序为 `stocktoday → pytdx → tencent`：
-  `stk_mins` 不在 StockToday 套餐时回退到 PyTDX 直连（带 `amount`，volume 为股）；
-  腾讯分钟 K 仅作最后后备（未排序、可能缺最新交易日，质量降级由既有 `_fallback_quality` 如实标出）。
-  日/周/月顺序不变。
+分钟 `stock_kline`（`period` ∈ `1m/5m/15m/60m`）只有在调用方显式传
+`use_case` ∈ `zj_collection` / `zj_replay` / `zj_shadow` 时，路由才为
+`stocktoday → pytdx → tencent`（`stk_mins` 不在 StockToday 套餐时回退 PyTDX 直连：
+带 `amount`，volume 为股；腾讯仍是最后后备）。该用途仅服务铸剑采集、回放与影子证据，
+**不是任意分钟消费者、正式交易门禁或全局默认路由的启用授权**：
+
+- 不传该 `use_case` 的分钟请求仍走默认 `stocktoday → tencent`；日/周/月及其它 intent 不变；
+- 该 `use_case` 只允许配 `stock_kline` 的分钟 period，其它 intent/日线会显式拒绝；
+- 结果照常保留 `provider_used`、`attempts`、`data_as_of`、`quality.status`、
+  `reason_codes`；后备源如实标记 `degraded/partial` 与 `semantic_equivalence=unknown`，
+  消费方不得当作 normal/exact 证据；
+- `_meta.evidence_use_case` 记录本次显式用途，便于审计。
+
+## DP-1a（2026-10-20）：板块日线、封单额
+
 - `board_daily_kline`（`codes`、可选 `start_date`/`end_date`）：StockToday `ths_daily`，
   返回 `data.boards[].bars[]`（升序 OHLC、`pre_close`、`pct_change`、`avg_price`、`vol`(手)）。
   `amount` 是**派生字段**：`vol(手)*100*avg_price`（元），逐 bar `amount_derived`，

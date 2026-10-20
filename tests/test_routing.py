@@ -81,12 +81,11 @@ class RoutingTests(unittest.TestCase):
         minute = route_for("stock_kline", {"period": "60m"})
         # 2026-09-28（A4）：`stk_mins` 不在套餐内，分钟级必须有后备源，
         # 否则整条 minute K 在未授权时直接判死（9-28 自选池因此走了 TDX 直连）。
-        # 2026-10-20（DP-1）：腾讯分钟 K 有缺陷，pytdx 插在二者之间。
-        self.assertEqual(("stocktoday", "pytdx", "tencent"), minute.providers)
+        self.assertEqual(("stocktoday", "tencent"), minute.providers)
         for period in ("60m", "15m", "5m", "1m"):
             with self.subTest(period=period):
                 self.assertEqual(
-                    ("stocktoday", "pytdx", "tencent"),
+                    ("stocktoday", "tencent"),
                     route_for("stock_kline", {"period": period}).providers,
                 )
 
@@ -95,12 +94,10 @@ class RoutingTests(unittest.TestCase):
 
         banned = {"pytdx", "pytdx_breadth", "pytdx_index", "eastmoney",
                   "eastmoney_breadth", "eastmoney_stock", "eastmoney_limit_pool", "sina"}
-        minute = route_for("stock_kline", {"period": "5m"})
         for spec in all_route_specs():
             with self.subTest(intent=spec.intent, providers=spec.providers):
                 self.assertFalse([p for p in spec.providers if p.startswith("tdx_")])
-                allowed = {"pytdx"} if spec == minute else set()  # DP-1：仅分钟 K 后备
-                self.assertFalse((banned - allowed) & set(spec.providers))
+                self.assertFalse(banned & set(spec.providers))
 
     def test_stock_snapshot_route_matches_real_adapter_intents_without_network(self):
         route = route_for("stock_snapshot", {})
@@ -119,7 +116,7 @@ class RoutingTests(unittest.TestCase):
         from ym_stock_data.providers.base import ProviderOutcome
 
         route = route_for("stock_kline", {"period": "5m"})
-        self.assertEqual(("stocktoday", "pytdx", "tencent"), route.providers)
+        self.assertEqual(("stocktoday", "tencent"), route.providers)
         self.assertTrue(all(p in api.PROVIDER_REGISTRY for p in route.providers))
 
         refused = ProviderOutcome(
@@ -139,11 +136,7 @@ class RoutingTests(unittest.TestCase):
 
         bars = [{"datetime": "2026-09-28 09:35:00", "open": 10.0, "high": 10.2,
                  "low": 9.9, "close": 10.1, "volume": 12000.0, "amount": 121000.0}]
-        # DP-1：pytdx 在腾讯之前；此处令 pytdx 直连失败，验证最后落到腾讯。
         with patch(
-            "ym_stock_data.providers.local.pytdx.fetch_kline",
-            return_value={"error": "x", "error_type": "PYTDX_DIRECT_UNAVAILABLE"},
-        ), patch(
             "ym_stock_data.providers.local.pytdx._fetch_tencent_kline",
             return_value=bars,
         ) as tencent_kline:
@@ -155,7 +148,7 @@ class RoutingTests(unittest.TestCase):
             )
 
         meta = result["_meta"]
-        self.assertEqual(["stocktoday", "pytdx", "tencent"], seen)
+        self.assertEqual(["stocktoday", "tencent"], seen)
         self.assertEqual("tencent", meta["provider_used"])
         self.assertEqual(
             ["PLAN_NOT_ENTITLED"],

@@ -22,6 +22,7 @@ from typing import Any, Mapping
 from .routing import (
     EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
     EMPTY_POLICY_STOP,
+    ZJ_MINUTE_EVIDENCE_USE_CASES,
     RouteSpec,
     capability_for,
     route_for,
@@ -34,8 +35,7 @@ ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
 # 2026-09-28（A4）：分钟级 stock_kline 增加 tencent 后备，重算逻辑锚。
-# 2026-10-20（DP-1）：分钟级 provider_order 插入 pytdx（stocktoday,pytdx,tencent），重算逻辑锚。
-PACKAGED_POLICY_SHA256 = "eda15859c2e61b2b0ef614e307c7602d36b82e5f365a9033e375f37be66ac735"
+PACKAGED_POLICY_SHA256 = "9e6e248a752dfc561341899b2eefd05093d5f1e6c9ead12a5f38be70ceff93c6"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )
@@ -73,6 +73,7 @@ CAPABILITIES = frozenset(
         "stock_kline_60m",
         "stock_kline_15m",
         "stock_kline_5m",
+        "stock_kline_1m",
         "sector_index",
         "concept_index",
         "board_members",
@@ -106,6 +107,7 @@ _CAPABILITY_PROVIDER_ALLOWLIST = {
     "stock_kline_60m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
     "stock_kline_15m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
     "stock_kline_5m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
+    "stock_kline_1m": frozenset({"stocktoday", "tencent", "pytdx", "sina", "tdx_kline"}),
     "sector_index": frozenset({"ths_industry"}),
     # 概念板块（885xxx）走 StockToday，与 881 行业分开；两者不互为降级——
     # 行业源里没有概念，用它顶替就是"拿行业冒充概念"。
@@ -133,6 +135,7 @@ _BASE_MAX_AGE_SEC = {
     "stock_kline_60m": 300,
     "stock_kline_15m": 300,
     "stock_kline_5m": 300,
+    "stock_kline_1m": 300,
     "sector_index": 300,
     "concept_index": 300,
     # 板块成员变动慢，按交易日缓存（审计回复 11 二.2）。
@@ -354,6 +357,7 @@ _CAPABILITY_METHODS = {
     "stock_kline_60m": frozenset({"stk_mins"}),
     "stock_kline_15m": frozenset({"stk_mins"}),
     "stock_kline_5m": frozenset({"stk_mins"}),
+    "stock_kline_1m": frozenset({"stk_mins"}),
     "sector_index": frozenset(
         {"ths_index", "ci_index_member", "index_classify", "index_daily", "index_dailybasic", "sw_daily"}
     ),
@@ -379,6 +383,7 @@ _MINUTE_CAPABILITY_FREQ = {
     "stock_kline_60m": "60MIN",
     "stock_kline_15m": "15MIN",
     "stock_kline_5m": "5MIN",
+    "stock_kline_1m": "1MIN",
 }
 _RUNTIME_COLUMNS = {
     "stock_snapshot": (
@@ -406,6 +411,10 @@ _RUNTIME_COLUMNS = {
         frozenset({"trade_time", "trade_date"}),
     ),
     "stock_kline_5m": (
+        frozenset({"ts_code", "open", "high", "low", "close"}),
+        frozenset({"trade_time", "trade_date"}),
+    ),
+    "stock_kline_1m": (
         frozenset({"ts_code", "open", "high", "low", "close"}),
         frozenset({"trade_time", "trade_date"}),
     ),
@@ -746,6 +755,11 @@ class CompiledPolicy:
             and "query" in params_dict
             and params_dict["query"] not in (None, "", [])
         ):
+            return route_for(intent, params_dict)
+        # 2026-10-20（J20-1）：铸剑分钟证据是显式封闭用途，不继承默认/政策
+        # provider_order；它由 route_for 的专用 RouteSpec 决定（PyTDX 后备），
+        # 默认分钟路由与 policy 均不变。
+        if params_dict.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
             return route_for(intent, params_dict)
         if not self.active or self.document is None:
             return route_for(intent, params_dict)

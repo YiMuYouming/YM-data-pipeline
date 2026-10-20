@@ -224,7 +224,7 @@ class CoreRepairTests(unittest.TestCase):
     def test_stock_kline_accepts_minute_range_and_qfq_is_long_period_only(self):
         # 2026-09-28（A4）：分钟级接腾讯后备，`stk_mins` 不在套餐内时不再判死。
         self.assertEqual(
-            ("stocktoday", "pytdx", "tencent"),  # DP-1：pytdx 在腾讯之前
+            ("stocktoday", "tencent"),
             route_for(
                 "stock_kline",
                 {"period": "1m", "start_date": "20260922", "end_date": "20260922"},

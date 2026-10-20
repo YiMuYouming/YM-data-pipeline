@@ -27,7 +27,13 @@ from .providers.wind_mcp import (
 )
 from .provider_policy import load_compiled_policy
 from .quality import assess_quality
-from .routing import EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED, RouteSpec, route_for
+from .routing import (
+    EMPTY_POLICY_CONTINUE_UNTIL_EXHAUSTED,
+    ZJ_MINUTE_EVIDENCE_USE_CASES,
+    ZJ_MINUTE_PERIODS,
+    RouteSpec,
+    route_for,
+)
 from .sources.stock_events import EVENTS as STOCK_EVENTS
 from .trading_calendar import (
     TradeCalendarUnavailable,
@@ -132,7 +138,9 @@ _ALLOWED_PARAMS = {
     "news": frozenset({"limit"}),
     "wind_enrichment": frozenset({"capability", "code", "codes", "fields", "params"}),
 }
-_USE_CASES = frozenset({"realtime_poll", "agent", "research", "history"})
+_USE_CASES = frozenset(
+    {"realtime_poll", "agent", "research", "history"} | ZJ_MINUTE_EVIDENCE_USE_CASES
+)
 
 
 class UnavailableProvider:
@@ -287,6 +295,14 @@ def _validate_params(intent: str, params: dict) -> None:
         raise ValueError(f"unsupported {intent} params: {', '.join(sorted(unknown))}")
     if "use_case" in params and params["use_case"] not in _USE_CASES:
         raise ValueError("unsupported use_case")
+    if params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
+        # J20-1：分钟后备只服务采集/回放/影子；拒绝把该用途扩散到其它 intent 或日线。
+        if intent != "stock_kline" or str(
+            params.get("period", "daily")
+        ).lower() not in ZJ_MINUTE_PERIODS:
+            raise ValueError(
+                "zj minute evidence use_case only supports stock_kline 1m/5m/15m/60m"
+            )
     if intent == "market_facts":
         day = params.get("trade_date")
         if day is not None and (not isinstance(day, str) or not re.fullmatch(r"\d{8}", day)):
@@ -1508,6 +1524,9 @@ def _query_with(
         data_as_of=stamp.isoformat(timespec="seconds") if stamp else None,
         freshness=_data_freshness(intent, call_params, stamp, spec.max_age_sec),
     )
+    if call_params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
+        # 只作审计标记，不改变 provider/quality/attempts 既有标记。
+        result["_meta"]["evidence_use_case"] = call_params["use_case"]
     if fill_report is not None:
         result["_meta"]["filled_by_fallback"] = list(fill_report["filled"])
         result["_meta"]["fill_attempt"] = fill_report
