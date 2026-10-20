@@ -307,8 +307,12 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 
 不得对 live-dashboard 真实 8088 发 POST，不得覆盖生产 data/cache/runtime，不得把数据查询结果当成交易授权。
 
-## DP-1a（2026-10-20）：板块日线、封单额
+## DP-1（2026-10-20）：分钟 K 后备、板块日线、封单额
 
+- 分钟 `stock_kline`（1m/5m/15m/60m）provider 顺序为 `stocktoday → pytdx → tencent`：
+  `stk_mins` 不在 StockToday 套餐时回退到 PyTDX 直连（带 `amount`，volume 为股）；
+  腾讯分钟 K 仅作最后后备（未排序、可能缺最新交易日，质量降级由既有 `_fallback_quality` 如实标出）。
+  日/周/月顺序不变。
 - `board_daily_kline`（`codes`、可选 `start_date`/`end_date`）：StockToday `ths_daily`，
   返回 `data.boards[].bars[]`（升序 OHLC、`pre_close`、`pct_change`、`avg_price`、`vol`(手)）。
   `amount` 是**派生字段**：`vol(手)*100*avg_price`（元），逐 bar `amount_derived`，

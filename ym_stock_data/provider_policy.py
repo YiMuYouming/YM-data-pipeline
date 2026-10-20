@@ -34,7 +34,8 @@ ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
 # 2026-09-28（A4）：分钟级 stock_kline 增加 tencent 后备，重算逻辑锚。
-PACKAGED_POLICY_SHA256 = "9e6e248a752dfc561341899b2eefd05093d5f1e6c9ead12a5f38be70ceff93c6"
+# 2026-10-20（DP-1）：分钟级 provider_order 插入 pytdx（stocktoday,pytdx,tencent），重算逻辑锚。
+PACKAGED_POLICY_SHA256 = "eda15859c2e61b2b0ef614e307c7602d36b82e5f365a9033e375f37be66ac735"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )

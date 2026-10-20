@@ -204,7 +204,7 @@ TDX 自 2026-09-27 起不在任何默认路由；此前 TDX route provider 只�
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
 | `market_facts` | 本环境独立 SQLite 事实库；只读查询 | `configured_unverified` 或 `unavailable` | `market_facts` 唯一源；缺日期/缺库显式失败 | 否；不能以旧缓存冒充当日事实 |
-| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`、`stock_snapshot`、`stock_kline`）；2026-09-27 退出默认路由 | 否 |
+| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`、`stock_snapshot`、`stock_kline`）；2026-09-27 退出默认路由；2026-10-20 起分钟 `stock_kline` 例外：stocktoday 套餐不含 `stk_mins` 时作为自动后备（顺序 stocktoday → pytdx → tencent） | 否 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`index_kline` 日/周/月）；已退出默认路由 | 否 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`）；已退出默认路由 | 否 |
 | `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在 StockToday 后；`index_intraday_compare` 仅显式诊断 | 允许；只按对应 RouteSpec 次序 |

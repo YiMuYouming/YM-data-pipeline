@@ -252,7 +252,10 @@ _STOCK_KLINE_MINUTE = RouteSpec(
     # 9-28 自选池五节点因此走了 TDX 直连。腾讯分钟 K 早已实现
     #（pytdx._fetch_tencent_kline），这里接上后备，口径与 index_kline 的
     # 分钟级降级一致：计划内源失败后走已注册的后备源，不新增旁路。
-    providers=("stocktoday", "tencent"),
+    # 2026-10-20（DP-1）：腾讯分钟 K 未排序且缺最新交易日（quality=partial），
+    # 不能做分钟首选；PyTDX 直连分钟 K（1m/5m/15m/60m，带 amount）已有适配器，
+    # 插在 stocktoday 与腾讯之间，腾讯仅作最后后备。
+    providers=("stocktoday", "pytdx", "tencent"),
     data_scope="A股个股分钟K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,

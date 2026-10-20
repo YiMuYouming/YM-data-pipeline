@@ -14,6 +14,8 @@ from unittest.mock import Mock, patch
 from ym_stock_data import api, intent_registry, provider_policy, query, routing
 from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.provider_state import ProviderState
+from ym_stock_data.providers.base import ProviderOutcome
+from ym_stock_data.providers.local import LocalProvider
 from ym_stock_data.routing import route_for
 
 SECRET = "synthetic-stocktoday-test-token"
@@ -23,6 +25,97 @@ class _NoBreaker:
     @staticmethod
     def active_breaker(provider):
         return None
+
+
+class MinuteKlinePytdxFallbackTests(unittest.TestCase):
+    def test_minute_route_is_stocktoday_then_pytdx_then_tencent(self):
+        for period in ("1m", "5m", "15m", "60m"):
+            with self.subTest(period=period):
+                spec = route_for("stock_kline", {"period": period})
+                self.assertEqual(("stocktoday", "pytdx", "tencent"), spec.providers)
+        # 日周月不变
+        self.assertEqual(
+            ("stocktoday", "tencent"), route_for("stock_kline", {"period": "daily"}).providers
+        )
+
+    def test_not_entitled_stk_mins_falls_back_to_pytdx_not_tencent(self):
+        refused = ProviderOutcome(
+            provider="stocktoday", status="incompatible", error_code="PLAN_NOT_ENTITLED"
+        )
+        seen = []
+
+        def loader(name):
+            seen.append(name)
+            if name == "stocktoday":
+                class _Refuse:
+                    def call(self, intent, params):
+                        return refused
+                return _Refuse()
+            return LocalProvider(name)
+
+        raw = {
+            "code": "300885",
+            "bars": [
+                {"time": "2026-10-19 09:35", "open": 10.0, "high": 10.2, "low": 9.9,
+                 "close": 10.1, "vol": 12000.0, "amount": 121000.0},
+                {"time": "2026-10-19 09:40", "open": 10.1, "high": 10.3, "low": 10.0,
+                 "close": 10.2, "vol": 8000.0, "amount": 81000.0},
+            ],
+        }
+        with patch("ym_stock_data.providers.local.pytdx.fetch_kline", return_value=raw) as fk, \
+                patch("ym_stock_data.providers.local.pytdx._fetch_tencent_kline") as tk:
+            result = api._query_with(
+                "stock_kline",
+                {"code": "300885", "period": "5m", "count": 2},
+                provider_loader=loader,
+                state_loader=lambda: _NoBreaker(),
+            )
+        meta = result["_meta"]
+        self.assertEqual(["stocktoday", "pytdx"], seen)
+        self.assertEqual("pytdx", meta["provider_used"])
+        fk.assert_called_once()
+        tk.assert_not_called()
+        self.assertEqual(
+            ["PLAN_NOT_ENTITLED"],
+            [a.get("error_code") for a in meta["attempts"] if a.get("provider") == "stocktoday"],
+        )
+        bars = result["data"]["bars"]
+        self.assertEqual(2, len(bars))
+        self.assertEqual(12000.0, bars[0]["volume"])  # 分钟 pytdx vol 已是股，不再 *100
+        self.assertEqual("share", result["data"]["volume_unit"])
+        self.assertEqual("CNY", result["data"]["amount_unit"])
+        # 降级必须如实：首选源失败，不能标成 stocktoday 的 normal
+        self.assertNotEqual("stocktoday", meta["provider_used"])
+
+    def test_pytdx_failure_still_reaches_tencent_last(self):
+        seen = []
+
+        def loader(name):
+            seen.append(name)
+            if name == "stocktoday":
+                class _Refuse:
+                    def call(self, intent, params):
+                        return ProviderOutcome(provider="stocktoday", status="incompatible",
+                                               error_code="PLAN_NOT_ENTITLED")
+                return _Refuse()
+            return LocalProvider(name)
+
+        with patch("ym_stock_data.providers.local.pytdx.fetch_kline",
+                   return_value={"error": "x", "error_type": "PYTDX_DIRECT_UNAVAILABLE",
+                                 "_source": "pytdx"}), \
+                patch("ym_stock_data.providers.local.pytdx._fetch_tencent_kline", return_value=[
+                    {"datetime": "2026-10-19 09:35:00", "open": 1, "high": 1, "low": 1,
+                     "close": 1, "volume": 1.0, "amount": 1.0}]):
+            api._query_with("stock_kline", {"code": "300885", "period": "5m", "count": 1},
+                            provider_loader=loader, state_loader=lambda: _NoBreaker())
+        self.assertEqual(["stocktoday", "pytdx", "tencent"], seen)
+
+    def test_packaged_policy_and_allowlist_include_pytdx_for_minutes(self):
+        policy = provider_policy.load_policy()
+        for cap in ("stock_kline_60m", "stock_kline_15m", "stock_kline_5m"):
+            self.assertEqual(
+                ["stocktoday", "pytdx", "tencent"], policy["capabilities"][cap]["provider_order"]
+            )
 
 
 class _StockTodayCase(unittest.TestCase):
