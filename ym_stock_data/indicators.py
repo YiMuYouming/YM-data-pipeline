@@ -85,8 +85,30 @@ def legacy_emotion_all_rows(up: int, rows: int) -> float | None:
     return round(up / rows * 100, 6) if rows else None
 
 
+def emotion_state(score) -> dict:
+    """Versioned raw facts and display-only closed-buffer projection (§3.1).
+
+    Numeric strings are transport concerns; this API accepts finite int/float
+    percentages only. Invalid input never becomes zero or a historical label.
+    """
+    valid = (not isinstance(score, bool) and isinstance(score, (int, float))
+             and 0 <= score <= 100 and math.isfinite(score))
+    item = next(item for item in REGISTRY["indicators"] if item["key"] == "emotion")
+    raw = _band(score, "emotion") if valid else None
+    display = raw
+    if valid:
+        for band in item["display_buffers"]:
+            if band["lower"] <= score <= band["upper"]:
+                display = band["label"]
+                break
+    return {"version": item["semantic_version"], "valid": valid,
+            "raw_value": score if valid else None, "raw_band": raw,
+            "display_band": display, "buffered": valid and display != raw}
+
+
 def emotion_band(score: float | None) -> str | None:
-    return _band(score, "emotion")
+    """Canonical raw six-band name; never a strategy/display hybrid."""
+    return emotion_state(score)["raw_band"]
 
 
 def _side_empty(price, volume) -> bool | None:
@@ -260,6 +282,7 @@ def summarize(
         "indicator_version": INDICATOR_VERSION,
         "emotion": score,
         "emotion_band": emotion_band(score),
+        "emotion_semantics": emotion_state(score),
         "up_count": counts["up"],
         "down_count": counts["down"],
         "flat_count": counts["flat"],

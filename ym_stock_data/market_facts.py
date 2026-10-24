@@ -954,6 +954,7 @@ class MarketFactStore:
         if daily:
             score = indicators.emotion(daily["up_count"], daily["down_count"])
             emotion = {"score": score, "band": indicators.emotion_band(score),
+                       "semantics": indicators.emotion_state(score),
                        "up": daily["up_count"], "flat": daily["flat_count"],
                        "down": daily["down_count"],
                        "denominator": daily["up_count"] + daily["down_count"],

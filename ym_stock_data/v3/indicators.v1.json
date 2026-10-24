@@ -23,16 +23,20 @@
           "label": "冰点"
         },
         {
+          "below": 35,
+          "label": "弱修复"
+        },
+        {
           "below": 40,
           "label": "低迷"
         },
         {
-          "below": 70,
-          "label": "主升"
+          "below": 60,
+          "label": "温和主升"
         },
         {
           "through": 80,
-          "label": "强势"
+          "label": "主升强势"
         },
         {
           "above": 80,
@@ -40,7 +44,36 @@
         }
       ],
       "intraday_postclose_same": true,
-      "definition_status": "defined"
+      "definition_status": "defined",
+      "semantic_version": "emotion.six.v1",
+      "display_buffers": [
+        {
+          "lower": 19,
+          "upper": 21,
+          "label": "冰点"
+        },
+        {
+          "lower": 34,
+          "upper": 36,
+          "label": "弱修复"
+        },
+        {
+          "lower": 39,
+          "upper": 41,
+          "label": "低迷"
+        },
+        {
+          "lower": 59,
+          "upper": 61,
+          "label": "温和主升"
+        },
+        {
+          "lower": 79,
+          "upper": 81,
+          "label": "主升强势"
+        }
+      ],
+      "display_only": "档名及既有机会容量，不改变原始策略或硬门"
     },
     {
       "key": "breadth",
