@@ -11,6 +11,7 @@ import math
 import os
 import re
 import sqlite3
+import threading
 import time
 from collections import Counter
 from contextlib import closing
@@ -90,6 +91,10 @@ class RequestBudget:
             raise ValueError("per_minute must be a non-negative integer")
         if not isinstance(self.per_day, int) or self.per_day < 0:
             raise ValueError("per_day must be a non-negative integer")
+        # 2026-10-26（R3/7b）：快照批次改为并发抓取后，同一 budget 实例会被多个
+        # 线程同时 acquire。进程内串行化这一小段，避免 sqlite 写锁抖动被当成
+        # LOCAL_BUDGET_UNAVAILABLE；上限语义（每分钟/每日）逐字不变。
+        self._lock = threading.Lock()
 
     @staticmethod
     def _limit_from_env(name, default):
@@ -108,6 +113,13 @@ class RequestBudget:
         now = time.time() if now is None else now
         day_start = math.floor((now + 28800) / 86400) * 86400 - 28800
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock = getattr(self, "_lock", None)
+        if lock is None:
+            return self._acquire_locked(now, day_start)
+        with lock:
+            return self._acquire_locked(now, day_start)
+
+    def _acquire_locked(self, now, day_start):
         with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
             con.execute("CREATE TABLE IF NOT EXISTS requests (at REAL NOT NULL)")
             con.execute("BEGIN IMMEDIATE")

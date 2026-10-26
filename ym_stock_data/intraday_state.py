@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time as dtime
 from pathlib import Path
 
@@ -25,6 +26,11 @@ from .trading_calendar import (
 # 4 exchange wildcards cover every StockToday A-share row (003xxx is a vendor
 # gap that no wildcard or code list returns; see REPAIR_PLAN §2).
 SNAPSHOT_BATCHES = ("6*.SH", "0*.SZ", "3*.SZ", "*.BJ")
+# 2026-10-26（R3/7b）：四个 rt_k 批次彼此独立，串行抓取是盘中耗时 8s+ 的主因
+# （真实回放 5 次：min 8.53s / median 8.87s / max 13.13s）。并发只改"什么时候发
+# 请求"，不改任何判定：结果仍按 SNAPSHOT_BATCHES 的固定顺序落进诊断与 attempts，
+# 第一个失败批次抛出的错误码也与串行时一致。
+SNAPSHOT_MAX_WORKERS = len(SNAPSHOT_BATCHES)
 B_SHARE_PREFIXES = ("900", "200", "201")
 NORMAL_MAX_AGE_SEC = 180
 EXPIRED_AGE_SEC = 600
@@ -243,6 +249,23 @@ def _tencent_rows(codes: list[str], quote_loader) -> dict[str, dict]:
     return rows
 
 
+def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES):
+    """Fetch every wildcard batch concurrently, keeping the fixed batch order.
+
+    pool.map 按提交顺序交付结果，因此批次诊断、首个失败批次的错误码都与串行
+    实现逐字一致；并发只影响墙钟耗时。
+    """
+
+    def load(pattern):
+        return provider._request_table("rt_k", {"ts_code": pattern})
+
+    workers = min(SNAPSHOT_MAX_WORKERS, len(patterns))
+    if workers <= 1:
+        return [(pattern, load(pattern)) for pattern in patterns]
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rt-k") as pool:
+        return list(zip(patterns, pool.map(load, patterns)))
+
+
 def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     """Return the intraday state or raise IntradayStateError (no fallback)."""
 
@@ -251,8 +274,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     batch_latest: list[datetime] = []
     batches = []
     fetched_at = None
-    for pattern in SNAPSHOT_BATCHES:
-        outcome = provider._request_table("rt_k", {"ts_code": pattern})
+    for pattern, outcome in _fetch_snapshot_batches(provider):
         items = (outcome.data or {}).get("items") if isinstance(outcome.data, dict) else None
         batches.append({"ts_code": pattern, "status": outcome.status,
                         "error_code": outcome.error_code, "rows": len(items or []),
@@ -283,7 +305,15 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         raise IntradayStateError("QUALITY_STALE", "quality_failure")
     trade_date = data_as_of.strftime("%Y%m%d")
 
-    limits = _stk_limit(provider, trade_date)
+    # stk_limit（涨跌停价）与 limit_list_d（当日明细元数据）只依赖 trade_date，
+    # 彼此独立：并发取，省掉串行的一整跳（真实回放 limit_list_d 单跳 0.4~2.1s）。
+    metadata_observation: dict = {}
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="limit-meta") as pool:
+        limits_future = pool.submit(_stk_limit, provider, trade_date)
+        metadata_future = pool.submit(_limit_metadata, provider, trade_date,
+                                      diagnostics=metadata_observation)
+        limits = limits_future.result()
+        limit_metadata = metadata_future.result()
     gaps: list[str] = []
     universe = {code for code in limits if not code.startswith(B_SHARE_PREFIXES)}
     if not universe:
@@ -363,8 +393,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     )
     for code, board in current_boards.items():
         detail[code]["board"] = board
-    metadata_observation: dict = {}
-    metadata = _limit_metadata(provider, trade_date, diagnostics=metadata_observation)
+    metadata = limit_metadata
     if limit_sets["up"] and not metadata:
         gaps.append("limit_up_metadata_empty" if metadata_observation.get("status") == "empty"
                     else "limit_up_metadata_unavailable")
