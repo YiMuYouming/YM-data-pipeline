@@ -356,6 +356,26 @@ def _number(value, default=None):
         return default
 
 
+# 2026-10-26（R3/9）：StockToday 长周期 K 线的返回形状随请求窗口宽度变化——
+# 窄窗口（start 距 end 不足约 40 天）走 adjustment-factor 表：OHLC/vol/amount
+# 变成十进制字符串且缺最近一个交易日；宽窗口返回完整数值行（含 end_date 当天）。
+# 因此统一按"至少 60 天宽"请求，再按调用方窗口本地裁剪，count 与区间两路一致。
+STOCK_KLINE_MIN_WINDOW_DAYS = 60
+
+
+def _widen_kline_start(start_text: str, end_text: str) -> str:
+    """把长周期 K 线的上游起始日放宽到至少 STOCK_KLINE_MIN_WINDOW_DAYS 天窗口。"""
+
+    try:
+        end_day = datetime.strptime(str(end_text), "%Y%m%d")
+        widened = (end_day - timedelta(days=STOCK_KLINE_MIN_WINDOW_DAYS)).strftime("%Y%m%d")
+    except (TypeError, ValueError):
+        return str(start_text)
+    if not start_text:
+        return widened
+    return min(str(start_text), widened)
+
+
 def _minute_window_value(value, *, end=False):
     """Translate the public date-only contract to StockToday's minute shape."""
 
@@ -1806,11 +1826,18 @@ class StockTodayProvider:
             else:
                 name = period if period in {"daily", "weekly", "monthly"} else "stk_mins"
             days = min(36500, count * {"daily": 3, "weekly": 10, "monthly": 40}.get(period, 2) + 30)
+            requested_start = _compact_trade_date(params.get("start_date"))
+            requested_end = _compact_trade_date(params.get("end_date"))
+            start_text = requested_start or (now - timedelta(days=days)).strftime("%Y%m%d")
+            end_text = requested_end or now.strftime("%Y%m%d")
             nested = {
                 "ts_code": _stock_code(params["code"]),
-                "start_date": params.get("start_date") or (now - timedelta(days=days)).strftime("%Y%m%d"),
-                "end_date": params.get("end_date") or now.strftime("%Y%m%d"),
+                "start_date": start_text,
+                "end_date": end_text,
             }
+            if name != "stk_mins":
+                # R3/9：统一上游窗口宽度，避免 count/区间两路命中不同 vendor 形状。
+                nested["start_date"] = _widen_kline_start(start_text, end_text)
             if name == "pro_bar":
                 nested["freq"] = {"daily": "D", "weekly": "W", "monthly": "M"}[period]
                 nested["adj"] = "qfq"
@@ -1934,6 +1961,13 @@ class StockTodayProvider:
             if requested_count is not None:
                 bars = bars[-requested_count:]
         else:
+            # R3/9：上游为了形状一致性放宽了窗口，这里按调用方真正的请求窗口裁剪。
+            if requested_start:
+                bars = [bar for bar in bars
+                        if bar["datetime"].replace("-", "") >= requested_start]
+            if requested_end:
+                bars = [bar for bar in bars
+                        if bar["datetime"].replace("-", "") <= requested_end]
             bars = bars[-params.get("count", 60) :]
         if name == "stk_mins":
             observation.update({"status": "unverified_bar_time", "bar_time_convention": "unverified"})

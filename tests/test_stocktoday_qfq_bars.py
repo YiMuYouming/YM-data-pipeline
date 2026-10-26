@@ -24,7 +24,7 @@ from unittest.mock import Mock, patch
 
 from ym_stock_data import api
 from ym_stock_data.provider_policy import CompiledPolicy
-from ym_stock_data.providers.stocktoday import StockTodayProvider
+from ym_stock_data.providers.stocktoday import StockTodayProvider, _widen_kline_start
 
 SECRET = "synthetic-stocktoday-test-token"
 TZ_SHANGHAI = timezone(timedelta(hours=8))
@@ -133,6 +133,69 @@ class StockTodayQfqBarTests(unittest.TestCase):
         self.assertEqual(26_986_525.0, by_date["2026-10-26"]["volume"])
         self.assertAlmostEqual(2_540_133_636.64, by_date["2026-10-26"]["amount"], places=3)
         self.assertEqual(26_179_225.0, by_date["2026-10-23"]["volume"])
+
+
+class KlineWindowCanonicalizationTests(unittest.TestCase):
+    """R3/9：长周期 K 线上游窗口统一放宽，count 与区间两路命中同一 vendor 形状。"""
+
+    def _provider(self, now: datetime):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.transport = Mock()
+        self.response = Mock(status_code=200)
+        self.transport.return_value = self.response
+        return StockTodayProvider(
+            token_loader=lambda: SECRET, post=self.transport,
+            budget_path=Path(self.tmp.name) / "budget.sqlite3",
+            clock=Mock(time=lambda: now.timestamp(), monotonic=lambda: 1000.0),
+        )
+
+    def _call(self, provider, *, count=None, start_date=None, end_date=None,
+              rows=None, adjustment="qfq"):
+        rows = rows or STRING_PRO_BAR_ROWS
+        self.response.json.return_value = {"code": 0, "columns": list(rows[0]),
+                                           "data": rows, "total": len(rows)}
+        params = {"code": "688018", "period": "daily", "adjustment": adjustment,
+                  "source": "stocktoday"}
+        if count is not None:
+            params["count"] = count
+        if start_date is not None:
+            params["start_date"] = start_date
+        if end_date is not None:
+            params["end_date"] = end_date
+        outcome = provider.call("stock_kline", params)
+        request_params = self.transport.call_args_list[-1].kwargs["json"]["params"]
+        return outcome, request_params
+
+    def test_widen_start_keeps_at_least_60_day_window(self):
+        self.assertEqual("20260827", _widen_kline_start("20261012", "20261026"))
+        # 已经更早的起始日保持不变（历史区间只放宽不缩小）
+        self.assertEqual("20250101", _widen_kline_start("20250101", "20261026"))
+        self.assertEqual("20260827", _widen_kline_start(None, "20261026"))
+
+    def test_narrow_explicit_window_is_widened_upstream_then_filtered_locally(self):
+        provider = self._provider(datetime(2026, 10, 26, 16, 0, tzinfo=TZ_SHANGHAI))
+        rows = [dict(row) for row in STRING_PRO_BAR_ROWS]
+        rows.append({"ts_code": "688018.SH", "trade_date": "20261012", "freq": "D",
+                     "open": "111.70", "high": "115.00", "low": "110.00", "close": "111.70",
+                     "vol": "1000.00", "amount": "11170.00", "adj": "qfq"})
+        outcome, request = self._call(provider, start_date="20261013", end_date="20261026",
+                                      rows=rows)
+        self.assertNotEqual("INVALID_KLINE", outcome.error_code)
+        # 上游按 60 天宽请求（20260827），调用方窗口在本地裁剪：10-12 不属于请求窗口
+        self.assertEqual("20260827", request["start_date"])
+        self.assertEqual("20261026", request["end_date"])
+        dates = [bar["datetime"] for bar in outcome.data["bars"]]
+        self.assertNotIn("2026-10-12", dates)
+        self.assertEqual(sorted(dates), dates)
+
+    def test_count_and_range_paths_use_same_upstream_window(self):
+        provider = self._provider(datetime(2026, 10, 26, 16, 0, tzinfo=TZ_SHANGHAI))
+        _count_outcome, count_request = self._call(provider, count=10)
+        _range_outcome, range_request = self._call(provider, start_date="20261013",
+                                                   end_date="20261026")
+        self.assertEqual(count_request["start_date"], range_request["start_date"])
+        self.assertEqual(count_request["end_date"], range_request["end_date"])
 
 
 if __name__ == "__main__":
