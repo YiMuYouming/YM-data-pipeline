@@ -448,4 +448,3 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 - `concept_index` 的 `names` 不再被静默忽略：经同一名册解析，解析到概念才取指数行；
   解析到非概念类型（如「乳品」）进 `missing` 并在 `data.name_resolution[name].reason_code`
   报 `CONCEPT_NAME_TYPE_MISMATCH`；查无此名报 `CONCEPT_NAME_NOT_IN_ROSTER`。
-
