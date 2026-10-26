@@ -14,6 +14,8 @@ import sqlite3
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -26,6 +28,7 @@ from ..trading_calendar import (
     TradeCalendarUnavailable,
     latest_completed_trade_date,
     market_fact_age_seconds,
+    previous_trading_day,
 )
 from .base import ProviderOutcome
 from .stocktoday_auth import load_token
@@ -37,6 +40,20 @@ DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-bud
 # 板块成员按交易日缓存（审计回复 11 二.2：成员变动慢）。一天一个文件，
 # 盘上持久——provider 重启也命中，不是进程内存。
 BOARD_MEMBER_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "board_members"
+# 2026-10-26（R3/7a/7c）：板块名册（ths_index 代码→名称/类型）与个股反查成员
+# （ths_member con_code）各按交易日缓存一份：名册/成员变动慢，同一交易日重复查询
+# 只补缺，不重复打上游。缓存是优化不是事实源——写不进去不影响本次返回。
+BOARD_ROSTER_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "board_roster"
+CODE_BOARD_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "code_boards"
+# 反查是逐码一跳（上游不支持逗号合并），并发 8 路；实测单跳 0.2~1.1s。
+CODE_BOARD_MAX_WORKERS = 8
+# 盘中涨停池行业回填是"锦上添花"的补字段：给它一个硬预算，宁可这一轮少填几只
+# （如实进 unresolved + partial 缺口），也不让 market_intraday_state 破 8s。
+INDUSTRY_BACKFILL_BUDGET_SEC = 2.5
+# 行业回填的主源是 bak_basic（一次调用拿全市场当日行业，实测 ~2s / 5578 行）：
+# 比逐码 ths_member 反查（55 码 * 0.2~1.1s）便宜一个量级。当日尚未发布时退到
+# 最近一个已发布交易日，并把 industry_as_of 如实标回去（申万行业调整很慢）。
+INDUSTRY_BASIC_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "industry_basic"
 # ths_member 的 ts_code 必须带 .TI 后缀（在线实测：881121 查不到，
 # 881121.TI 返回 187 名成员）；逗号合并多板块上游返回空，只能逐板块调。
 BOARD_INDEX_SUFFIX = ".TI"
@@ -533,6 +550,66 @@ def _store_member_cache(root: Path, trade_date: str, entries: dict) -> None:
         return
 
 
+def _load_day_cache(root: Path, trade_date: str, key: str) -> dict:
+    """读某交易日的通用分片缓存（key 区分名册/反查）；坏了就当没有。"""
+    try:
+        payload = json.loads((root / f"{trade_date}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    value = payload.get(key) if isinstance(payload, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _store_day_cache(root: Path, trade_date: str, key: str, entries: dict) -> None:
+    """把新取到的分片并进当日缓存；写不进去不影响本次返回。"""
+    if not entries:
+        return
+    merged = _load_day_cache(root, trade_date, key)
+    merged.update(entries)
+    path = root / f"{trade_date}.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"trade_date": trade_date, key: merged}, ensure_ascii=False),
+            encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        return
+
+
+def _exchange_for_code(code: object) -> str | None:
+    """六位代码 → 交易所后缀；认不出来就返回 None（不瞎猜，交调用方记缺口）。"""
+    from ..a_share_codes import A_SHARE_CODE_PREFIXES_BY_EXCHANGE
+
+    bare = str(code or "").split(".")[0]
+    if len(bare) != 6 or not bare.isdigit():
+        return None
+    for exchange, prefixes in A_SHARE_CODE_PREFIXES_BY_EXCHANGE.items():
+        if bare.startswith(prefixes):
+            return exchange
+    # 北交所 2025-10 之前的 8xxxxx/4xxxxx 家族仍在名册里。
+    if bare.startswith(("8", "4")):
+        return "BJ"
+    return None
+
+
+def _to_ts_code(code: object) -> str | None:
+    """600519 / SH600519 / 600519.SH 三种形状统一成 600519.SH。"""
+    text = str(code or "").strip().upper()
+    if not text:
+        return None
+    if "." in text:
+        bare, _, suffix = text.partition(".")
+        if suffix in _SECURITY_CODE_SUFFIXES and len(bare) == 6 and bare.isdigit():
+            return f"{bare}.{suffix}"
+        return None
+    if len(text) == 8 and text[:2] in _SECURITY_CODE_SUFFIXES and text[2:].isdigit():
+        return f"{text[2:]}.{text[:2]}"
+    exchange = _exchange_for_code(text)
+    return f"{text}.{exchange}" if exchange else None
+
+
 def _rows(body):
     data = body.get("data")
     if isinstance(data, dict):
@@ -566,12 +643,18 @@ class StockTodayProvider:
         budget_path=DEFAULT_BUDGET_PATH,
         budget=None,
         member_cache_root=BOARD_MEMBER_CACHE_ROOT,
+        roster_cache_root=BOARD_ROSTER_CACHE_ROOT,
+        code_board_cache_root=CODE_BOARD_CACHE_ROOT,
+        industry_basic_cache_root=INDUSTRY_BASIC_CACHE_ROOT,
         clock=None,
     ):
         self.token_loader = token_loader
         self.post = post or requests.post
         self.budget = budget or RequestBudget(budget_path)
         self.member_cache_root = Path(member_cache_root)
+        self.roster_cache_root = Path(roster_cache_root)
+        self.code_board_cache_root = Path(code_board_cache_root)
+        self.industry_basic_cache_root = Path(industry_basic_cache_root)
         self.clock = clock or time
 
     def probe(self):
@@ -1491,6 +1574,309 @@ class StockTodayProvider:
             auth={"required": True, "status": "ok"},
             provenance=self._provenance(),
         )
+
+    def _latest_completed_date(self) -> str:
+        return latest_completed_trade_date(
+            datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI))
+
+    def prefetch_board_roster(self) -> None:
+        """兼容入口：等同 prefetch_board_metadata()（名册 + 行业表一起预取）。"""
+        self.prefetch_board_metadata()
+
+    def _roster_outcome(self):
+        """名册请求结果：优先用 prefetch 的那一跳，没有（或失败）就现取。"""
+        thread = getattr(self, "_roster_thread", None)
+        if thread is not None:
+            thread.join()
+            self._roster_thread = None
+            result = getattr(self, "_roster_result", None)
+            self._roster_result = None
+            if result is not None:
+                return result
+        return self._request_table("ths_index", {})
+
+    def _board_roster(self, trade_date: str) -> dict:
+        """ths_index 全量名册：板块代码 -> {name, type, member_count}，按交易日缓存。
+
+        名册是"代码到名字"的唯一映射来源（881 行业 / 六大前缀的概念）。按交易日缓存：
+        名称与分类变动慢，同一交易日重复查询不再打上游；读不到就现取，取不到返回空表，
+        由调用方如实记缺口，不猜。
+        """
+        cached = _load_day_cache(self.roster_cache_root, trade_date, "boards")
+        if cached:
+            return cached
+        outcome = self._roster_outcome()
+        if outcome is None or outcome.error_code or not isinstance(outcome.data, dict):
+            return {}
+        roster = {}
+        for row in outcome.data.get("items") or []:
+            if not isinstance(row, dict):
+                continue
+            bare = str(row.get("ts_code") or "").split(".")[0]
+            if len(bare) != 6 or not bare.isdigit():
+                continue
+            roster[bare] = {"name": str(row.get("name") or "").strip(),
+                            "type": str(row.get("type") or ""),
+                            "member_count": row.get("count")}
+        if roster:
+            _store_day_cache(self.roster_cache_root, trade_date, "boards", roster)
+        return roster
+
+    def _code_board_ids(self, ts_codes, trade_date: str, deadline: float | None = None):
+        """个股 -> 所属板块代码（ths_member con_code 反查），按交易日缓存。
+
+        上游不支持逗号合并，逐码一跳；未命中的码并发 8 路取。返回
+        (entries, cache_hit, error_code, partial)：error_code 只表示"有码这轮没取到"，
+        已经取到的码照常返回；partial=True 表示撞到 deadline、本轮只填了一部分
+        （剩下的下一轮靠缓存继续补，调用方如实记 partial 缺口）。
+        """
+        cached = _load_day_cache(self.code_board_cache_root, trade_date, "codes")
+        entries: dict = {}
+        fresh: dict = {}
+        cache_hit = 0
+        pending: list = []
+        for ts_code in ts_codes:
+            if isinstance(cached.get(ts_code), dict):
+                entries[ts_code] = cached[ts_code]
+                cache_hit += 1
+            else:
+                pending.append(ts_code)
+        error_code = None
+
+        def load(ts_code):
+            return ts_code, self._request_table(
+                "ths_member", {"ts_code": "", "con_code": ts_code, "start_date": "",
+                              "end_date": "", "is_new": ""})
+
+        partial = False
+        if pending:
+            if len(pending) == 1:
+                results = [load(pending[0])]
+            else:
+                pool = ThreadPoolExecutor(
+                    max_workers=min(CODE_BOARD_MAX_WORKERS, len(pending)),
+                    thread_name_prefix="code-boards")
+                futures = [pool.submit(load, ts_code) for ts_code in pending]
+                done, not_done = futures, set()
+                if deadline is not None:
+                    done, not_done = futures_wait(
+                        futures, timeout=max(0.0, deadline - time.monotonic()))
+                results = []
+                for future in done:
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        continue
+                if not_done:
+                    partial = True
+                    for future in not_done:
+                        future.cancel()
+                pool.shutdown(wait=False, cancel_futures=True)
+            for ts_code, outcome in results:
+                if outcome.error_code:
+                    error_code = error_code or outcome.error_code
+                    continue
+                rows = (outcome.data.get("items")
+                        if isinstance(outcome.data, dict) else None) or []
+                name = ""
+                boards = set()
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    board = str(row.get("ts_code") or "").split(".")[0]
+                    if len(board) == 6 and board.isdigit():
+                        boards.add(board)
+                    name = name or str(row.get("con_name") or "").strip()
+                entries[ts_code] = {"boards": sorted(boards), "name": name,
+                                    "fetched_at": outcome.fetched_at or ""}
+                fresh[ts_code] = entries[ts_code]
+            _store_day_cache(self.code_board_cache_root, trade_date, "codes", fresh)
+        return entries, cache_hit, error_code, partial
+
+    @staticmethod
+    def _classify_boards(board_ids, roster: dict) -> dict:
+        """板块代码按名册的 type 分家：881 行业 / N 概念 / 其余只计数不冒充。"""
+        industries: list = []
+        concepts: list = []
+        other_types: Counter = Counter()
+        unnamed: list = []
+        for board_id in board_ids:
+            meta = roster.get(board_id)
+            if not isinstance(meta, dict) or not meta.get("name"):
+                unnamed.append(board_id)
+                continue
+            entry = {"board_id": board_id, "name": meta["name"],
+                     "type": meta.get("type"),
+                     "member_count": meta.get("member_count")}
+            if meta.get("type") == INDUSTRY_BOARD_TYPE and board_id.startswith("881"):
+                industries.append(entry)
+            elif meta.get("type") == CONCEPT_BOARD_TYPE:
+                concepts.append(entry)
+            else:
+                other_types[str(meta.get("type") or "")] += 1
+        industries.sort(key=lambda item: item["board_id"])
+        concepts.sort(key=lambda item: (-(item.get("member_count") or 0),
+                                        item["board_id"]))
+        return {"industry": industries[0] if len(industries) == 1 else None,
+                "industries": industries,
+                "concepts": concepts,
+                "other_type_counts": dict(other_types),
+                "unresolved_board_ids": unnamed}
+
+    def _industry_basic_map(self, day: str) -> dict:
+        """bak_basic 全市场行业映射（代码 -> 申万行业名），按交易日缓存。
+
+        一次调用拿全市场（实测 ~2s / 5578 行、行业 100% 有值），比逐码反查便宜一个
+        量级。当日尚未发布（盘中）时按交易日历退到最近一个已发布交易日，
+        并把 as_of 如实带回去——这是"最近一次已知行业"，不是"今天的行业"。
+        返回 {"as_of": "YYYYMMDD", "industries": {六位码: 行业名}} 或 {}。
+        """
+        cached = _load_day_cache(self.industry_basic_cache_root, day, "industries")
+        if isinstance(cached.get("industries"), dict) and cached.get("as_of"):
+            return cached
+        candidates = [day]
+        try:
+            candidates.append(previous_trading_day(
+                datetime.strptime(day, "%Y%m%d").date()).strftime("%Y%m%d"))
+        except (ValueError, TradeCalendarUnavailable):
+            pass
+        for candidate in candidates:
+            outcome = self._prefetched_industry_outcome(candidate)
+            if outcome is None or outcome.error_code or not isinstance(outcome.data, dict):
+                continue
+            rows = [row for row in (outcome.data.get("items") or [])
+                    if isinstance(row, dict)]
+            industries = {}
+            as_of = ""
+            for row in rows:
+                code = str(row.get("ts_code") or "").split(".")[0]
+                name = str(row.get("industry") or "").strip()
+                stamp = str(row.get("trade_date") or "").strip()
+                if len(code) == 6 and code.isdigit() and name:
+                    industries[code] = name
+                    as_of = max(as_of, stamp) if stamp else as_of
+            if not industries:
+                continue
+            payload = {"as_of": as_of or candidate, "industries": industries}
+            _store_day_cache(self.industry_basic_cache_root, day, "industries", payload)
+            return payload
+        return {}
+
+    def _prefetched_industry_outcome(self, day: str):
+        """当日行业表的请求结果：优先用 prefetch 的那一跳，没有就现取。"""
+        thread = getattr(self, "_industry_thread", None)
+        requested_day = getattr(self, "_industry_day", None)
+        if thread is not None and requested_day == day:
+            thread.join()
+            self._industry_thread = None
+            result = getattr(self, "_industry_result", None)
+            self._industry_result = None
+            if result is not None:
+                return result
+        return self._request_table(
+            "bak_basic", {"trade_date": day},
+            fields="trade_date,ts_code,name,industry")
+
+    def prefetch_board_metadata(self) -> None:
+        """把行业表与板块名册两跳请求提前发起（与 rt_k 快照并发），失败不抛。
+
+        intraday_state.build 在抓快照前调用：名册 2~6s、bak_basic ~2s，等快照回来再取
+        就全加在关键路径上。行业表按"最近一个已完成交易日"预取——盘中当日表尚未
+        发布，回填走的正是这一份。
+        """
+        if getattr(self, "_roster_thread", None) is None:
+            self._roster_result = None
+
+            def load_roster():
+                try:
+                    self._roster_result = self._request_table("ths_index", {})
+                except Exception:
+                    self._roster_result = None
+
+            thread = threading.Thread(target=load_roster, name="board-roster", daemon=True)
+            self._roster_thread = thread
+            thread.start()
+        if getattr(self, "_industry_thread", None) is not None:
+            return
+        try:
+            day = latest_completed_trade_date(
+                datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI))
+        except TradeCalendarUnavailable:
+            return
+        self._industry_day = day
+        self._industry_result = None
+
+        def load_industry():
+            try:
+                self._industry_result = self._request_table(
+                    "bak_basic", {"trade_date": day},
+                    fields="trade_date,ts_code,name,industry")
+            except Exception:
+                self._industry_result = None
+
+        thread = threading.Thread(target=load_industry, name="industry-basic", daemon=True)
+        self._industry_thread = thread
+        thread.start()
+
+    def board_industry_map(self, codes, trade_date: str | None = None,
+                           budget_sec: float | None = None) -> dict:
+        """盘中涨停池的行业回填入口（R3/7a）：六位码 -> 行业名（含来源与时点）。
+
+        主源 bak_basic（DP 既有公开表，一次调用全市场）；当日未发布/个股不在表内时，
+        再在硬预算内用 ths_member 881 短线反查兜底。只用 DP 既有公开数据，不新增付费
+        权限、不 hardcode 名单；回填不到的码进 unresolved + error_code，绝不编行业名。
+        """
+        deadline = time.monotonic() + (
+            INDUSTRY_BACKFILL_BUDGET_SEC if budget_sec is None else budget_sec)
+        day = trade_date or self._latest_completed_date()
+        requested = [str(code).split(".")[0] for code in codes]
+        basic = self._industry_basic_map(day)
+        industries: dict = {}
+        unresolved: list = []
+        table = basic.get("industries") if isinstance(basic, dict) else {}
+        as_of = basic.get("as_of") if isinstance(basic, dict) else None
+        for code in requested:
+            name = (table or {}).get(code)
+            if name:
+                industries[code] = {"board_id": None, "name": name,
+                                    "source": f"bak_basic:{as_of}", "as_of": as_of}
+            else:
+                unresolved.append(code)
+        partial = False
+        cache_hit = 0
+        roster_rows = None
+        fallback_error = None if industries else "INDUSTRY_BASIC_UNAVAILABLE"
+        if unresolved:
+            # 极少数（新股/停牌）才会走到这里：881 反查兜底，同样受硬预算约束。
+            roster = self._board_roster(day)
+            roster_rows = len(roster) or None
+            mapping = {code: _to_ts_code(code) for code in unresolved
+                       if _to_ts_code(code)}
+            if roster and mapping:
+                entries, cache_hit, error_code, partial = self._code_board_ids(
+                    list(mapping.values()), day, deadline=deadline)
+                still: list = []
+                for code, ts_code in mapping.items():
+                    entry = entries.get(ts_code) or {}
+                    industry = self._classify_boards(
+                        entry.get("boards") or [], roster)["industry"]
+                    if industry is None:
+                        still.append(code)
+                    else:
+                        industries[code] = {"board_id": industry["board_id"],
+                                            "name": industry["name"],
+                                            "source": "ths_member:881",
+                                            "as_of": day}
+                fallback_error = error_code if not industries else None
+                unresolved = still
+        return {"industries": industries,
+                "unresolved": sorted(set(unresolved)),
+                "error_code": fallback_error if not industries else None,
+                "partial": partial,
+                "industry_as_of": as_of,
+                "roster_rows": roster_rows, "cache_hit": cache_hit,
+                "trade_date": day}
+
 
     _BOARD_DAILY_AMOUNT_PROVENANCE = {
         "derived": True,

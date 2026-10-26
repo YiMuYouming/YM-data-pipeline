@@ -139,17 +139,47 @@ def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
     return limits
 
 
-def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = None):
-    """Dated metadata only; snapshot membership and counts stay authoritative."""
+def _seal_time(first) -> str:
+    """first_time 是 HHMMSS 但厂商常去掉前导零（实测 "94957" = 09:49:57）。"""
+
+    text = str(first or "").strip()
+    if not text.isdigit() or len(text) > 6:
+        return ""
     try:
-        outcome = provider._request_table("limit_list_d", {"trade_date": trade_date, "limit_type": "U"})
-    except Exception:
-        if diagnostics is not None:
-            diagnostics.update(status="provider_error", error_code="METADATA_REQUEST_FAILED",
-                               returned_count=0, matched_count=0, latency_ms=None)
-        return {}
+        return datetime.strptime(text.zfill(6), "%H%M%S").strftime("%H:%M:%S")
+    except ValueError:
+        return ""
+
+
+def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = None,
+                    reads: int = 2):
+    """Dated metadata only; snapshot membership and counts stay authoritative.
+
+    2026-10-26（R3/7a）：网关对表读取会偶发**假空**（BATCH4/ths_daily 同一先例；本轮
+    5 次真实回放里第 5 次 limit_list_d 就返回空表、55 行 industry 全空）。空表重试
+    一次再接受为空——多一跳换掉一次静默的行业缺口；鉴权/套餐类错误不重试。
+    """
+
+    attempts = max(1, int(reads))
+    outcome = None
+    used = 0
+    for _ in range(attempts):
+        used += 1
+        try:
+            outcome = provider._request_table(
+                "limit_list_d", {"trade_date": trade_date, "limit_type": "U"})
+        except Exception:
+            if diagnostics is not None:
+                diagnostics.update(status="provider_error", reads=used,
+                                   error_code="METADATA_REQUEST_FAILED",
+                                   returned_count=0, matched_count=0, latency_ms=None)
+            return {}
+        if outcome.error_code in {"AUTH_DENIED", "PLAN_NOT_ENTITLED", "AUTH_MISSING", "RATE_LIMITED"}:
+            break
+        if outcome.status != "empty" or used >= attempts:
+            break
     if diagnostics is not None:
-        diagnostics.update(status=outcome.status,
+        diagnostics.update(status=outcome.status, reads=used,
                            error_code=outcome.error_code or ("EMPTY_UPSTREAM" if outcome.status == "empty" else None),
                            returned_count=0, matched_count=0, latency_ms=outcome.latency_ms)
     if outcome.status != "success" or not isinstance(outcome.data, dict):
@@ -164,19 +194,14 @@ def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = Non
         code = str(row.get("ts_code") or "").split(".")[0]
         if len(code) != 6 or not code.isdigit():
             continue
-        first = str(row.get("first_time") or "")
-        seal_time = ""
-        if len(first) == 6 and first.isdigit():
-            try:
-                seal_time = datetime.strptime(first, "%H%M%S").strftime("%H:%M:%S")
-            except ValueError:
-                pass
-        rows[code] = {"industry": str(row.get("industry") or ""), "seal_time": seal_time}
+        rows[code] = {"industry": str(row.get("industry") or "").strip(),
+                      "seal_time": _seal_time(row.get("first_time"))}
     if diagnostics is not None:
         diagnostics["matched_count"] = len(rows)
         if items and not rows:
             diagnostics["error_code"] = "DATE_OR_CODE_MISMATCH"
     return rows
+
 
 
 def _previous_ladder(previous_date: str, db_path=None):
@@ -249,6 +274,39 @@ def _tencent_rows(codes: list[str], quote_loader) -> dict[str, dict]:
     return rows
 
 
+def _industry_backfill(provider, codes, trade_date: str) -> dict:
+    """Fill missing limit-up industry from DP's own 同花顺 881 membership.
+
+    2026-10-26（R3/7a）：当日明细（limit_list_d）不可用或行业为空时，「今日涨停池
+    行业分布」就没有依据。这里用 DP 既有公开数据反查（StockToday ths_member 的 881
+    行业成员 + ths_index 名册），不新增付费权限、不 hardcode 名单：
+    回填到的行标 industry_source="ths_member:881"；回填不到的**留空**并给原因码，
+    绝不把空写成确定值。provider 未实现该能力时如实报 BACKFILL_UNAVAILABLE。
+    """
+
+    loader = getattr(provider, "board_industry_map", None)
+    if loader is None:
+        return {"industries": {}, "unresolved": list(codes),
+                "error_code": "BACKFILL_UNAVAILABLE"}
+    try:
+        result = loader(list(codes), trade_date) or {}
+    except Exception:
+        return {"industries": {}, "unresolved": list(codes), "error_code": "BACKFILL_FAILED"}
+    if result.get("error_code"):
+        return {"industries": {}, "unresolved": list(codes),
+                "error_code": result["error_code"]}
+    industries = result.get("industries") or {}
+    return {
+        "industries": {str(code): dict(row) for code, row in industries.items()
+                       if isinstance(row, dict) and row.get("name")},
+        "unresolved": list(result.get("unresolved") or []),
+        "roster_rows": result.get("roster_rows"),
+        "cache_hit": result.get("cache_hit"),
+        "partial": bool(result.get("partial")),
+        "error_code": None,
+    }
+
+
 def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES):
     """Fetch every wildcard batch concurrently, keeping the fixed batch order.
 
@@ -270,6 +328,14 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     """Return the intraday state or raise IntradayStateError (no fallback)."""
 
     now = now or datetime.now(TZ_SHANGHAI)
+    # 名册一跳 2~6s：与快照并发提前发起，回填阶段只是取结果（provider 没这个能力就算了）。
+    prefetch = (getattr(provider, "prefetch_board_metadata", None)
+                or getattr(provider, "prefetch_board_roster", None))
+    if prefetch is not None:
+        try:
+            prefetch()
+        except Exception:
+            pass
     rows: list[dict] = []
     batch_latest: list[datetime] = []
     batches = []
@@ -397,12 +463,45 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     if limit_sets["up"] and not metadata:
         gaps.append("limit_up_metadata_empty" if metadata_observation.get("status") == "empty"
                     else "limit_up_metadata_unavailable")
+    backfill: dict = {}
+    backfill_observation: dict = {}
+    missing_industry = [c for c in limit_sets["up"]
+                        if not (metadata.get(c) or {}).get("industry")]
+    if missing_industry:
+        backfill = _industry_backfill(provider, missing_industry, trade_date)
+        backfill_observation = {
+            "requested": len(missing_industry),
+            "resolved": len(backfill.get("industries") or {}),
+            "unresolved": len([c for c in missing_industry
+                               if c not in (backfill.get("industries") or {})]),
+            "error_code": backfill.get("error_code"),
+            "partial": bool(backfill.get("partial")),
+            "roster_rows": backfill.get("roster_rows"),
+        }
+        if backfill.get("partial"):
+            gaps.append("limit_up_industry_backfill_partial")
+        if backfill.get("error_code"):
+            gaps.append("limit_up_industry_backfill_unavailable")
+        elif backfill.get("industries"):
+            gaps.append("limit_up_industry_backfilled")
+        if len(backfill.get("industries") or {}) < len(missing_industry):
+            gaps.append("limit_up_industry_unresolved")
     for code in limit_sets["up"]:
         row = metadata.get(code) or {}
         if row.get("seal_time") and row["seal_time"] > data_as_of.strftime("%H:%M:%S"):
             row = {}
-        detail[code].update(industry=row.get("industry") or "", seal_time=row.get("seal_time") or "")
-    if any(not detail[c].get("industry") or not detail[c].get("seal_time") for c in limit_sets["up"]):
+        industry = str(row.get("industry") or "").strip()
+        source = "limit_list_d" if industry else ""
+        if not industry and code in (backfill.get("industries") or {}):
+            filled = backfill["industries"][code]
+            industry = str(filled.get("name") or "")
+            source = str(filled.get("source") or "ths_member:881")
+        detail[code].update(industry=industry, seal_time=row.get("seal_time") or "",
+                            industry_source=source or "unresolved")
+    if any(not detail[c].get("industry") for c in limit_sets["up"]):
+        if "limit_up_industry_unresolved" not in gaps:
+            gaps.append("limit_up_industry_unresolved")
+    if any(not detail[c].get("seal_time") for c in limit_sets["up"]):
         gaps.append("limit_up_metadata_incomplete")
 
     def listing(kind):
@@ -433,6 +532,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         "source_gaps": gaps,
         "_stocktoday": {"api_name": "rt_k", "batches": batches, "unique_code_count": len(latest),
                         "limit_metadata": metadata_observation,
+                        "industry_backfill": backfill_observation,
                         "deduplicated_rows": len(rows) - len(latest),
                         "stk_limit_rows": len(limits), "fetched_at": fetched_at},
     }
