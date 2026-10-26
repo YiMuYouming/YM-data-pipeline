@@ -482,6 +482,14 @@
     {
       "provider": "stocktoday",
       "operation": "direct_provider_call",
+      "intent": "stock_boards",
+      "capability": "stock_boards",
+      "params": {"codes": ["600519"], "names": ["\u5a74\u7ae5"]},
+      "read_only": true
+    },
+    {
+      "provider": "stocktoday",
+      "operation": "direct_provider_call",
       "intent": "board_daily_kline",
       "capability": "board_daily_kline",
       "params": {"codes": ["881121.TI"], "start_date": "20260928", "end_date": "20260930"},

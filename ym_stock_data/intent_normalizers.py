@@ -335,6 +335,25 @@ def normalize_success(
             expected_count=len(params.get("codes") or []) or None,
             missing=missing,
         )
+    elif intent == "stock_boards":
+        # 反查不是同构行表：codes 是"个股 -> 行业/概念"行，names 是"板块名 -> 代码/type"
+        # 解析行。质量只回答"问了几项、答上几项、哪些没答上"，缺口原因码单列。
+        rows = data.get("items") if isinstance(data.get("items"), list) else []
+        names = data.get("names") if isinstance(data.get("names"), list) else []
+        missing = data.get("missing") if isinstance(data.get("missing"), list) else []
+        source_gaps = data.get("source_gaps") if isinstance(data.get("source_gaps"), list) else []
+        quality = assess_quality(
+            [{"code": row.get("code")} for row in rows if isinstance(row, dict)]
+            + [{"requested": row.get("requested")} for row in names if isinstance(row, dict)],
+            expected_count=(len(params.get("codes") or []) + len(params.get("names") or []))
+            or None,
+            missing=missing,
+        )
+        if source_gaps:
+            quality["status"] = "partial"
+            quality["reason_codes"] = sorted(
+                set(quality.get("reason_codes") or []) | {str(gap) for gap in source_gaps})
+            quality["gaps"] = [str(gap) for gap in source_gaps]
     elif intent == "board_daily_kline":
         boards = data.get("boards") if isinstance(data.get("boards"), list) else []
         missing = data.get("missing") if isinstance(data.get("missing"), list) else []

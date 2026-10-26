@@ -92,6 +92,8 @@ _ALLOWED_PARAMS = {
     "sector_index": frozenset({"codes", "names"}),
     "concept_index": frozenset({"codes", "names"}),
     "board_members": frozenset({"codes", "trade_date"}),
+    # 反查只收 codes/names：没有日期参数——成员关系是"当前名册"，真实生效日 unknown。
+    "stock_boards": frozenset({"codes", "names"}),
     "board_daily_kline": frozenset({"codes", "start_date", "end_date"}),
     # member_coverage: {board_id: 比率}，由知道成员名单的一方给（如 ths_member）。
     "market_board_strength": frozenset(
@@ -395,6 +397,32 @@ def _validate_params(intent: str, params: dict) -> None:
                     r"\d{4}-\d{2}-\d{2}|\d{8}", day):
                 raise ValueError("board_members trade_date must use YYYYMMDD")
             params["trade_date"] = _normalize_ymd(day)
+    elif intent == "stock_boards":
+        # 反查（R3/7c）：codes 是个股六位码（可带 SH/SZ/BJ 前后缀），names 是板块名。
+        # 两个方向至少给一个；形状检查只挡形状，不判"这只票有没有行业"——那是数据的事。
+        for key in ("codes", "names"):
+            value = params.get(key)
+            if isinstance(value, str):
+                params[key] = [value]
+            elif value is not None and not isinstance(value, (list, tuple)):
+                raise ValueError(f"stock_boards {key} must be a list")
+        if not params.get("codes") and not params.get("names"):
+            raise ValueError("stock_boards requires codes or names")
+        codes = [str(code).strip() for code in params.get("codes") or []]
+        if any(not code for code in codes):
+            raise ValueError("stock_boards codes cannot contain empty values")
+        bad = [code for code in codes
+               if not re.fullmatch(r"\d{6}|(?:SH|SZ|BJ)\d{6}|\d{6}\.(?:SH|SZ|BJ)", code.upper())]
+        if bad:
+            raise ValueError(
+                "stock_boards codes must be six-digit A-share codes "
+                f"(600519 / SH600519 / 600519.SH), got {bad}"
+            )
+        params["codes"] = [code.upper() for code in codes]
+        names = [str(name).strip() for name in params.get("names") or []]
+        if any(not name for name in names):
+            raise ValueError("stock_boards names cannot contain empty values")
+        params["names"] = names
     elif intent == "board_daily_kline":
         codes = params.get("codes")
         if isinstance(codes, str):
@@ -738,6 +766,16 @@ def _analyze_data(intent: str, params: dict, data: object) -> tuple[bool, bool, 
         rows = data.get("items")
         count = len(rows) if isinstance(rows, list) else 0
         return isinstance(rows, list), isinstance(rows, list) and not rows, count
+    if intent == "stock_boards":
+        # 反查不是同构行表：codes 行 + names 解析行，两者都可能为空但仍是合法结果
+        # （"这只票没有概念"是数据事实，不是失败）。
+        rows = data.get("items")
+        names = data.get("names")
+        rows = rows if isinstance(rows, list) else None
+        names = names if isinstance(names, list) else None
+        if rows is None or names is None:
+            return False, False, 0
+        return True, (not rows and not names), len(rows) + len(names)
     if intent in {"market_board_strength", "board_members", "board_daily_kline"}:
         boards = data.get("boards")
         count = len(boards) if isinstance(boards, list) else 0
@@ -968,7 +1006,7 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
         # A daily table's date is not an observed intraday timestamp.
         return _stamp_from(data.get("data_as_of") or data.get("quote_time"))
     if intent in {"market_facts", "market_hot_rank", "legacy_hot_rank",
-                  "industry_flow", "fund_flow", "northbound_flow"}:
+                  "industry_flow", "fund_flow", "northbound_flow", "stock_boards"}:
         return _stamp_from(data.get("trade_date"))
     if intent in {"stock_kline", "index_kline"}:
         bars = data.get("bars") if isinstance(data.get("bars"), list) else []

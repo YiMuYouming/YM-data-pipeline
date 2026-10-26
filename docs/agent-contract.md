@@ -403,3 +403,49 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
   `open_times`、`limit_times`；缺失为 `null`，不补 0。
   `first_time`/`last_time` 是上游原样的 HHMMSS 串，不足 6 位的按左补零理解
   （`"93009"` = 09:30:09）；本管道不改写原值。
+
+## R3/7（2026-10-26）：涨停池行业回填、盘中状态提速、个股反查与概念名映射
+
+### 7a）`market_intraday_state.limit_up[].industry` 的缺口与回填
+
+- `limit_list_d` 当日明细在盘中尚未发布，网关对表读取也会偶发假空（本轮真实回放 5 次里
+  第 5 次返回空表）。缺 `industry` 时「今日涨停池行业分布」没有依据；空值不能当确定值。
+- 空表先**重试一次**（`_stocktoday.limit_metadata.reads` 记实际读取次数；鉴权/套餐类错误不重试）；
+  `first_time` 不足 6 位按左补零解析（`94957` = 09:49:57），封板时间不再假缺。
+- 仍有缺口时按下列顺序回填，逐行写 `industry_source`：
+  1. `limit_list_d`（同日明细，原口径）；
+  2. `bak_basic`（DP 既有公开表，一次调用全市场行业；当日未发布按交易日历退到最近已发布
+     交易日，`industry_as_of` 如实标回；source 形如 `bak_basic:20261026`）；
+  3. `ths_member` 的 881 行业成员反查兜底（硬预算 2.5s，撞预算记 `partial`）；
+  4. 都取不到：`industry` 留空、`industry_source=unresolved`。
+- `source_gaps` 里可区分：`limit_up_metadata_empty/unavailable`、`limit_up_industry_backfilled`、
+  `limit_up_industry_unresolved`、`limit_up_industry_backfill_partial`、
+  `limit_up_industry_backfill_unavailable`；`_stocktoday.industry_backfill` 给请求/命中/缺口计数。
+- 名册、行业表、反查都按交易日缓存在既有 `~/.cache/ym-stock-data/` 机制下，并与快照并发预取，
+  结论不依赖缓存新鲜度（当轮取不到就如实报缺口）。
+
+### 7b）盘中状态耗时
+
+- `market_intraday_state` 的四个 `rt_k` 快照批次、以及 `stk_limit` 与 `limit_list_d` 两跳，
+  彼此独立，改为并发抓取；批次诊断仍按 `SNAPSHOT_BATCHES` 固定顺序，首个失败批次的
+  错误码与串行实现一致。`RequestBudget` 进程内串行化写入，并发不丢请求、不改上限语义。
+- 真实回放（同一交易日、同一时钟）：改前 median 8.87s / max 13.13s → 改后 median 6.47s /
+  max 7.52s；同录制响应下 HEAD 与工作区逐字段语义一致（除墙钟字段）。
+
+### 7c）`stock_boards`：个股 -> 行业/概念反查 + 板块名映射
+
+- 新 intent `stock_boards`（`codes` / `names` 至少一个），route 只有 `stocktoday`，
+  数据源是既有公开表 `ths_member`（con_code 反查成员关系）与 `ths_index`（代码 -> 名称/type 名册）。
+- `data.items[]`：`code/ts_code/name/industry/industries/concepts/other_board_type_counts/
+  board_count/gaps`。`industry` 只认**唯一 881 且 type=I** 的板块（多于一个宁可置 null +
+  `INDUSTRY_BOARD_NOT_RESOLVED` 也不挑一个）；`concepts` 是 type=N（按成员数降序）；
+  其余类型（BB/TH/ST/R/S 等）只计数，不冒充行业或概念。
+- `data.names[]`：板块名 -> `{requested,status,board_id,name,type,reason_code}`；
+  `resolved` / `type_mismatch` / `not_found` 三种状态都带原因码（真实例子：乳品 = 行业 I 884125，
+  婴童 = 概念 N 875111）。不 hardcode 别名、不做模糊猜。
+- `data.membership_as_of=null`、`membership_time_status=unknown`：`ths_member` 不带时间窗，
+  成员关系按**当前名册**返回，真实生效日未知，不伪装成当日事实。
+- `concept_index` 的 `names` 不再被静默忽略：经同一名册解析，解析到概念才取指数行；
+  解析到非概念类型（如「乳品」）进 `missing` 并在 `data.name_resolution[name].reason_code`
+  报 `CONCEPT_NAME_TYPE_MISMATCH`；查无此名报 `CONCEPT_NAME_NOT_IN_ROSTER`。
+

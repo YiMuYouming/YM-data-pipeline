@@ -1446,11 +1446,25 @@ class StockTodayProvider:
         2. 逗号合并多板块上游返回空（与 ths_member 同一个坑）——逐板块调。
         """
         codes = [str(code) for code in (params.get("codes") or [])]
-        names = params.get("names") or []
+        names = [str(name).strip() for name in (params.get("names") or [])
+                 if str(name).strip()]
         items: list[dict] = []
         missing: list[str] = []
         stamps: list[str] = []
         latency = 0
+        name_resolution: dict = {}
+        if names:
+            # 概念名映射（R3/7c）：用 DP 既有名册 ths_index（type 是判据）解析，
+            # 不 hardcode 别名。解析到概念才取指数行；解析到行业/其他类型（如
+            # 乳品 = 行业 I 884125）或查无此名，都如实进 missing + reason_code，
+            # 不把"名字取不到"静默成 empty。
+            roster = self._board_roster(self._latest_completed_date())
+            resolved, name_resolution = self._resolve_board_names(names, roster)
+            for code in resolved:
+                if code not in codes:
+                    codes.append(code)
+            missing.extend(name for name in names
+                           if name_resolution.get(name, {}).get("status") != "resolved")
         for code in codes:
             bare = code.split(".")[0]
             outcome = self._request_table(
@@ -1482,7 +1496,8 @@ class StockTodayProvider:
         return ProviderOutcome(
             self.name,
             "success" if items else "empty",
-            data={"items": items, "missing": sorted(missing), "_stocktoday": {}},
+            data={"items": items, "missing": sorted(missing),
+                  "name_resolution": name_resolution, "_stocktoday": {}},
             fetched_at=max(stamps) if stamps else None,
             latency_ms=latency,
             auth={"required": True, "status": "ok"},
@@ -1878,6 +1893,132 @@ class StockTodayProvider:
                 "trade_date": day}
 
 
+    @staticmethod
+    def _resolve_board_names(names, roster: dict):
+        """板块名 -> 名册映射（type 是判据）；返回 (概念代码列表, 逐名解析结果)。
+
+        三种结果都带 reason_code，让调用方分得清"名字不存在"和"名字存在但类型不对"
+        （真实例子：乳品 = 行业 I 884125，不是概念）。不 hardcode 别名、不做模糊猜。
+        """
+        resolved: list = []
+        resolution: dict = {}
+        for name in names:
+            hits = [(code, meta) for code, meta in roster.items()
+                    if isinstance(meta, dict)
+                    and str(meta.get("name") or "") == name]
+            if not hits:
+                resolution[name] = {"status": "not_found",
+                                    "reason_code": "CONCEPT_NAME_NOT_IN_ROSTER"}
+                continue
+            concepts = [(code, meta) for code, meta in hits
+                        if meta.get("type") == CONCEPT_BOARD_TYPE]
+            if concepts:
+                code, meta = sorted(concepts)[0]
+                resolution[name] = {"status": "resolved", "board_id": code,
+                                    "name": meta.get("name"),
+                                    "type": CONCEPT_BOARD_TYPE}
+                if code not in resolved:
+                    resolved.append(code)
+                continue
+            code, meta = sorted(hits)[0]
+            resolution[name] = {"status": "type_mismatch", "board_id": code,
+                                "name": meta.get("name"), "type": meta.get("type"),
+                                "reason_code": "CONCEPT_NAME_TYPE_MISMATCH"}
+        return resolved, resolution
+
+    def _call_stock_boards(self, params):
+        """个股 -> 所属行业/概念反查 + 板块名册映射（R3/7c，Bots #5/#8）。
+
+        数据全部来自 DP 既有公开表：ths_member（con_code 反查成员关系）+ ths_index
+        （代码 -> 名称/type 名册）。行业 = 唯一 881 板块（type=I），概念 = type=N，
+        其余类型（指数/风格/筛选）只计数不冒充。取不到的如实进 missing / gaps /
+        source_gaps，不 hardcode 名单、不猜。
+        """
+        started = self.clock.monotonic()
+        try:
+            trade_date = params.get("trade_date") or self._latest_completed_date()
+        except TradeCalendarUnavailable:
+            return self._fail(started, "CALENDAR_UNAVAILABLE")
+        roster = self._board_roster(trade_date)
+        if not roster:
+            return self._fail(started, "ROSTER_UNAVAILABLE")
+        codes = [str(code) for code in (params.get("codes") or [])]
+        names = [str(name).strip() for name in (params.get("names") or [])
+                 if str(name).strip()]
+        items: list[dict] = []
+        missing: list[str] = []
+        source_gaps: list[str] = []
+        mapping: dict = {}
+        for code in codes:
+            ts_code = _to_ts_code(code)
+            if ts_code is None:
+                missing.append(code)
+                source_gaps.append("CODE_EXCHANGE_UNKNOWN")
+            else:
+                mapping[ts_code] = code.split(".")[0]
+        entries, cache_hit, error_code, partial = self._code_board_ids(
+            list(mapping), trade_date)
+        if error_code:
+            source_gaps.append(f"MEMBERSHIP_{error_code}")
+        for ts_code, bare_code in mapping.items():
+            entry = entries.get(ts_code)
+            if entry is None:
+                missing.append(bare_code)
+                source_gaps.append("MEMBERSHIP_UNAVAILABLE")
+                continue
+            boards = entry.get("boards") or []
+            classified = self._classify_boards(boards, roster)
+            row = {"code": bare_code, "ts_code": ts_code,
+                   "name": entry.get("name") or None,
+                   "industry": classified["industry"],
+                   "industries": classified["industries"],
+                   "concepts": classified["concepts"],
+                   "other_board_type_counts": classified["other_type_counts"],
+                   "board_count": len(boards), "gaps": []}
+            if not boards:
+                row["gaps"].append({"gap_code": "BOARD_MEMBERSHIP_EMPTY"})
+            elif classified["industry"] is None:
+                row["gaps"].append({
+                    "gap_code": "INDUSTRY_BOARD_NOT_RESOLVED",
+                    "industry_candidates": [item["board_id"]
+                                            for item in classified["industries"]]})
+            if classified["unresolved_board_ids"]:
+                row["gaps"].append({"gap_code": "BOARD_NAME_UNRESOLVED",
+                                    "board_ids": classified["unresolved_board_ids"]})
+            items.append(row)
+        name_rows: list[dict] = []
+        if names:
+            _, resolution = self._resolve_board_names(names, roster)
+            for name in names:
+                entry = dict(resolution.get(name) or {})
+                entry["requested"] = name
+                name_rows.append(entry)
+                if entry.get("status") != "resolved":
+                    source_gaps.append(str(entry.get("reason_code")
+                                           or "BOARD_NAME_NOT_RESOLVED"))
+        stamps = [board.get("fetched_at") for board in entries.values()
+                  if isinstance(board, dict) and board.get("fetched_at")]
+        return ProviderOutcome(
+            self.name,
+            "success" if items or name_rows else "empty",
+            data={"items": items, "names": name_rows,
+                  "missing": sorted(set(missing)),
+                  "source_gaps": sorted(set(source_gaps)),
+                  "trade_date": trade_date, "cache_trade_date": trade_date,
+                  # ths_member 不带时间窗：真实成员生效日未知，不伪装成当日。
+                  "membership_as_of": None,
+                  "membership_time_status": "unknown",
+                  "roster_rows": len(roster), "cache_hit": cache_hit,
+                  "source": "stocktoday:ths_member+ths_index",
+                  "_stocktoday": {"api_name": "ths_member",
+                                  "roster_rows": len(roster),
+                                  "cache_hit": cache_hit, "partial": partial}},
+            fetched_at=max(stamps) if stamps else None,
+            latency_ms=int((self.clock.monotonic() - started) * 1000),
+            auth={"required": True, "status": "ok"},
+            provenance=self._provenance(),
+        )
+
     _BOARD_DAILY_AMOUNT_PROVENANCE = {
         "derived": True,
         "formula": "vol(手)*100*avg_price",
@@ -2173,6 +2314,8 @@ class StockTodayProvider:
             return self._call_concept_index(params)
         if intent == "board_members":
             return self._call_board_members(params)
+        if intent == "stock_boards":
+            return self._call_stock_boards(params)
         if intent == "board_daily_kline":
             return self._call_board_daily_kline(params)
         if intent == "industry_flow":

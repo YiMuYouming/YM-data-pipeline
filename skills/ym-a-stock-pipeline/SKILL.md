@@ -21,6 +21,7 @@ Python 只使用 `from ym_stock_data import query`；命令行只使用仓库根
 | 概念板块 | `concept_index` | `names` 或概念 `codes`（与 881 行业不是一回事，不混排；概念前缀实测分布在 864/865/875/883/885/886 六个段，只按 ths_index 的 type=N 判定，不写死单前缀——审计回复 11） |
 | 板块日线 | `board_daily_kline` | 板块 `codes`（`.TI` 可省）；可选 `start_date`/`end_date`（YYYYMMDD）；`amount` 为派生字段，见返回 `field_provenance` |
 | 板块成员 | `board_members` | 板块 `codes`（881 行业或概念前缀均可，可带 `.TI` 后缀）；可选 `trade_date`（成员按交易日缓存） |
+| 个股所属行业/概念（反查） | `stock_boards` | 个股 `codes`（600519 / SH600519 / 600519.SH）；或 `names` 查板块名 -> 代码/type（概念名映射，type=N 才是概念；乳品这种是行业 I 会如实报 type_mismatch） |
 | 逐板块强度 | `market_board_strength` | `trade_date`；可选 `board_ids`、`definitions`、`member_coverage` |
 | 个股当前快照 | `stock_snapshot` | `codes` |
 | 日/周/月/分钟 K 线 | `stock_kline` | `code`、`period`；可选日期范围与复权方式 |
@@ -121,6 +122,7 @@ K 线检查 `datetime`、`volume_unit=share`、`amount_unit=CNY` 和 `adjustment
 | `查概念板块` / `查概念` | `concept_index` | `names` 或概念 `codes`（type=N 是判据，前缀只做形状检查） |
 | `查板块日线` / `板块日线` / `板块日K` | `board_daily_kline` | 板块 `codes`；可选 `start_date`、`end_date` |
 | `查板块成员` / `板块成员` | `board_members` | 板块 `codes`；可选 `trade_date` |
+| `查个股行业概念` / `查所属板块` | `stock_boards` | 个股 `codes`；或 `names` 查板块名映射 |
 | `查板块强度` / `板块强度` | `market_board_strength` | `trade_date` |
 
 ```bash

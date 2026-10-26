@@ -101,6 +101,16 @@ _ROUTES = {
         trade_usage=_TRADE_USAGE,
         max_age_sec=86400,
     ),
+    "stock_boards": RouteSpec(
+        intent="stock_boards",
+        # 反查 = ths_member（成员关系的唯一生产者）+ ths_index（代码→名称/type 名册）；
+        # 两个都是 StockToday 既有公开表，不新增数据源。取不到如实进 missing/gaps。
+        providers=("stocktoday",),
+        data_scope="按个股代码反查所属同花顺行业（881，type=I）与概念（type=N），"
+                   "并提供板块名→代码/类型的名册映射；成员关系真实生效日 unknown",
+        trade_usage=_TRADE_USAGE,
+        max_age_sec=86400,
+    ),
     "board_daily_kline": RouteSpec(
         intent="board_daily_kline",
         # DP-1：同花顺板块指数（881 行业 / 概念前缀）日线，源是 StockToday 的
