@@ -1895,14 +1895,21 @@ class StockTodayProvider:
             stamp = str(row.get("trade_date") or row.get("trade_time") or "")
             if len(stamp) == 8 and stamp.isdigit():
                 stamp = f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:]}"
-            if not stamp or any(type(row.get(k)) not in (int, float) or not math.isfinite(row[k]) for k in ("open", "high", "low", "close")):
+            # 2026-10-26（R3/9）：StockToday pro_bar(qfq) 把 OHLC/vol/amount 返回为
+            # 十进制字符串（"140.33"/"174726.95"/"2551454.10"），原实现只接受
+            # int/float 并把整表判成 INVALID_KLINE；这里统一按数值解析，仍然
+            # 严格拒绝非数值/非有限值（不补 0、不猜）。
+            prices = {key: _number(row.get(key)) for key in ("open", "high", "low", "close")}
+            if not stamp or any(value is None for value in prices.values()):
                 return self._fail(started, "INVALID_KLINE")
+            volume = _number(row.get("vol"))
+            amount = _number(row.get("amount"))
             bars.append(
                 {
                     "datetime": stamp,
-                    **{k: row[k] for k in ("open", "high", "low", "close")},
-                    "volume": row["vol"] * volume_multiplier if row.get("vol") is not None else None,
-                    "amount": row["amount"] * amount_multiplier if row.get("amount") is not None else None,
+                    **prices,
+                    "volume": volume * volume_multiplier if volume is not None else None,
+                    "amount": amount * amount_multiplier if amount is not None else None,
                 }
             )
         if name != "stk_mins":
