@@ -1249,6 +1249,27 @@ def _failure_quality(intent: str, params: dict, status: str, count: int) -> dict
     return quality
 
 
+def _transport_diagnostic(outcome: ProviderOutcome) -> dict | None:
+    """Return structured transport-failure detail, if the provider reported one.
+
+    2026-10-26 R3 item8a：只收集 kind=transport_failure（腾讯分钟 HTTP/传输失败），
+    合法空（EMPTY_UPSTREAM）不进这里，保证两者不会混。
+    """
+
+    provenance = outcome.provenance if isinstance(outcome.provenance, dict) else {}
+    if provenance.get("kind") != "transport_failure":
+        return None
+    return {
+        "provider": outcome.provider,
+        "status": outcome.status,
+        "error_code": outcome.error_code,
+        "error_type": provenance.get("error_type"),
+        "http_status": provenance.get("http_status"),
+        "elapsed_ms": provenance.get("elapsed_ms"),
+        "latency_ms": outcome.latency_ms,
+    }
+
+
 def _source_tier(
     intent: str,
     params: dict,
@@ -1287,6 +1308,10 @@ def _query_with(
     spec: RouteSpec = compiled_policy.route(intent, call_params)
     _validate_params(intent, call_params)
     attempts: list[ProviderAttempt] = []
+    # 2026-10-26 R3 item8a：传输类失败的诊断信息单独保留。
+    # attempts 仍严格保持四字段（provider/status/error_code/latency_ms），
+    # 这里只收集 provider 标记 kind=transport_failure 的结构化细节。
+    attempt_diagnostics: list[dict] = []
     provider_used = None
     data = None
     final_status = "error"
@@ -1363,6 +1388,9 @@ def _query_with(
             else "provider_error"
         )
         observed_auth = _more_severe_auth(observed_auth, outcome.auth)
+        diagnostic = _transport_diagnostic(outcome)
+        if diagnostic is not None:
+            attempt_diagnostics.append(diagnostic)
         actual = outcome.provider or provider_name
         if actual != provider_name and outcome_status in {"success", "empty"}:
             provenance = outcome.provenance or {}
@@ -1547,6 +1575,14 @@ def _query_with(
         data_as_of=stamp.isoformat(timespec="seconds") if stamp else None,
         freshness=_data_freshness(intent, call_params, stamp, spec.max_age_sec),
     )
+    if attempt_diagnostics:
+        # 2026-10-26 R3 item8a：传输失败的可诊断信息（错误类型/HTTP 状态/耗时）。
+        result["_meta"]["attempt_diagnostics"] = attempt_diagnostics
+        reasons = result["_meta"]["quality"].setdefault("reason_codes", [])
+        for item in attempt_diagnostics:
+            code = item.get("error_code")
+            if code and code not in reasons:
+                reasons.append(code)
     if call_params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
         # 只作审计标记，不改变 provider/quality/attempts 既有标记。
         result["_meta"]["evidence_use_case"] = call_params["use_case"]

@@ -24,7 +24,10 @@ from functools import wraps
 
 from ..a_share_codes import A_SHARE_CODE_PREFIXES_BY_EXCHANGE
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
-from .tencent import volume_unit_multiplier as _tencent_volume_multiplier
+from .tencent import (
+    classify_transport_error as classify_tencent_transport_error,
+    volume_unit_multiplier as _tencent_volume_multiplier,
+)
 
 # === 连接池（线程安全）===
 _api = None
@@ -1179,6 +1182,11 @@ def _fetch_tencent_kline(
         if not size or adjustment not in {"none", "qfq"}:
             return []
         url = f"https://web.ifzq.gtimg.cn/appstock/app/day/query?code={symbol}"
+        # 2026-10-26 R3 item8a：传输/解析失败必须与「该日没有数据」分开。
+        # 原实现 except Exception: return [] 把 HTTP 失败、超时、畸形响应全部
+        # 吞成合法空（status=empty / EMPTY_UPSTREAM，latency=0），消费者无法判断
+        # 是"今天没分钟"还是"腾讯挂了"。现在向上抛 TencentTransportError。
+        started = time.monotonic()
         try:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0",
@@ -1187,8 +1195,10 @@ def _fetch_tencent_kline(
             with urllib.request.urlopen(req, timeout=10) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
             days = ((payload or {}).get("data") or {}).get(symbol, {}).get("data") or []
-        except Exception:
-            return []
+        except Exception as exc:
+            raise classify_tencent_transport_error(
+                exc, elapsed_ms=(time.monotonic() - started) * 1000
+            ) from exc
         bars = []
         start = str(start_date).replace("-", "") if start_date else None
         end = str(end_date).replace("-", "") if end_date else None

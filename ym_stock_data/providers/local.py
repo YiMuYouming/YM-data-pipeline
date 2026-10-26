@@ -790,13 +790,30 @@ class LocalProvider:
                 key: params[key] for key in ("start_date", "end_date")
                 if key in params
             } if period in {"1m", "5m", "15m", "60m"} else {}
-            bars = pytdx._fetch_tencent_kline(
-                params["code"],
-                period=period,
-                count=count,
-                adjustment=adjustment,
-                **minute_window,
-            )
+            try:
+                bars = pytdx._fetch_tencent_kline(
+                    params["code"],
+                    period=period,
+                    count=count,
+                    adjustment=adjustment,
+                    **minute_window,
+                )
+            except tencent.TencentTransportError as error:
+                # 2026-10-26 R3 item8a：传输失败转成显式失败，不再冒充合法空。
+                return ProviderOutcome(
+                    provider=provider,
+                    status=error.status,
+                    error_code=error.error_code,
+                    detail=error.describe(),
+                    latency_ms=error.elapsed_ms,
+                    provenance={
+                        "kind": "transport_failure",
+                        "error_type": error.error_type,
+                        "http_status": error.http_status,
+                        "elapsed_ms": error.elapsed_ms,
+                    },
+                    auth={"required": False, "status": "not_required"},
+                )
         else:
             bars = pytdx._fetch_sina_kline(params["code"], period=period, count=count)
         result = pytdx._build_kline_result(

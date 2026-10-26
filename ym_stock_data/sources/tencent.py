@@ -33,6 +33,52 @@ def volume_unit_multiplier(code: str) -> float:
     return 1.0 if is_star_market_code(code) else 100.0
 
 
+class TencentTransportError(RuntimeError):
+    """腾讯 HTTP/传输层失败——与「该日确实没有数据」是两件事。
+
+    2026-10-26 R3 item8a：分钟接口原先把所有异常吞成 `[]`，公共 query 只能报
+    `status=empty / EMPTY_UPSTREAM`，与合法空完全不可区分。现在传输失败向上抛本
+    异常，由适配器转成 `error`（或 `timeout`）并保留 error_type / HTTP 状态 / 耗时。
+    """
+
+    def __init__(self, message: str, *, error_type: str, http_status: int | None = None,
+                 elapsed_ms: int = 0) -> None:
+        super().__init__(message)
+        self.error_type = error_type
+        self.http_status = http_status
+        self.elapsed_ms = elapsed_ms
+
+    @property
+    def error_code(self) -> str:
+        if self.http_status is not None:
+            return f"HTTP_{self.http_status}"
+        if self.error_type in _TIMEOUT_ERROR_TYPES:
+            return "TIMEOUT"
+        return "TENCENT_TRANSPORT_ERROR"
+
+    @property
+    def status(self) -> str:
+        return "timeout" if self.error_type in _TIMEOUT_ERROR_TYPES else "provider_error"
+
+    def describe(self) -> str:
+        return (f"tencent transport failure: error_type={self.error_type} "
+                f"http_status={self.http_status} elapsed_ms={self.elapsed_ms}")
+
+
+_TIMEOUT_ERROR_TYPES = frozenset({"timeout", "TimeoutError", "socket.timeout"})
+
+
+def classify_transport_error(exc: BaseException, *, elapsed_ms: int = 0) -> TencentTransportError:
+    """把任意 HTTP/传输异常规整成可审计的 TencentTransportError。"""
+
+    error_type = type(exc).__name__
+    http_status = getattr(exc, "code", None)
+    if isinstance(http_status, bool) or not isinstance(http_status, int):
+        http_status = None
+    return TencentTransportError(str(exc) or error_type, error_type=error_type,
+                                 http_status=http_status, elapsed_ms=int(elapsed_ms))
+
+
 def _quote_time(value: str) -> str | None:
     if not value:
         return None
