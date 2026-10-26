@@ -155,9 +155,12 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 旧消费者；它们不是 Agent 推荐入口，也不是查询失败后的手工降级步骤。调用方不得直接
 选择 provider、拼接 fallback、调用 vendor SDK 或任意 URL。
 
-路由按用途固定（2026-09-27 起）：**StockToday 是唯一核心源，腾讯是唯一降级后备**。
+路由按用途固定（2026-09-27 起）：**StockToday 是唯一核心源，腾讯是唯一降级后备**；
+2026-10-26（T4 / D-04）起，**普通股票分钟 K 线（1m/5m/15m/60m）改为腾讯直接做主源**，
+不再先试套餐内没有的 `stk_mins`。
 `stock_snapshot`（含 `use_case="realtime_poll"`）和日/周/月
-`stock_kline` 为 StockToday → 腾讯；分钟 K 线、`market_limit_state`、`market_limit_board`、
+`stock_kline` 为 StockToday → 腾讯；分钟 K 线为腾讯单源（失败如实报缺口）；
+`market_limit_state`、`market_limit_board`、
 `market_hot_rank`、`market_intraday_state` 和默认 `review_sentiment` 只有 StockToday。
 东方财富、新浪、PyTDX 与 TDX 退出默认路由，适配器只保留显式诊断；问财只服务带
 `query` 的显式研究查询。**当前 StockToday 套餐只含个股实时**（`rt_k`、`rt_min`、`stk_limit`），
@@ -201,12 +204,14 @@ Wind 只通过专用 `wind_screener` 进入自然语言链，严格读取已验�
 
 TDX 自 2026-09-27 起不在任何默认路由；此前 TDX route provider 只在所有排在其前的语义兼容源失败或合法空集后调用，现在六项适配器只保留显式诊断。显式 `review_sentiment` 的 Wind screener 只在 OpenAPI、pywencai 均未返回非空成功后调用。`tdx_mcp` 只聚合诊断状态，不参与 RouteSpec。
 
-2026-10-20（J20-1）：分钟 `stock_kline`（1m/5m/15m/60m）增加一个**显式用途**的 PyTDX 后备路径，仅服务铸剑采集/回放/影子证据：调用方必须传 `use_case` ∈ `zj_collection` / `zj_replay` / `zj_shadow`，该用途下路由为 `stocktoday → pytdx → tencent`；其它分钟消费者与日/周/月默认路由不变（仍 `stocktoday → tencent`），该用途不能用于正式交易门禁。结果保留 `provider_used`、`attempts`、`data_as_of`、质量 `degraded/partial` 与语义不等价标记。
+2026-10-20（J20-1）：分钟 `stock_kline`（1m/5m/15m/60m）增加一个**显式用途**的 PyTDX 后备路径，仅服务铸剑采集/回放/影子证据：调用方必须传 `use_case` ∈ `zj_collection` / `zj_replay` / `zj_shadow`，该用途下路由为 `stocktoday → pytdx → tencent`；该用途不能用于正式交易门禁。结果保留 `provider_used`、`attempts`、`data_as_of`、质量 `degraded/partial` 与语义不等价标记。
+
+2026-10-26（T4 / D-04，本人明确裁定）：**普通股票分钟 `stock_kline`（1m/5m/15m/60m）默认路由改为腾讯单源** `tencent`（`source_tier=primary`），不再先尝试套餐内没有的 StockToday `stk_mins`（稳定 `PLAN_NOT_ENTITLED`，每轮固定浪费一跳且把正常结果标成 fallback/degraded）。日/周/月线、实时报价、显式 `source="stocktoday"` 与显式 `rt_min` 不变；显式 `use_case` 证据路线仍为 `stocktoday → pytdx → tencent`。腾讯分钟 bar 同时暴露分时均价字段：`vwap`（该 bar 成交额/成交量）与 `avg_price`（当日从开盘起的累计成交额/累计成交量，即分时均线值）；腾讯失败如实报缺口，不回填旧日、不放宽质量门。
 
 | provider id | ownership / setup | doctor 状态 | intended capabilities / RouteSpec 次序 | automatic fallback |
 | --- | --- | --- | --- | --- |
 | `market_facts` | 本环境独立 SQLite 事实库；只读查询 | `configured_unverified` 或 `unavailable` | `market_facts` 唯一源；缺日期/缺库显式失败 | 否；不能以旧缓存冒充当日事实 |
-| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`、`stock_snapshot`、`stock_kline`）；2026-09-27 退出默认路由；2026-10-20 起仅 `zj_collection`/`zj_replay`/`zj_shadow` 显式用途的分钟 K 可用作 stocktoday 之后的后备（默认分钟路由不变） | 否 |
+| `pytdx` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`、`stock_snapshot`、`stock_kline`）；2026-09-27 退出默认路由；2026-10-20 起仅 `zj_collection`/`zj_replay`/`zj_shadow` 显式用途的分钟 K 可用作 stocktoday 之后的后备（2026-10-26 起默认分钟路由为腾讯单源，与该显式用途无关） | 否 |
 | `pytdx_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`index_kline` 日/周/月）；已退出默认路由 | 否 |
 | `eastmoney` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | 仅显式诊断（`realtime_market`）；已退出默认路由 | 否 |
 | `eastmoney_index` | 零鉴权；无 setup | `configured_unverified` 或明确错误 | `index_kline` 在 StockToday 后；`index_intraday_compare` 仅显式诊断 | 允许；只按对应 RouteSpec 次序 |

@@ -1,7 +1,8 @@
 """DP-1a：板块日线与封单额；DP-1b：分钟 K 的显式用途 PyTDX 后备（J20-1）。
 
-1. 分钟 stock_kline（1m/5m/15m/60m）：默认路由保持 stocktoday -> tencent；
-   只有显式 use_case ∈ {zj_collection, zj_replay, zj_shadow} 才允许
+1. 分钟 stock_kline（1m/5m/15m/60m）：2026-10-26（T4 / D-04）起默认路由为
+   tencent 单源（不再先试无权限的 stk_mins）；只有显式
+   use_case ∈ {zj_collection, zj_replay, zj_shadow} 才允许
    stocktoday -> pytdx -> tencent，且不得用于其它 intent/日线。
 2. 板块日线：board_daily_kline（ths_daily），成交额 = vol(手)*100*avg_price，字段级 derived。
 3. 封单额：market_limit_board 透出 fd_amount / last_time / first_time / open_times / limit_times。
@@ -24,7 +25,7 @@ from ym_stock_data.routing import route_for
 SECRET = "synthetic-stocktoday-test-token"
 MINUTES = ("1m", "5m", "15m", "60m")
 EVIDENCE_USE_CASES = ("zj_collection", "zj_replay", "zj_shadow")
-DEFAULT_MINUTE = ("stocktoday", "tencent")
+DEFAULT_MINUTE = ("tencent",)
 EVIDENCE_MINUTE = ("stocktoday", "pytdx", "tencent")
 
 
@@ -64,7 +65,7 @@ TENCENT_BARS = [{"datetime": "2026-10-19 09:35:00", "open": 1, "high": 1, "low":
 
 
 class MinuteKlineEvidenceUseCaseTests(unittest.TestCase):
-    def test_default_minute_route_unchanged_and_has_no_pytdx(self):
+    def test_default_minute_route_is_tencent_only_and_has_no_pytdx(self):
         for period in MINUTES:
             with self.subTest(period=period):
                 self.assertEqual(DEFAULT_MINUTE, route_for("stock_kline", {"period": period}).providers)
@@ -117,7 +118,7 @@ class MinuteKlineEvidenceUseCaseTests(unittest.TestCase):
                                      {"code": "300885", "period": "5m", "count": 1},
                                      provider_loader=_refusing_loader(seen),
                                      state_loader=lambda: _NoBreaker())
-        self.assertEqual(["stocktoday", "tencent"], seen)
+        self.assertEqual(["tencent"], seen)
         self.assertEqual("tencent", result["_meta"]["provider_used"])
         fk.assert_not_called()
         tk.assert_called_once()
@@ -169,13 +170,14 @@ class MinuteKlineEvidenceUseCaseTests(unittest.TestCase):
         self.assertEqual(["stocktoday", "pytdx", "tencent"], seen)
         self.assertEqual("tencent", result["_meta"]["provider_used"])
 
-    def test_packaged_policy_default_minute_order_unchanged(self):
+    def test_packaged_policy_default_minute_order_is_tencent_primary(self):
+        # 2026-10-26（T4 / D-04）：普通股票分钟 K 腾讯直接做主源，policy 同步。
         policy = provider_policy.load_policy()
         for cap in ("stock_kline_60m", "stock_kline_15m", "stock_kline_5m"):
             with self.subTest(cap=cap):
-                self.assertEqual(["stocktoday", "tencent"],
+                self.assertEqual(["tencent"],
                                  policy["capabilities"][cap]["provider_order"])
-        # 1m 在 policy document 中仍无条目（默认路由不受影响；证据用途走显式 route）
+        # 1m 在 policy document 中仍无条目（证据用途走显式 route；默认路由由 routing.py 决定）
         self.assertNotIn("stock_kline_1m", policy["capabilities"])
 
     def test_code_side_1m_capability_is_covered(self):

@@ -35,7 +35,9 @@ ROUTE_POLICY_VERSION = "3.0"
 POLICY_PATH = Path(__file__).resolve().parent / "v3" / "provider-policy.v3.json"
 # Update this code-side approval anchor together with the canonical policy.
 # 2026-09-28（A4）：分钟级 stock_kline 增加 tencent 后备，重算逻辑锚。
-PACKAGED_POLICY_SHA256 = "9e6e248a752dfc561341899b2eefd05093d5f1e6c9ead12a5f38be70ceff93c6"
+# 2026-10-26（T4 / D-04）：普通股票 1m/5m/15m/60m 改为腾讯直接做主源，
+# policy 的 stock_kline_60m/15m/5m provider_order 同步为 ["tencent"]，重算逻辑锚。
+PACKAGED_POLICY_SHA256 = "0b9d2bcf8a6ceac09a31a0fd33102f3afec45eacb0429701b06e8aa417385342"
 _DEFAULT_AUDIT_RECEIPT_PATH = (
     Path(__file__).resolve().parent / "v3" / "stocktoday-audit-receipt.v3.json"
 )

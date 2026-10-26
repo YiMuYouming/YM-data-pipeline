@@ -222,9 +222,9 @@ class CoreRepairTests(unittest.TestCase):
         )
 
     def test_stock_kline_accepts_minute_range_and_qfq_is_long_period_only(self):
-        # 2026-09-28（A4）：分钟级接腾讯后备，`stk_mins` 不在套餐内时不再判死。
+        # 2026-10-26（T4 / D-04）：普通股票分钟 K 改为腾讯直接做主源。
         self.assertEqual(
-            ("stocktoday", "tencent"),
+            ("tencent",),
             route_for(
                 "stock_kline",
                 {"period": "1m", "start_date": "20260922", "end_date": "20260922"},
@@ -1039,6 +1039,8 @@ class CoreRepairTests(unittest.TestCase):
             "stocktoday",
             [_outcome("stocktoday", "success", primary_data)],
         )
+        # 2026-10-26（T4）：普通分钟请求改由腾讯直接做主源，stocktoday 分钟采样
+        # 语义只在显式铸剑证据用途下仍可命中，故本用例经 zj_replay 路由。
         result = self._run_with_fakes(
             "stock_kline",
             {"stocktoday": primary},
@@ -1046,6 +1048,7 @@ class CoreRepairTests(unittest.TestCase):
             period="5m",
             start_date="20260922",
             end_date="20260922",
+            use_case="zj_replay",
         )
 
         self.assertEqual("stocktoday", result["_meta"]["provider_used"])
@@ -1217,6 +1220,7 @@ class CoreRepairTests(unittest.TestCase):
             {"stocktoday": provider},
             code="300442",
             period="15m",
+            use_case="zj_replay",
         )
         self.assertEqual("stale", result["_meta"]["freshness"]["status"])
         self.assertIn("intraday_bars_missing", result["_meta"]["quality"]["reason_codes"])
@@ -1247,6 +1251,7 @@ class CoreRepairTests(unittest.TestCase):
                 {"stocktoday": provider},
                 code="300442",
                 period="15m",
+                use_case="zj_replay",
             )
         self.assertEqual("fresh", result["_meta"]["freshness"]["status"])
         self.assertNotIn("intraday_bars_missing", result["_meta"]["quality"]["reason_codes"])

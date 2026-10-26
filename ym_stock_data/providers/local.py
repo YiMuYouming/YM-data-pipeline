@@ -786,11 +786,16 @@ class LocalProvider:
                 error_code="ADJUSTMENT_UNSUPPORTED",
             )
         if provider == "tencent":
+            minute_window = {
+                key: params[key] for key in ("start_date", "end_date")
+                if key in params
+            } if period in {"1m", "5m", "15m", "60m"} else {}
             bars = pytdx._fetch_tencent_kline(
                 params["code"],
                 period=period,
                 count=count,
                 adjustment=adjustment,
+                **minute_window,
             )
         else:
             bars = pytdx._fetch_sina_kline(params["code"], period=period, count=count)
@@ -830,17 +835,25 @@ class LocalProvider:
                 amount = float(amount) if amount is not None else None
             except (TypeError, ValueError):
                 amount = None
-            bars.append(
-                {
-                    "datetime": str(stamp or ""),
-                    "open": row.get("open"),
-                    "high": row.get("high"),
-                    "low": row.get("low"),
-                    "close": row.get("close"),
-                    "volume": volume,
-                    "amount": amount,
-                }
-            )
+            bar = {
+                "datetime": str(stamp or ""),
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "volume": volume,
+                "amount": amount,
+            }
+            # 分时均价字段按来源原样透传（目前只有腾讯分钟 K 提供）；
+            # 其它周期/来源没有该字段时不补造，也不改变既有 bar shape。
+            for price_key in ("vwap", "avg_price"):
+                value = row.get(price_key)
+                if value is not None:
+                    try:
+                        bar[price_key] = float(value)
+                    except (TypeError, ValueError):
+                        pass
+            bars.append(bar)
         normalized["bars"] = bars
         normalized["total_bars"] = len(bars)
         normalized["adjustment"] = params.get("adjustment", "none")

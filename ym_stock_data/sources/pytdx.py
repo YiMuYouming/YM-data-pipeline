@@ -1166,7 +1166,8 @@ def _fallback_kline(code: str, period: str = "daily", count: int | None = None) 
 
 
 def _fetch_tencent_kline(
-    code: str, *, period: str, count: int, adjustment: str = "none"
+    code: str, *, period: str, count: int, adjustment: str = "none",
+    start_date: str | None = None, end_date: str | None = None,
 ) -> list[dict]:
     period_map = {"daily": "day", "weekly": "week", "monthly": "month"}
     remote_period = period_map.get(period)
@@ -1188,15 +1189,20 @@ def _fetch_tencent_kline(
         except Exception:
             return []
         bars = []
-        for day in days:
+        start = str(start_date).replace("-", "") if start_date else None
+        end = str(end_date).replace("-", "") if end_date else None
+        # Tencent returns newest days first; select the date window before count.
+        for day in sorted(days, key=lambda item: str(item.get("date") or "")):
             date_str = str(day.get("date") or "")
             if len(date_str) != 8:
+                continue
+            if (start and date_str < start) or (end and date_str > end):
                 continue
             date_fmt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
             slots: dict[int, dict] = {}
             previous_vol = previous_amt = 0.0
-            for raw in day.get("data") or []:
-                parts = str(raw).split()
+            rows = [str(raw).split() for raw in day.get("data") or []]
+            for parts in sorted(rows, key=lambda row: row[0] if row else ""):
                 if len(parts) < 4:
                     continue
                 minute_str = parts[0]
@@ -1206,7 +1212,8 @@ def _fetch_tencent_kline(
                 minute = int(minute_str[2:])
                 minute_of_day = hour * 60 + minute
                 price = _number(parts[1])
-                cum_vol = _number(parts[2]) * 100.0
+                # Stock minute cumulative volume is already shares (not index lots).
+                cum_vol = _number(parts[2])
                 cum_amt = _number(parts[3])
                 bucket = (minute_of_day // size) * size
                 bar = slots.setdefault(bucket, {
@@ -1226,7 +1233,7 @@ def _fetch_tencent_kline(
                 amt = max(0.0, (b["end_amt"] - b["start_amt"]))
                 if vol <= 0 or amt <= 0:
                     continue
-                bars.append({
+                bar = {
                     "time": f"{b['time']}:00",
                     "open": b["open"],
                     "high": b["high"],
@@ -1234,7 +1241,15 @@ def _fetch_tencent_kline(
                     "close": b["close"],
                     "vol": vol,
                     "amount": amt,
-                })
+                }
+                # 分时均价（2026-10-26 T4）：bar 内成交均价 = 本桶额/本桶量；
+                # 当日累计分时均价 = 上游当日累计额/累计量（分时均线值，
+                # 供"回踩分时均线"核验）。上游给的就是当日累计，故即使窗口
+                # 从盘中开始也仍是当日从开盘起的均价。
+                bar["vwap"] = round(amt / vol, 4)
+                if b["end_vol"] > 0 and b["end_amt"] > 0:
+                    bar["avg_price"] = round(b["end_amt"] / b["end_vol"], 4)
+                bars.append(bar)
         return bars[-count:]
 
     if adjustment not in {"none", "qfq"}:

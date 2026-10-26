@@ -149,8 +149,10 @@ class PublicApiTests(unittest.TestCase):
                 full_kline_data(bar_datetime="2026-09-23 15:00:00"),
             ),
             (
+                # 2026-10-26（T4 / D-04）：普通分钟请求改由腾讯直接做主源；
+                # stocktoday 分钟采样成功语义只在显式铸剑证据用途下仍可命中。
                 "stock_kline",
-                {"code": "600519", "period": "15m", "count": 1},
+                {"code": "600519", "period": "15m", "count": 1, "use_case": "zj_replay"},
                 full_kline_data(bar_datetime="2026-09-24 09:45:00"),
             ),
         ]

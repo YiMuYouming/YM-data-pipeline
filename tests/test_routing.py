@@ -79,15 +79,23 @@ class RoutingTests(unittest.TestCase):
                 self.assertEqual(("stocktoday", "tencent"), spec.providers)
                 self.assertEqual("continue_until_exhausted", spec.empty_policy)
         minute = route_for("stock_kline", {"period": "60m"})
-        # 2026-09-28（A4）：`stk_mins` 不在套餐内，分钟级必须有后备源，
-        # 否则整条 minute K 在未授权时直接判死（9-28 自选池因此走了 TDX 直连）。
-        self.assertEqual(("stocktoday", "tencent"), minute.providers)
+        # 2026-10-26（T4 / D-04）：普通股票分钟 K 改为腾讯直接做主源。
+        # `stk_mins` 不在 StockToday 套餐内、稳定 PLAN_NOT_ENTITLED，
+        # 不再"先试一次已知无权限的接口"；腾讯失败如实报缺口。
+        self.assertEqual(("tencent",), minute.providers)
         for period in ("60m", "15m", "5m", "1m"):
             with self.subTest(period=period):
                 self.assertEqual(
-                    ("stocktoday", "tencent"),
+                    ("tencent",),
                     route_for("stock_kline", {"period": period}).providers,
                 )
+        # 显式铸剑证据用途仍保留 stocktoday → pytdx → tencent 的既有契约。
+        self.assertEqual(
+            ("stocktoday", "pytdx", "tencent"),
+            route_for(
+                "stock_kline", {"period": "5m", "use_case": "zj_replay"}
+            ).providers,
+        )
 
     def test_no_default_route_uses_tdx_pytdx_or_iwencai_breadth(self):
         from ym_stock_data.routing import all_route_specs
@@ -111,31 +119,21 @@ class RoutingTests(unittest.TestCase):
         self.assertNotEqual("PROVIDER_ADAPTER_MISSING", outcome.error_code)
 
 
-    def test_minute_kline_falls_back_to_tencent_when_stk_mins_is_not_entitled(self):
-        """A4：`stk_mins` 未授权（PLAN_NOT_ENTITLED）时必须降级到腾讯分钟 K。"""
-        from ym_stock_data.providers.base import ProviderOutcome
-
+    def test_minute_kline_uses_tencent_directly_without_trying_stk_mins(self):
+        """T4（2026-10-26）：普通股票分钟 K 腾讯直接做主源，不再先试 `stk_mins`。"""
         route = route_for("stock_kline", {"period": "5m"})
-        self.assertEqual(("stocktoday", "tencent"), route.providers)
+        self.assertEqual(("tencent",), route.providers)
         self.assertTrue(all(p in api.PROVIDER_REGISTRY for p in route.providers))
 
-        refused = ProviderOutcome(
-            provider="stocktoday", status="incompatible", error_code="PLAN_NOT_ENTITLED"
-        )
         seen = []
 
         def loader(name):
-            if name == "stocktoday":
-                class _Refuse:
-                    def call(self, intent, params):
-                        seen.append(name)
-                        return refused
-                return _Refuse()
             seen.append(name)
             return LocalProvider(name)
 
-        bars = [{"datetime": "2026-09-28 09:35:00", "open": 10.0, "high": 10.2,
-                 "low": 9.9, "close": 10.1, "volume": 12000.0, "amount": 121000.0}]
+        bars = [{"datetime": "2026-10-26 09:35:00", "open": 10.0, "high": 10.2,
+                 "low": 9.9, "close": 10.1, "volume": 12000.0, "amount": 121000.0,
+                 "vwap": 10.0833, "avg_price": 10.0833}]
         with patch(
             "ym_stock_data.providers.local.pytdx._fetch_tencent_kline",
             return_value=bars,
@@ -148,14 +146,15 @@ class RoutingTests(unittest.TestCase):
             )
 
         meta = result["_meta"]
-        self.assertEqual(["stocktoday", "tencent"], seen)
+        self.assertEqual(["tencent"], seen)
         self.assertEqual("tencent", meta["provider_used"])
-        self.assertEqual(
-            ["PLAN_NOT_ENTITLED"],
-            [a.get("error_code") for a in meta["attempts"] if a.get("provider") == "stocktoday"],
-        )
+        self.assertEqual("primary", meta["source_tier"])
+        self.assertEqual(["tencent"], [a["provider"] for a in meta["attempts"]])
+        self.assertIsNone(meta["attempts"][0]["error_code"])
+        self.assertNotIn("fallback_source", meta["quality"]["reason_codes"])
         tencent_kline.assert_called_once()
         self.assertTrue(result["data"]["bars"])
+        self.assertEqual(10.0833, result["data"]["bars"][0]["vwap"])
 
     def test_packaged_policy_lists_exactly_the_live_routes(self):
         """The inactive policy file is read by people and agents; it must match routing.py."""

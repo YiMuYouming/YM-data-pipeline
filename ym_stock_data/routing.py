@@ -255,12 +255,16 @@ _STOCK_KLINE_DAILY = RouteSpec(
 )
 _STOCK_KLINE_MINUTE = RouteSpec(
     intent="stock_kline",
-    # 2026-09-28（A4）：`stk_mins` 不在 StockToday 套餐内，未授权时返回
-    # PLAN_NOT_ENTITLED；原链只有 stocktoday 一个源，整条 minute K 直接判死，
-    # 9-28 自选池五节点因此走了 TDX 直连。腾讯分钟 K 早已实现
-    #（pytdx._fetch_tencent_kline），这里接上后备，口径与 index_kline 的
-    # 分钟级降级一致：计划内源失败后走已注册的后备源，不新增旁路。
-    providers=("stocktoday", "tencent"),
+    # 2026-10-26（T4 / D-04 A1+A2，本人明确裁定）：普通股票分钟 K
+    # （1m/5m/15m/60m）改为腾讯直接做主源。`stk_mins` 不在 StockToday 套餐内、
+    # 稳定返回 PLAN_NOT_ENTITLED，"先试一次已知无权限的接口"只是每轮固定浪费一跳，
+    # 还让正常结果被标成 fallback/degraded。腾讯分钟 K 由
+    # pytdx._fetch_tencent_kline 实现（按日排序、先筛日期再截 count、股数单位、
+    # 分时均价字段）；腾讯失败就如实报缺口，不回填旧日、不放宽质量门。
+    # 日/周/月线（_STOCK_KLINE_DAILY）、实时报价与显式 rt_min 不随本项变更；
+    # 显式铸剑证据用途（zj_collection/zj_replay/zj_shadow）仍走
+    # _STOCK_KLINE_MINUTE_EVIDENCE 的既有契约。
+    providers=("tencent",),
     data_scope="A股个股分钟K线",
     trade_usage=_TRADE_USAGE,
     max_age_sec=300,

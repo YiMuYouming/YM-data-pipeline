@@ -39,7 +39,7 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 
 ## Provider 边界
 
-- 按用途执行 RouteSpec（2026-09-27 起）：StockToday 是唯一核心源，腾讯是唯一降级后备（个股逐只补、大盘整组切）；东方财富、新浪、PyTDX、TDX 退出默认路由，只作显式诊断；问财只服务带 `query` 的显式研究。当前套餐只含个股实时：大盘 `realtime_market` 与 `index_intraday_compare` 以腾讯为首要源，指数分钟 K 线从东方财富指数起，盘中板块由同花顺提供，默认路由不再调用 `rt_idx_k`、`rt_sw_k`、`idx_mins`（2026-09-28 正式口径）。
+- 按用途执行 RouteSpec（2026-09-27 起）：StockToday 是唯一核心源，腾讯是唯一降级后备（个股逐只补、大盘整组切）；东方财富、新浪、PyTDX、TDX 退出默认路由，只作显式诊断；问财只服务带 `query` 的显式研究。当前套餐只含个股实时：大盘 `realtime_market` 与 `index_intraday_compare` 以腾讯为首要源，指数分钟 K 线从东方财富指数起，盘中板块由同花顺提供，默认路由不再调用 `rt_idx_k`、`rt_sw_k`、`idx_mins`（2026-09-28 正式口径）。2026-10-26（T4 / D-04）起普通股票分钟 `stock_kline` 为腾讯单源，见下节。
 - 时效以 `_meta.data_as_of` 计：盘中 ≤180 秒 fresh、180–600 秒 aging（个股逐只补腾讯）、>600 秒 stale（整组切腾讯）；全市场指标（`market_intraday_state`）不换源、不拼腾讯，失败即报错，由消费端停在最后正常值并标时间。
 - 指标（情绪、涨跌停、炸板率、晋级率、最高板、涨停/连板/炸板收益、赚钱效应、连板风险值）只在 `ym_stock_data/indicators.py` 实现，登记在 `v3/indicators.v1.json`，定义以 Vault《交易指标术语表》为准；`tests/test_indicators.py` 会拦截其他位置出现的公式。
 - TDX 不接任何默认路由，不调用任意 tool，不做交易写入。
@@ -307,6 +307,33 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 
 不得对 live-dashboard 真实 8088 发 POST，不得覆盖生产 data/cache/runtime，不得把数据查询结果当成交易授权。
 
+## T4（2026-10-26，D-04 A1+A2）：腾讯为普通股票分钟主源 + 分时均价
+
+本人 2026-10-26 10:30 原话「取这个值的时候，要用腾讯这个做主源，不用每次都要重新试」的落地
+（T4 施工项；只改分钟 K 取数链，不改交易规则、门禁与日线/报价）：
+
+- 普通股票 `stock_kline`（`period` ∈ `1m/5m/15m/60m`）**默认路由为 `tencent` 单源**
+  （`RouteSpec.providers == ("tencent",)`，`source_tier=primary`）。不再先请求
+  StockToday `stk_mins`：该接口不在套餐内、稳定 `PLAN_NOT_ENTITLED`，先试一次只是
+  固定浪费一跳，并把正常结果标成 `fallback`/`degraded`。`attempts` 只保留腾讯一跳。
+- 日/周/月线、实时报价、显式 `source="stocktoday"` 与显式 `rt_min` 路由**不变**；
+  显式 `use_case` ∈ `zj_collection`/`zj_replay`/`zj_shadow` 的铸剑证据路线仍为
+  `stocktoday → pytdx → tencent`（下节 J20-1 契约不变）。
+- 腾讯分钟 bar 在既有 `datetime/open/high/low/close/volume/amount` 之外新增两个字段：
+  - `vwap`：该 bar 内的成交均价 = 本桶成交额/本桶成交量（元/股，4 位小数）；
+  - `avg_price`：当日**从开盘起**的累计成交均价（= 上游当日累计成交额/累计成交量，
+    即分时均线值；元/股，4 位小数）。上游给的是当日累计量额，所以即使窗口
+    从盘中某日开始，`avg_price` 仍是当日从开盘起的均价，不是窗口内累计。
+  字段缺失时整键不出现（不补 0、不猜），其它来源/周期不新增该字段。
+- 日期/单位/时间语义沿用 10-24 修复：按日期升序处理（腾讯原返回为最新在前）、先把
+  `start_date/end_date` 窗口筛完再按 `count` 截尾、股票分钟成交量单位是**股**（不乘 100）、
+  `_meta.data_as_of` 取真实分钟时间（不截成 15:00）。
+- 腾讯失败（网络/上游缺当日行）如实报缺口：不给旧日 bar、不降低质量门；
+  请求日不在腾讯数据里时是合法 empty（`EMPTY_UPSTREAM`），不回填其它日期。
+  已知残留：腾讯分钟取数的 HTTP 异常在 source 层被吞成空集，与「该日无行」在
+  `status=empty` 上不可区分，只能靠 `fetched_at` 与当日日历另行判断。
+- 主源身份不等于把分钟采样价提升为逐笔完整 OHLC，也不构成交易许可。
+
 ## DP-1b（2026-10-20，J20-1 受限用途）：分钟 K 的显式 PyTDX 后备
 
 分钟 `stock_kline`（`period` ∈ `1m/5m/15m/60m`）只有在调用方显式传
@@ -315,7 +342,7 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 带 `amount`，volume 为股；腾讯仍是最后后备）。该用途仅服务铸剑采集、回放与影子证据，
 **不是任意分钟消费者、正式交易门禁或全局默认路由的启用授权**：
 
-- 不传该 `use_case` 的分钟请求仍走默认 `stocktoday → tencent`；日/周/月及其它 intent 不变；
+- 不传该 `use_case` 的分钟请求仍走默认路由（2026-10-26 起为 `tencent` 单源）；日/周/月及其它 intent 不变；
 - 该 `use_case` 只允许配 `stock_kline` 的分钟 period，其它 intent/日线会显式拒绝；
 - 结果照常保留 `provider_used`、`attempts`、`data_as_of`、`quality.status`、
   `reason_codes`；后备源如实标记 `degraded/partial` 与 `semantic_equivalence=unknown`，

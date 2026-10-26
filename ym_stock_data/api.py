@@ -969,7 +969,9 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
         return _stamp_from(data.get("trade_date"))
     if intent in {"stock_kline", "index_kline"}:
         bars = data.get("bars") if isinstance(data.get("bars"), list) else []
-        stamps = [_stamp_from(str(bar.get("datetime", ""))[:10]) for bar in bars if isinstance(bar, dict)]
+        minute_stock = intent == "stock_kline" and params.get("period") in ZJ_MINUTE_PERIODS
+        raw_stamps = [str(bar.get("datetime", "")) for bar in bars if isinstance(bar, dict)]
+        stamps = [_stamp_from(stamp if minute_stock else stamp[:10]) for stamp in raw_stamps]
         stamps = [stamp for stamp in stamps if stamp is not None]
         return max(stamps) if stamps else None
     return None
