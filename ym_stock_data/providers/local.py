@@ -805,7 +805,7 @@ class LocalProvider:
             source=provider,
         )
         volume_multiplier = (
-            100
+            tencent.volume_unit_multiplier(params["code"])
             if provider == "tencent" and period in {"daily", "weekly", "monthly"}
             else 1
         )

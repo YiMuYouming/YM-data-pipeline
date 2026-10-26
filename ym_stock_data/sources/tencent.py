@@ -10,8 +10,27 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 import urllib.request
 
+from ..a_share_codes import is_star_market_code
+
 
 _SHANGHAI = timezone(timedelta(hours=8))
+
+
+def volume_unit_multiplier(code: str) -> float:
+    """腾讯行情成交量字段 → 股 的换算系数（2026-10-26 批次4 / A3）。
+
+    实测（10-26 收盘后多票交叉验证，evidence/BATCH4/a3-unit-verify.json）：
+
+    - 科创板（688/689）：快照字段 v6、分钟累计量、日 K vol 的单位都是**股**，
+      系数 1；
+    - 沪深主板/创业板：同一字段是**手**，系数 100；
+    - 北交所：腾讯这两个接口返回 0/空，不涉及本换算。
+
+    修正前适配器两个方向都错：快照一律 ×100（科创板放大约 100 倍），
+    分钟一律不乘（主板/创业板少 100 倍）。
+    """
+
+    return 1.0 if is_star_market_code(code) else 100.0
 
 
 def _quote_time(value: str) -> str | None:
@@ -82,9 +101,10 @@ def fetch_quotes(codes: list[str]) -> dict:
             "change_amt": float(vals[31]) if vals[31] else 0,
             "high": float(vals[33]) if vals[33] else 0,
             "low": float(vals[34]) if vals[34] else 0,
-            # Verified Tencent quote positions: vals[6]=volume in lots,
+            # Verified Tencent quote positions: vals[6]=volume in lots for
+            # 沪深主板/创业板 and in shares for 科创板 (see volume_unit_multiplier),
             # vals[30]=YYYYMMDDHHMMSS, vals[37]=amount in ten-thousand CNY.
-            "volume": float(vals[6]) * 100 if vals[6] else 0,
+            "volume": float(vals[6]) * volume_unit_multiplier(code) if vals[6] else 0,
             "amount": float(vals[37]) * 10000 if vals[37] else 0,
             "quote_time": _quote_time(vals[30]),
             "amount_wan": float(vals[37]) if vals[37] else 0,

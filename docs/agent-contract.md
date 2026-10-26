@@ -326,13 +326,52 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
     从盘中某日开始，`avg_price` 仍是当日从开盘起的均价，不是窗口内累计。
   字段缺失时整键不出现（不补 0、不猜），其它来源/周期不新增该字段。
 - 日期/单位/时间语义沿用 10-24 修复：按日期升序处理（腾讯原返回为最新在前）、先把
-  `start_date/end_date` 窗口筛完再按 `count` 截尾、股票分钟成交量单位是**股**（不乘 100）、
+  `start_date/end_date` 窗口筛完再按 `count` 截尾、成交量按板块换算成**股**
+  （科创板 688/689 原值即股；沪深主板/创业板原值是手，×100；见 BATCH4/A3 节）、
   `_meta.data_as_of` 取真实分钟时间（不截成 15:00）。
 - 腾讯失败（网络/上游缺当日行）如实报缺口：不给旧日 bar、不降低质量门；
   请求日不在腾讯数据里时是合法 empty（`EMPTY_UPSTREAM`），不回填其它日期。
   已知残留：腾讯分钟取数的 HTTP 异常在 source 层被吞成空集，与「该日无行」在
   `status=empty` 上不可区分，只能靠 `fetched_at` 与当日日历另行判断。
 - 主源身份不等于把分钟采样价提升为逐笔完整 OHLC，也不构成交易许可。
+
+## BATCH4（2026-10-26 第四节批）上游核查修正：成交量单位、快照计数守恒、行业摘要空页
+
+### A3：腾讯成交量单位按板块（快照/分钟/日 K 同一约定）
+
+- 实测（10-26 收盘后多票交叉验证，`evidence/BATCH4/a3-unit-verify.json`）：
+  **科创板 688/689** 的腾讯快照字段 v6、分钟累计量、日 K `vol` 单位都是**股**；
+  **沪深主板/创业板**同一字段单位是**手**（×100 = 股）。北交所经这两个接口返回 0/空，
+  不涉及本换算。
+- 修正前适配器两个方向都错：快照一律 ×100（科创板放大 100 倍，即 09:47 乐鑫
+  `volume=326537300` 而量额价相差约 100 倍的原因）；分钟在 10-24/T4 之后一律不乘
+  （主板/创业板少 100 倍）。现统一由 `a_share_codes.is_star_market_code` ＋
+  `sources.tencent.volume_unit_multiplier` 决定，三处共用同一判定。
+- 验收口径：同一票同一天，快照 `volume` == StockToday 快照/日线 `volume`（股），
+  且 `amount/volume` 落在当日均价附近；分钟全天累计量 == 当日 `volume`（允许采样误差）。
+- 量额价自洽后，快照 `volume` 才可用于放量/VWAP 类判断；未核实前不得由该字段推。
+
+### B1：stock_snapshot 申请/返回/缺失计数守恒
+
+- 申请单位是"证券集合"：`codes` 先去重再计数，`requested_count = returned_count + missing_count`，
+  `missing_count == len(missing)`，`coverage = returned/requested`。
+- 腾讯逐码补齐之后**重算全部计数**并回收 `missing_items`/`coverage_shortfall`
+  告警（补齐完成就不再保留覆盖类告警），补过的行照旧带 `FILLED_BY_FALLBACK`。
+- `DUPLICATE_CODES` 仍是原始批次的事实（vendor 同一码多行），按 DP-01 契约保留为
+  provenance 码，**不等于覆盖缺失**；`unique_code_count`/`duplicate_code_count` 同时保留。
+- 真实无数据的代码仍如实留在 `missing`，不补空行、不补 0。
+
+### B2：同花顺 881 行业摘要分页空页不再静默截断
+
+- 实测（`evidence/BATCH4/b2-pagination-probe.json`）：行业摘要为 page1=50 行、page2=40 行、
+  page3=0（共 90 个 881 行业），"电机"在 page2。原实现遇到解析为空的页直接结束分页，
+  一旦后页偶发空页就只返回前 50 个行业，把后页行业误报成"上游没有该板块"
+  （09:12 生产实测：电机 empty，同日稍后同参数成功）。
+- 现在：上一页是满页时空页先重试一次；显式请求的 code/name 仍缺失时整表重读一次，
+  重读结果带 `retry_attempts=2` 与 `recovered_missing` 以便审计；重读仍缺才是合法 empty。
+- `data_as_of=null` 与 `DATA_TIME_UNKNOWN` 是既有口径（同花顺摘要没有可验证行情时间，
+  见 DP-02），**不补 fetched_at 冒充原始时点**；板块摘要涨跌幅与成员个股涨跌幅是
+  不同来源/时点/口径，不能互相校验。
 
 ## DP-1b（2026-10-20，J20-1 受限用途）：分钟 K 的显式 PyTDX 后备
 

@@ -68,6 +68,23 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
             "source": "ths_industry",
         }
 
+    result = _select_industries(rows, codes, names)
+    # 2026-10-26（批次4 / B2）：摘要分页后页偶发空页时上游会静默截断
+    # （实测 page1=50 / page2=40，"电机"在 page2；09:12 生产出现电机 empty、
+    # 同日稍后同参数成功）。显式请求缺失时整表重读一次再判定 missing，
+    # 避免把瞬时截断报成"上游没有该板块"；重读仍缺才是合法 empty。
+    if (codes or names) and result["missing"]:
+        retried_rows = _fetch_all_industry_rows()
+        if not (isinstance(retried_rows, dict) and retried_rows.get("error")):
+            retried = _select_industries(retried_rows, codes, names)
+            result["retry_attempts"] = 2
+            result["recovered_missing"] = sorted(set(result["missing"]) - set(retried["missing"]))
+            result = {**retried, "retry_attempts": 2,
+                      "recovered_missing": result["recovered_missing"]}
+    return result
+
+
+def _select_industries(rows: list[dict], codes, names) -> dict:
     by_code = {row["code"]: row for row in rows}
     by_name = {row["name"]: row for row in rows}
     selected = []
@@ -110,20 +127,37 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
     }
 
 
+def _fetch_industry_page(page: int) -> tuple[list[dict], str | None]:
+    resp = requests.get(_URL_TEMPLATE.format(page=page), headers=_HEADERS, timeout=10)
+    if resp.status_code != 200:
+        return [], f"HTTP_{resp.status_code}"
+    resp.encoding = "gbk"
+    return _parse_industry_rows(resp.text), None
+
+
 def _fetch_all_industry_rows(max_pages: int = 5) -> list[dict] | dict:
-    rows = []
+    rows: list[dict] = []
+    first_page_size: int | None = None
+    last_page_size: int | None = None
     try:
         for page in range(1, max_pages + 1):
-            resp = requests.get(_URL_TEMPLATE.format(page=page), headers=_HEADERS, timeout=10)
-            if resp.status_code != 200:
-                return {"error": "industry HTTP failure", "error_type": f"HTTP_{resp.status_code}"}
-            resp.encoding = "gbk"
-            page_rows = _parse_industry_rows(resp.text)
+            page_rows, error = _fetch_industry_page(page)
+            if error:
+                return {"error": "industry HTTP failure", "error_type": error}
+            # 2026-10-26（批次4 / B2）：上一页是满页时，空页是偶发截断而不是
+            # 分页结束，重试一次；上一页本来就不满时，空页才是正常终止。
+            if not page_rows and page > 1 and last_page_size == first_page_size:
+                page_rows, error = _fetch_industry_page(page)
+                if error:
+                    return {"error": "industry HTTP failure", "error_type": error}
             if not page_rows:
                 if not rows:
                     return {"error": "industry table not parsed", "error_type": "PARSE_FAILED"}
                 break
             rows.extend(page_rows)
+            if first_page_size is None:
+                first_page_size = len(page_rows)
+            last_page_size = len(page_rows)
     except Exception as e:
         return {"error": "industry request failed", "error_type": "TIMEOUT" if isinstance(e, requests.Timeout) else "NETWORK_ERROR"}
     return rows

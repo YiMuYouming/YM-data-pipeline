@@ -319,7 +319,10 @@ def _validate_params(intent: str, params: dict) -> None:
             raise ValueError("stock_snapshot requires non-empty codes")
         if not all(str(code).strip() for code in codes):
             raise ValueError("stock_snapshot codes cannot contain empty values")
-        params["codes"] = [str(code) for code in codes]
+        # 2026-10-26（批次4 / B1）：一次快照的申请单位是"证券集合"，重复代码不是
+        # 两个申请。去重后 requested_count = returned_count + missing_count 才能守恒；
+        # 不去重会把 coverage 算成 <1 且保留 coverage 告警（午盘 24 码实测）。
+        params["codes"] = list(dict.fromkeys(str(code) for code in codes))
     elif intent == "sector_index":
         for key in ("codes", "names"):
             value = params.get(key)
@@ -1484,8 +1487,26 @@ def _query_with(
             observation["missing_codes"] = missing_after
         if final_quality is not None:
             final_quality = dict(final_quality)
-            final_quality["returned_count"] = len(call_params["codes"]) - len(missing_after)
+            # 2026-10-26（批次4 / B1）：补齐后必须重算全部计数，不能只改
+            # returned_count/missing —— 否则出现 missing=[] 但 missing_count=1、
+            # coverage 仍 <1 且保留 coverage 类告警（午盘 24 码实测）。
+            requested_count = len(call_params["codes"])
+            returned_count = requested_count - len(missing_after)
+            final_quality["requested_count"] = requested_count
+            final_quality["returned_count"] = returned_count
             final_quality["missing"] = missing_after
+            final_quality["missing_count"] = len(missing_after)
+            final_quality["coverage"] = (
+                round(returned_count / requested_count, 6) if requested_count else None
+            )
+            coverage_codes = {"missing_items", "coverage_shortfall"}
+            reasons = [
+                code for code in (final_quality.get("reason_codes") or [])
+                if code not in coverage_codes
+            ]
+            if missing_after:
+                reasons.extend(sorted(coverage_codes))
+            final_quality["reason_codes"] = reasons
             if fill_report["filled"]:
                 final_quality["reason_codes"] = sorted(
                     set(final_quality.get("reason_codes") or []) | {"FILLED_BY_FALLBACK"}

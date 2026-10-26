@@ -24,6 +24,7 @@ from functools import wraps
 
 from ..a_share_codes import A_SHARE_CODE_PREFIXES_BY_EXCHANGE
 from ..config import PYTDX_SERVERS, PYTDX_CONNECT_TIMEOUT, PYTDX_MAX_AGE
+from .tencent import volume_unit_multiplier as _tencent_volume_multiplier
 
 # === 连接池（线程安全）===
 _api = None
@@ -1212,8 +1213,10 @@ def _fetch_tencent_kline(
                 minute = int(minute_str[2:])
                 minute_of_day = hour * 60 + minute
                 price = _number(parts[1])
-                # Stock minute cumulative volume is already shares (not index lots).
-                cum_vol = _number(parts[2])
+                # 腾讯成交量单位按板块：科创板累计量是股，沪深主板/创业板是手
+                # （2026-10-26 批次4 / A3 多票交叉验证；原"一律×100"和
+                # "一律不乘"都只有一半正确）。
+                cum_vol = _number(parts[2]) * _tencent_volume_multiplier(code)
                 cum_amt = _number(parts[3])
                 bucket = (minute_of_day // size) * size
                 bar = slots.setdefault(bucket, {
