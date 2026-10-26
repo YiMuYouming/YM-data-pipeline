@@ -49,6 +49,26 @@ _SECURITY_CODE_SUFFIXES = frozenset({"SH", "SZ", "BJ"})
 CONCEPT_BOARD_TYPE = "N"   # 概念板块
 INDUSTRY_BOARD_TYPE = "I"  # 行业板块
 MAX_ROWS = 10000
+# 2026-10-26（R3/8b）：StockToday 不同数据集的成交量/成交额单位不同——
+# daily 行 vol 是手、amount 是千元；weekly/monthly 行本身已是**股/元**
+# （实测 688018：一周 daily vol 之和 691,097.99 手 = 69,109,799 股，与 weekly
+# 行 vol=69,109,799 精确相等；daily amount 之和 9,629,810.657 千元
+# = 9,629,810,657 元，与 weekly amount 精确相等）。pro_bar（前复权日线）
+# 与 daily 同口径。修复前 weekly/monthly 仍按 daily 的 ×100/×1000 放大。
+STOCK_KLINE_VOLUME_UNITS = {
+    "stk_mins": 1.0,
+    "daily": 100.0,
+    "pro_bar": 100.0,
+    "weekly": 1.0,
+    "monthly": 1.0,
+}
+STOCK_KLINE_AMOUNT_UNITS = {
+    "stk_mins": 1.0,
+    "daily": 1000.0,
+    "pro_bar": 1000.0,
+    "weekly": 1.0,
+    "monthly": 1.0,
+}
 # rt_idx_k / rt_idx_tick / rt_sw_k / idx_mins answer "该接口为龙虾套餐专属" on the
 # current plan; skip them for 30 minutes instead of spending quota every poll,
 # and pick up a plan upgrade within half an hour without a restart.
@@ -1867,6 +1887,8 @@ class StockTodayProvider:
                 provenance=outcome.provenance,
             )
         bars = []
+        volume_multiplier = STOCK_KLINE_VOLUME_UNITS.get(name, 1.0)
+        amount_multiplier = STOCK_KLINE_AMOUNT_UNITS.get(name, 1.0)
         for row in rows:
             if row.get("ts_code") != nested["ts_code"]:
                 return self._fail(started, "SYMBOL_MISMATCH")
@@ -1879,8 +1901,8 @@ class StockTodayProvider:
                 {
                     "datetime": stamp,
                     **{k: row[k] for k in ("open", "high", "low", "close")},
-                    "volume": row["vol"] * (1 if name == "stk_mins" else 100) if row.get("vol") is not None else None,
-                    "amount": row["amount"] * (1 if name == "stk_mins" else 1000) if row.get("amount") is not None else None,
+                    "volume": row["vol"] * volume_multiplier if row.get("vol") is not None else None,
+                    "amount": row["amount"] * amount_multiplier if row.get("amount") is not None else None,
                 }
             )
         if name != "stk_mins":
