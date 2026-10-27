@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import socket
-from datetime import datetime
+from datetime import datetime, timedelta
+from datetime import time as dtime
 from typing import Callable
 
 from ..contracts import TZ_SHANGHAI
@@ -28,6 +29,118 @@ from ..sources import (
 )
 from ..sources.limit_state import fetch_limit_promotion, fetch_limit_state
 from .base import ProviderOutcome
+
+
+# 1m/5m/15m/60m 是盘中分钟周期：默认窗口是"当日 09:30 起的全部已完成分钟"，
+# 不是隐式的最近 48 根。
+MINUTE_PERIODS = frozenset({"1m", "5m", "15m", "60m"})
+MINUTE_SIZES = {"1m": 1, "5m": 5, "15m": 15, "60m": 60}
+SESSION_START = dtime(9, 30)
+
+
+def _now() -> datetime:
+    """分钟线完成度判定的时钟（测试可替换；生产就是当前台北时间）。"""
+    return datetime.now(TZ_SHANGHAI)
+
+
+def annotate_minute_bars(raw: dict, params: dict, *, source: str | None = None,
+                         now: datetime | None = None) -> dict:
+    """盘中分钟契约（P10/#6#8、D27-05）：窗口、截断、未完成末根与采样价语义。
+
+    2026-10-27 真实会话暴露四件事，都在这里如实标：
+    1. 默认只回最近 48 根（缺开盘段）且没有截断标记；
+    2. 未完成的末根照常返回、没有 incomplete 标记，其桶标签还晚于抓取时间；
+    3. 腾讯分时给的是每分钟**采样价**，O=H=L=C 都是该采样价，不是该分钟的真实
+       区间高低；
+    4. 09:30 之前的集合竞价采样混进当日分钟序列。
+    这里只加标记与窗口，不改任何价格、不补 0、不补缺失分钟。
+    """
+
+    bars = raw.get("bars") if isinstance(raw, dict) else None
+    if not isinstance(bars, list):
+        return raw
+    period = params.get("period")
+    size = MINUTE_SIZES.get(period)
+    if not size:
+        return raw
+    now = now or _now()
+    session_bars: list[tuple[datetime | None, dict]] = []
+    pre_dropped = 0
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        label = str(bar.get("datetime") or bar.get("time") or "")
+        try:
+            moment = datetime.fromisoformat(label)
+        except ValueError:
+            # 时间标签不可解析的行不静默丢弃（也不臆断它的时段/完成度）。
+            session_bars.append((None, bar))
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=TZ_SHANGHAI)
+        if moment.time() < SESSION_START:
+            pre_dropped += 1
+            continue
+        session_bars.append((moment, bar))
+    total = len(session_bars)
+    requested = params.get("count")
+    dropped = 0
+    truncated = False
+    if requested is not None and total > requested:
+        dropped = total - requested
+        truncated = True
+        session_bars = session_bars[-requested:]
+    kept: list[dict] = []
+    incomplete = 0
+    for moment, bar in session_bars:
+        if moment is None:
+            kept.append(bar)
+            continue
+        finished = moment + timedelta(minutes=size)
+        if moment.date() == now.date() and now < finished:
+            bar = dict(bar, incomplete=True)
+            incomplete += 1
+        kept.append(bar)
+    completed = [bar for bar in kept if not bar.get("incomplete")]
+    closes = [bar.get("close") for bar in completed
+              if isinstance(bar.get("close"), (int, float))]
+    mas: dict = {}
+    for span, key in ((5, "MA5"), (10, "MA10"), (20, "MA20")):
+        if len(closes) >= span:
+            mas[key] = round(sum(closes[-span:]) / span, 2)
+    result = dict(raw)
+    result["bars"] = kept
+    result["period"] = period
+    result["total_bars"] = total
+    result["returned_bars"] = len(kept)
+    result["completed_bars"] = len(kept) - incomplete
+    result["incomplete_bars"] = incomplete
+    result["truncated"] = truncated
+    result["dropped_bars"] = dropped
+    result["pre_session_bars_dropped"] = pre_dropped
+    result["requested_count"] = requested
+    if closes:
+        # 未完成末根的量价还会变：last_close 与均线只按已完成分钟。
+        result["last_close"] = closes[-1]
+        result["mas"] = mas
+    result["bar_semantics"] = {
+        "label": "bucket_start",
+        "coverage_seconds": size * 60,
+        "incomplete_rule": (
+            "桶标签是起始分钟，覆盖 [label, label+period)；标签+period 之后才算完成。"
+            "抓取时刻之前的最后一桶常是按右端标签给出的未完成桶，已标 incomplete=true，"
+            "其 O/H/L/C 会随本轮后续采样变化，不当已完成分钟引用。"),
+        "price_kind": "tencent_minute_sample" if source == "tencent" else "bar_ohlc",
+        "high_low_note": (
+            "腾讯分时接口给的是每分钟采样价：O=H=L=C 都是该采样价，不是该分钟完整区间的"
+            "真实高低；vwap/avg_price 是上游当日累计口径。"
+            if source == "tencent" else
+            "bar 的 high/low 是上游给出的区间高低。"),
+        "session_window": {"start": "09:30", "end": "15:00",
+                           "lunch_gap": ["11:30", "13:00"],
+                           "default": "当日 09:30 起的全部已完成分钟"},
+    }
+    return result
 
 
 LOCAL_PROVIDER_NAMES = frozenset(
@@ -777,7 +890,11 @@ class LocalProvider:
     @staticmethod
     def _http_kline(*, provider: str, params: dict) -> dict:
         period = params.get("period", "daily")
-        count = params.get("count") or (30 if period in {"daily", "60m"} else 48)
+        minute = period in MINUTE_PERIODS
+        # 分钟周期默认不截断：由 _annotate_minute_bars 按"当日 09:30 起全部已完成
+        # 分钟"给窗口，并把任何截断如实标成 truncated=true（P10/#6#8）。
+        count = params.get("count") or (
+            30 if period in {"daily", "60m"} else (None if minute else 48))
         adjustment = params.get("adjustment", "none")
         if adjustment != "none" and provider != "tencent":
             return ProviderOutcome(
@@ -826,9 +943,12 @@ class LocalProvider:
             if provider == "tencent" and period in {"daily", "weekly", "monthly"}
             else 1
         )
-        return LocalProvider._canonicalize_kline(
+        canonical = LocalProvider._canonicalize_kline(
             result, params, volume_multiplier=volume_multiplier
         )
+        if minute:
+            return annotate_minute_bars(canonical, params, source=provider)
+        return canonical
 
     @staticmethod
     def _canonicalize_kline(

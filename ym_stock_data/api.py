@@ -1011,7 +1011,10 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
     if intent in {"stock_kline", "index_kline"}:
         bars = data.get("bars") if isinstance(data.get("bars"), list) else []
         minute_stock = intent == "stock_kline" and params.get("period") in ZJ_MINUTE_PERIODS
-        raw_stamps = [str(bar.get("datetime", "")) for bar in bars if isinstance(bar, dict)]
+        # P10/D27-05：分钟线的数据时点只取**已完成**末根；式样为右端标签的未完成桶
+        # 会晚于抓取时间，不能拿来当 data_as_of。
+        raw_stamps = [str(bar.get("datetime", "")) for bar in bars
+                      if isinstance(bar, dict) and not (minute_stock and bar.get("incomplete"))]
         stamps = [_stamp_from(stamp if minute_stock else stamp[:10]) for stamp in raw_stamps]
         stamps = [stamp for stamp in stamps if stamp is not None]
         return max(stamps) if stamps else None
@@ -1038,18 +1041,33 @@ def _data_freshness(
         age = max(0, int(age))
         status = "fresh" if age <= NORMAL_DATA_AGE_SEC else "aging" if age <= max_age_sec else "stale"
         return {**result, "status": status, "age_sec": age}
-    if any(params.get(key) for key in _EXPLICIT_DATE_PARAMS):
-        return {**result, "status": "historical"}
+    # 2026-10-27（P10/#6#8）：分钟 K 的显式 start_date/end_date 是窗口参数，不代表
+    # "查历史日"。盘中必须给 intraday（当天同一交易时段的完成分钟），否则助手会把
+    # 当日盘子当成 historical 的收盘旧数据。真正的历史分钟日仍标 historical。
     is_minute_kline = intent == "stock_kline" and params.get("period") in {
         "1m", "5m", "15m", "30m", "60m"
     }
     if is_minute_kline:
+        requested = params.get("start_date") or params.get("end_date")
+        requested_day = re.sub(r"[^0-9]", "", str(requested))[:8] if requested else None
+        if requested_day and requested_day != now.strftime("%Y%m%d"):
+            return {**result, "status": "historical", "window": "explicit_day_minutes"}
         try:
-            in_session = is_trading_day(now.date()) and now.time() >= datetime_time(9, 31)
+            in_session = is_trading_day(now.date()) and (
+                datetime_time(9, 30) <= now.time() <= datetime_time(15, 0))
         except TradeCalendarUnavailable:
             return unknown_freshness(max_age_sec)
-        if in_session and stamp.strftime("%Y%m%d") < now.strftime("%Y%m%d"):
-            return {**result, "status": "stale", "reason": "intraday_bars_missing"}
+        if in_session:
+            if stamp is not None and stamp.strftime("%Y%m%d") < now.strftime("%Y%m%d"):
+                # 盘中拿到的还是上一交易日的分钟：不是 intraday，是明确的缺口。
+                return {**result, "status": "stale", "reason": "intraday_bars_missing"}
+            age = None
+            if stamp is not None:
+                age = int(max(0, (now - stamp).total_seconds()))
+            return {**result, "status": "intraday", "age_sec": age,
+                    "window": "same_session_minutes"}
+    if any(params.get(key) for key in _EXPLICIT_DATE_PARAMS):
+        return {**result, "status": "historical"}
     try:
         expected = latest_completed_trade_date(now)
     except TradeCalendarUnavailable:
@@ -1506,6 +1524,16 @@ def _query_with(
                         _compare_record(provider_name, success=False, state=compare_state)
                     auth = outcome.auth or auth
                     continue
+            if (intent == "stock_kline" and isinstance(outcome.data, dict)
+                    and str(call_params.get("period") or "") in {"1m", "5m", "15m", "60m"}
+                    and not outcome.data.get("bar_semantics")):
+                # 2026-10-27（P10/#6#8）：窗口/完成度/采样价语义对所有分钟源一致——
+                # 不只腾讯（provider=tencent 的采样价），也包括 TDX 等真实 OHLC 分钟源。
+                # 在 normalize_success 之前标注，quality 才能带上 INCOMPLETE_LAST_BAR。
+                from dataclasses import replace as _dc_replace
+                from .providers.local import annotate_minute_bars
+                outcome = _dc_replace(outcome, data=annotate_minute_bars(
+                    outcome.data, call_params, source=actual, now=_now_shanghai()))
             data, final_quality = normalize_success(
                 intent,
                 call_params,
@@ -1660,6 +1688,17 @@ def _query_with(
             result["_meta"]["status"] = "degraded"
             result["_meta"]["quality"]["status"] = "partial"
             result["_meta"]["quality"]["reason_codes"] = gaps
+    if intent == "market_intraday_state" and isinstance(data, dict) and data.get("partial"):
+        # 2026-10-27（P10/#5#10#16#20#22#24）：部分快照批次缺失时整轮仍是可用结果，
+        # 信封必须显式标 partial（degraded + 缺口原因码），不冒充完整一轮。
+        reasons = list(result["_meta"]["quality"].get("reason_codes") or [])
+        for gap in data.get("source_gaps") or []:
+            if isinstance(gap, str) and gap not in reasons:
+                reasons.append(gap)
+        result["_meta"]["partial"] = True
+        result["_meta"]["status"] = "degraded"
+        result["_meta"]["quality"]["status"] = "partial"
+        result["_meta"]["quality"]["reason_codes"] = reasons
     if result["_meta"]["freshness"].get("reason") == "intraday_bars_missing":
         reasons = result["_meta"]["quality"]["reason_codes"]
         if "intraday_bars_missing" not in reasons:

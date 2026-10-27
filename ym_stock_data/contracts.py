@@ -24,7 +24,9 @@ ATTEMPT_STATUSES = frozenset(
         "incompatible",
     }
 )
-FRESHNESS_STATUSES = frozenset({"fresh", "aging", "stale", "unknown", "historical"})
+# 2026-10-27（P10/#6#8）：盘中分钟 K 的 freshness 是 intraday —— "当日同一交易
+# 时段内、已完成的分钟"，既不是收盘后的 historical，也不是以日线口径判的 fresh。
+FRESHNESS_STATUSES = frozenset({"fresh", "aging", "stale", "unknown", "historical", "intraday"})
 SOURCE_TIERS = frozenset({"primary", "fallback", "explicit"})
 POLICY_STATUSES = frozenset({"active", "inactive"})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

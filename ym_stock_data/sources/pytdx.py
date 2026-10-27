@@ -1170,7 +1170,7 @@ def _fallback_kline(code: str, period: str = "daily", count: int | None = None) 
 
 
 def _fetch_tencent_kline(
-    code: str, *, period: str, count: int, adjustment: str = "none",
+    code: str, *, period: str, count: int | None, adjustment: str = "none",
     start_date: str | None = None, end_date: str | None = None,
 ) -> list[dict]:
     period_map = {"daily": "day", "weekly": "week", "monthly": "month"}
@@ -1263,7 +1263,8 @@ def _fetch_tencent_kline(
                 if b["end_vol"] > 0 and b["end_amt"] > 0:
                     bar["avg_price"] = round(b["end_amt"] / b["end_vol"], 4)
                 bars.append(bar)
-        return bars[-count:]
+        # P10：count=None 表示"当日全部采样"，不再隐式截到 48 根（截断由上层标）。
+        return bars[-count:] if count else bars
 
     if adjustment not in {"none", "qfq"}:
         return []

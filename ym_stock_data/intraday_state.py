@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, time as dtime
 from pathlib import Path
 
@@ -31,6 +33,18 @@ SNAPSHOT_BATCHES = ("6*.SH", "0*.SZ", "3*.SZ", "*.BJ")
 # 请求"，不改任何判定：结果仍按 SNAPSHOT_BATCHES 的固定顺序落进诊断与 attempts，
 # 第一个失败批次抛出的错误码也与串行时一致。
 SNAPSHOT_MAX_WORKERS = len(SNAPSHOT_BATCHES)
+# 2026-10-27（P10/#5#10#16#20#22#24）：并发只解决"四批串行"，不解决"单批慢"。
+# 实测 16.3/17.3/19.0/21.0/22.4/24.2s 都是某一批拖到上游 read timeout(15s)。
+# 现在给快照批次一个硬预算：超预算的批次如实标 timeout 缺口，用已取到的批次出
+# partial 结果，不把整轮变成 pipeline_gap（已取到的数据不再被丢掉）。
+SNAPSHOT_BATCH_BUDGET_SEC = 6.0
+# 整轮硬预算：尾部锦上添花步骤（行业回填/腾讯补码）在预算耗尽时跳过并标缺口。
+TOTAL_BUDGET_SEC = 7.5
+INDUSTRY_BACKFILL_MIN_REMAINING_SEC = 0.3
+STRUCTURAL_FILL_MIN_REMAINING_SEC = 0.3
+# 涨停池行业回填的硬预算（与 providers/stocktoday.py 的同名常量同口径）：宁可
+# 这一轮少填几只（如实进 unresolved + partial 缺口），也不让快照整轮破 8s。
+INDUSTRY_BACKFILL_BUDGET_SEC = 2.5
 B_SHARE_PREFIXES = ("900", "200", "201")
 NORMAL_MAX_AGE_SEC = 180
 EXPIRED_AGE_SEC = 600
@@ -274,7 +288,7 @@ def _tencent_rows(codes: list[str], quote_loader) -> dict[str, dict]:
     return rows
 
 
-def _industry_backfill(provider, codes, trade_date: str) -> dict:
+def _industry_backfill(provider, codes, trade_date: str, *, budget_sec=None) -> dict:
     """Fill missing limit-up industry from DP's own 同花顺 881 membership.
 
     2026-10-26（R3/7a）：当日明细（limit_list_d）不可用或行业为空时，「今日涨停池
@@ -289,7 +303,17 @@ def _industry_backfill(provider, codes, trade_date: str) -> dict:
         return {"industries": {}, "unresolved": list(codes),
                 "error_code": "BACKFILL_UNAVAILABLE"}
     try:
-        result = loader(list(codes), trade_date) or {}
+        if budget_sec is None:
+            result = loader(list(codes), trade_date) or {}
+        else:
+            result = loader(list(codes), trade_date, budget_sec=budget_sec) or {}
+    except TypeError:
+        # provider 的 board_industry_map 没接 budget_sec：退回原签名（能力不扩）。
+        try:
+            result = loader(list(codes), trade_date) or {}
+        except Exception:
+            return {"industries": {}, "unresolved": list(codes),
+                    "error_code": "BACKFILL_FAILED"}
     except Exception:
         return {"industries": {}, "unresolved": list(codes), "error_code": "BACKFILL_FAILED"}
     if result.get("error_code"):
@@ -307,25 +331,57 @@ def _industry_backfill(provider, codes, trade_date: str) -> dict:
     }
 
 
-def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES):
+def _wait_or_default(future, timeout, default):
+    """Wait for one hop within the round budget; return (value, timed_out)."""
+    try:
+        return future.result(timeout=timeout), False
+    except FuturesTimeout:
+        return default, True
+
+
+def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None):
     """Fetch every wildcard batch concurrently, keeping the fixed batch order.
 
-    pool.map 按提交顺序交付结果，因此批次诊断、首个失败批次的错误码都与串行
-    实现逐字一致；并发只影响墙钟耗时。
+    2026-10-27（P10）：并发只解决"四批串行"，不解决"单批慢"。任一慢批次会被上游
+    read timeout(15s) 拖住整轮（真实 16.3~24.2s）。这里给批次一个硬墙钟预算：
+    超预算的批次不再等（线程继续在后台跑完，但不阻塞返回），由调用方如实标
+    timeout 缺口。结果顺序仍按 SNAPSHOT_BATCHES，键与诊断字段不变。
+    返回 ((pattern, outcome|None, timed_out), ...)。
     """
 
     def load(pattern):
         return provider._request_table("rt_k", {"ts_code": pattern})
 
+    budget = SNAPSHOT_BATCH_BUDGET_SEC if budget_sec is None else budget_sec
     workers = min(SNAPSHOT_MAX_WORKERS, len(patterns))
     if workers <= 1:
-        return [(pattern, load(pattern)) for pattern in patterns]
-    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rt-k") as pool:
-        return list(zip(patterns, pool.map(load, patterns)))
+        return [(pattern, load(pattern), False) for pattern in patterns]
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rt-k")
+    results = []
+    try:
+        futures = [pool.submit(load, pattern) for pattern in patterns]
+        deadline = time.monotonic() + max(0.0, float(budget))
+        for pattern, future in zip(patterns, futures):
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                results.append((pattern, future.result(timeout=remaining), False))
+            except FuturesTimeout:
+                results.append((pattern, None, True))
+    finally:
+        # A running upstream request cannot be cancelled; do not join it either,
+        # or the budget is spent a second time during shutdown.
+        pool.shutdown(wait=False)
+    return results
 
 
-def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
-    """Return the intraday state or raise IntradayStateError (no fallback)."""
+def build(provider, *, now: datetime | None = None, quote_loader=None,
+          batch_budget_sec=None, total_budget_sec=None) -> dict:
+    """Return the intraday state or raise IntradayStateError (no fallback).
+
+    2026-10-27（P10）：盘中硬预算——单批超预算标缺口出 partial，整轮预算耗尽时
+    跳过尾部锦上添花步骤（腾讯补码/行业回填）并如实记缺口。任何"缺"都进
+    source_gaps + partial=true，不补 0、不编数据、不整轮作废已取到的部分。
+    """
 
     now = now or datetime.now(TZ_SHANGHAI)
     # 名册一跳 2~6s：与快照并发提前发起，回填阶段只是取结果（provider 没这个能力就算了）。
@@ -336,23 +392,45 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
             prefetch()
         except Exception:
             pass
+    started_monotonic = time.monotonic()
+    total_budget = TOTAL_BUDGET_SEC if total_budget_sec is None else total_budget_sec
+    deadline = started_monotonic + max(0.0, float(total_budget))
     rows: list[dict] = []
     batch_latest: list[datetime] = []
     batches = []
     fetched_at = None
-    for pattern, outcome in _fetch_snapshot_batches(provider):
+    # P10：单批超预算/失败不再整轮失败，如实记缺口后继续用已取到的批次。
+    partial_reasons: list[str] = []
+    first_failure: IntradayStateError | None = None
+    for pattern, outcome, timed_out in _fetch_snapshot_batches(
+            provider, budget_sec=batch_budget_sec):
+        if timed_out:
+            batches.append({"ts_code": pattern, "status": "timeout",
+                            "error_code": "SNAPSHOT_BATCH_TIMEOUT", "rows": 0,
+                            "latency_ms": None, "budget_ms": round(
+                                (SNAPSHOT_BATCH_BUDGET_SEC if batch_budget_sec is None
+                                 else batch_budget_sec) * 1000)})
+            partial_reasons.append("snapshot_batch_timeout:" + pattern)
+            continue
         items = (outcome.data or {}).get("items") if isinstance(outcome.data, dict) else None
         batches.append({"ts_code": pattern, "status": outcome.status,
                         "error_code": outcome.error_code, "rows": len(items or []),
                         "latency_ms": outcome.latency_ms})
         if outcome.status != "success" or not items:
-            raise IntradayStateError(outcome.error_code or "SNAPSHOT_BATCH_EMPTY",
-                                     "provider_error" if outcome.error_code else "empty")
+            partial_reasons.append("snapshot_batch_failed:" + pattern)
+            if first_failure is None:
+                first_failure = IntradayStateError(
+                    outcome.error_code or "SNAPSHOT_BATCH_EMPTY",
+                    "provider_error" if outcome.error_code else "empty")
+            continue
         fetched_at = fetched_at or outcome.fetched_at
         rows.extend(items)
         stamps = [s for s in (_timestamp(r.get("updated_at")) for r in items) if s]
         if stamps:
             batch_latest.append(max(stamps))
+    if not rows and first_failure is not None:
+        # 全部批次都没拿到：仍按源错误码整轮失败，不造 partial 假象。
+        raise first_failure
     latest = dedupe_latest(rows)
     if not batch_latest:
         raise IntradayStateError("SNAPSHOT_TIME_UNKNOWN")
@@ -373,21 +451,41 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
 
     # stk_limit（涨跌停价）与 limit_list_d（当日明细元数据）只依赖 trade_date，
     # 彼此独立：并发取，省掉串行的一整跳（真实回放 limit_list_d 单跳 0.4~2.1s）。
+    # 这两跳同样要受整轮预算约束：预算耗尽时不再等它们（如实标缺口），
+    # 否则"快照 6s + limit-meta 各 15s"仍会破 8s（2026-10-27 21:32 真实回放 12.1s）。
     metadata_observation: dict = {}
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="limit-meta") as pool:
-        limits_future = pool.submit(_stk_limit, provider, trade_date)
-        metadata_future = pool.submit(_limit_metadata, provider, trade_date,
-                                      diagnostics=metadata_observation)
-        limits = limits_future.result()
-        limit_metadata = metadata_future.result()
+    budget_limited: list[str] = []
+    limits: dict = {}
+    limit_metadata: dict = {}
+    meta_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="limit-meta")
+    try:
+        limits_future = meta_pool.submit(_stk_limit, provider, trade_date)
+        metadata_future = meta_pool.submit(_limit_metadata, provider, trade_date,
+                                           diagnostics=metadata_observation)
+        limits, limits_timeout = _wait_or_default(
+            limits_future, max(0.0, deadline - time.monotonic()), {})
+        if limits_timeout:
+            budget_limited.append("stk_limit_budget_exhausted")
+        limit_metadata, metadata_timeout = _wait_or_default(
+            metadata_future, max(0.0, deadline - time.monotonic()), {})
+        if metadata_timeout:
+            budget_limited.append("limit_metadata_budget_exhausted")
+    finally:
+        meta_pool.shutdown(wait=False)
     gaps: list[str] = []
+    gaps.extend(budget_limited)
     universe = {code for code in limits if not code.startswith(B_SHARE_PREFIXES)}
     if not universe:
         gaps.append("stk_limit_unavailable")
     filled: list[str] = []
     fill_ms = None
     missing = sorted(universe - set(latest))
-    if missing and len(missing) <= STRUCTURAL_FILL_LIMIT:
+    fill_budget_left = deadline - time.monotonic()
+    if (missing and len(missing) <= STRUCTURAL_FILL_LIMIT
+            and fill_budget_left < STRUCTURAL_FILL_MIN_REMAINING_SEC):
+        # 预算已耗尽：补码是锦上添花，跳过并如实标缺口，不拖整轮。
+        gaps.append("structural_gap_fill_skipped_budget")
+    elif missing and len(missing) <= STRUCTURAL_FILL_LIMIT:
         if quote_loader is None:
             from .sources.tencent import fetch_quotes as quote_loader
         started = datetime.now()
@@ -403,8 +501,14 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         gaps.append("snapshot_gap_too_large_to_fill")
     covered = len(universe & set(latest)) if universe else len(latest)
     coverage = round(covered / len(universe) * 100, 2) if universe else None
+    partial = bool(partial_reasons)
+    gaps.extend(partial_reasons)
     if coverage is not None and coverage < COVERAGE_MINIMUM:
-        raise IntradayStateError("COVERAGE_INSUFFICIENT", "quality_failure")
+        if partial:
+            # 缺批导致的覆盖不足：已经能解释成"少了几批"，不整轮作废。
+            gaps.append(f"coverage_insufficient_partial:{coverage:g}")
+        else:
+            raise IntradayStateError("COVERAGE_INSUFFICIENT", "quality_failure")
     if coverage is not None and coverage < COVERAGE_NORMAL:
         gaps.append(f"coverage_below_{COVERAGE_NORMAL:g}")
 
@@ -467,8 +571,17 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
     backfill_observation: dict = {}
     missing_industry = [c for c in limit_sets["up"]
                         if not (metadata.get(c) or {}).get("industry")]
+    backfill_budget_left = deadline - time.monotonic()
+    industry_budget_sec = None
     if missing_industry:
-        backfill = _industry_backfill(provider, missing_industry, trade_date)
+        if backfill_budget_left < INDUSTRY_BACKFILL_MIN_REMAINING_SEC:
+            gaps.append("limit_up_industry_backfill_skipped_budget")
+            missing_industry = []
+        else:
+            industry_budget_sec = min(INDUSTRY_BACKFILL_BUDGET_SEC, backfill_budget_left)
+    if missing_industry:
+        backfill = _industry_backfill(provider, missing_industry, trade_date,
+                                      budget_sec=industry_budget_sec)
         backfill_observation = {
             "requested": len(missing_industry),
             "resolved": len(backfill.get("industries") or {}),
@@ -529,7 +642,15 @@ def build(provider, *, now: datetime | None = None, quote_loader=None) -> dict:
         "ladder": ladder,
         "breadth_buckets": buckets,
         "previous_ladder_board_source": board_source,
+        "partial": partial,
         "source_gaps": gaps,
+        "budget": {"total_budget_sec": float(total_budget),
+                   "snapshot_batch_budget_sec": float(
+                       SNAPSHOT_BATCH_BUDGET_SEC if batch_budget_sec is None
+                       else batch_budget_sec),
+                   "elapsed_ms": int((time.monotonic() - started_monotonic) * 1000),
+                   "deadline_exhausted": bool(
+                       time.monotonic() >= deadline)},
         "_stocktoday": {"api_name": "rt_k", "batches": batches, "unique_code_count": len(latest),
                         "limit_metadata": metadata_observation,
                         "industry_backfill": backfill_observation,

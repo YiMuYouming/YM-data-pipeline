@@ -192,9 +192,14 @@ class BuildTests(unittest.TestCase):
         self.assertIn(("stk_limit", {"trade_date": "20260924"}), provider.calls)
 
     def test_failed_batch_has_no_fallback(self):
-        provider = self.provider({"3*.SZ": []})
+        # 2026-10-27（P10）：单批空 → partial（不整轮 gap）；**没有任何批次**
+        # 拿到数据时仍失败，且不换源补（无后备）。
+        partial = intraday_state.build(self.provider({"3*.SZ": []}), now=self.now)
+        self.assertTrue(partial["partial"])
+        self.assertIn("snapshot_batch_failed:3*.SZ", partial["source_gaps"])
+        empty = {pattern: [] for pattern in intraday_state.SNAPSHOT_BATCHES}
         with self.assertRaises(intraday_state.IntradayStateError):
-            intraday_state.build(provider, now=self.now)
+            intraday_state.build(self.provider(empty), now=self.now)
 
     def test_low_coverage_is_flagged_then_refused(self):
         limits_extra = {f"60{i:04d}.SH": (11.0, 9.0) for i in range(100, 103)}

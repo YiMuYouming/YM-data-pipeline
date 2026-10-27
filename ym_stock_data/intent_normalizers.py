@@ -392,6 +392,21 @@ def normalize_success(
             for row in rows if isinstance(rows, list)
         ):
             missing_fields.append("amount")
+        if (intent == "stock_kline" and isinstance(data, dict)
+                and params.get("period") in {"1m", "5m", "15m", "60m"}):
+            # 2026-10-27（P10/#6#8）：分钟线的窗口/完成度是质量事实，必须在 quality
+            # 上显式标 partial，不能静默当成完整序列。
+            codes = []
+            if data.get("incomplete_bars"):
+                codes.append("INCOMPLETE_LAST_BAR")
+            if data.get("truncated"):
+                codes.append("UPSTREAM_TRUNCATED")
+            if data.get("pre_session_bars_dropped"):
+                codes.append("PRE_SESSION_SAMPLES_DROPPED")
+            if codes:
+                quality["status"] = "partial"
+                quality["reason_codes"] = sorted(
+                    set(quality.get("reason_codes") or []) | set(codes))
         return data, _fallback_quality(
             quality,
             provider=provider,

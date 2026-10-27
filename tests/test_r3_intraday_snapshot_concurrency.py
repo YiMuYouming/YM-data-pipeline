@@ -101,6 +101,9 @@ class SnapshotConcurrencyTests(unittest.TestCase):
         self.assertEqual("20260928", state["trade_date"])
 
     def test_snapshot_batch_failure_keeps_typed_error(self):
+        # 2026-10-27（P10）契约变更：单批失败不再整轮失败（已取到的批次照常出
+        # partial 结果 + 点名缺哪批）；**全部**批次失败时仍按源错误码整轮失败，
+        # 错误码与串行实现逐字一致的那部分保持在这里。
         class Broken(SlowSnapshotProvider):
             def _request_table(self, name, nested, **kwargs):
                 if name == "rt_k" and nested.get("ts_code") == "0*.SZ":
@@ -108,8 +111,19 @@ class SnapshotConcurrencyTests(unittest.TestCase):
                                            data={"items": []})
                 return super()._request_table(name, nested, **kwargs)
 
+        state = intraday_state.build(Broken(), now=at("2026-09-28T10:01:00"))
+        self.assertTrue(state["partial"])
+        self.assertIn("snapshot_batch_failed:0*.SZ", state["source_gaps"])
+
+        class AllBroken(SlowSnapshotProvider):
+            def _request_table(self, name, nested, **kwargs):
+                if name == "rt_k":
+                    return ProviderOutcome("stocktoday", "empty", error_code="UPSTREAM_EMPTY",
+                                           data={"items": []})
+                return super()._request_table(name, nested, **kwargs)
+
         with self.assertRaises(intraday_state.IntradayStateError) as caught:
-            intraday_state.build(Broken(), now=at("2026-09-28T10:01:00"))
+            intraday_state.build(AllBroken(), now=at("2026-09-28T10:01:00"))
         self.assertEqual("UPSTREAM_EMPTY", caught.exception.code)
 
 

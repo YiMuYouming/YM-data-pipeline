@@ -448,3 +448,22 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 - `concept_index` 的 `names` 不再被静默忽略：经同一名册解析，解析到概念才取指数行；
   解析到非概念类型（如「乳品」）进 `missing` 并在 `data.name_resolution[name].reason_code`
   报 `CONCEPT_NAME_TYPE_MISMATCH`；查无此名报 `CONCEPT_NAME_NOT_IN_ROSTER`。
+
+## 铸剑 P2-b / P10 盘中取数（2026-10-27 真实日卡点）
+
+本节是 10-27 盘中真实卡点的修复口径。只加标记与预算，不改任何价格、不补 0、不换源、不放宽门禁。
+
+### 分钟 K（`stock_kline` period=1m/5m/15m/60m）
+
+- 默认窗口是**当日 09:30 起的全部已完成分钟**，不再隐式截断到最近 48 根；09:30 之前的集合竞价采样被剔除并计数（`pre_session_bars_dropped`）。
+- 任何截断都必须显式：`truncated=true` + `total_bars`/`returned_bars`/`dropped_bars`/`requested_count`；quality 带 `UPSTREAM_TRUNCATED`。
+- 未完成末根（桶标签+period 晚于抓取时刻）保留但标 `incomplete=true`：`incomplete_bars`/`completed_bars` 是数量，`last_close` 与 MA 只按已完成分钟算，`data_as_of` 只取已完成末根。`bar_semantics.label=bucket_start` 公开说明桶标签是起始分钟、覆盖 [label, label+period)，右端标签的未完成桶不当已完成分钟引用。
+- 腾讯分时接口给的是**每分钟采样价**：O=H=L=C 都是该采样价，不是该分钟完整区间的真实高低。`bar_semantics.price_kind=tencent_minute_sample` + `high_low_note` 明说这一点；TDX 等真实 OHLC 源为 `bar_ohlc`。
+- freshness：盘中（同一交易日 09:30–15:00）为 `intraday`（新增状态，`window=same_session_minutes`），显式查历史日仍是 `historical`；盘中拿到上一交易日分钟时为 `stale` + `intraday_bars_missing`。
+
+### `market_intraday_state` 盘中预算
+
+- 四个 rt_k 快照批次有硬墙钟预算（`SNAPSHOT_BATCH_BUDGET_SEC`，默认 6s）：超预算的批次标 `snapshot_batch_timeout:<pattern>`（诊断 status=timeout、error_code=SNAPSHOT_BATCH_TIMEOUT），**不再整轮 pipeline_gap**，已取到的批次照常出数。
+- 部分批次缺失时 `data.partial=true` + `source_gaps` 点名缺哪批，信封 `_meta.partial=true`、status=degraded、quality.status=partial。全部批次都失败时仍按第一个源错误码整轮失败（不造 partial 假象）；覆盖不足只有在**没有**批次缺口时才失败。
+- 整轮预算（`TOTAL_BUDGET_SEC`，默认 7.5s）耗尽时跳过尾部锦上添花步骤并如实标 `structural_gap_fill_skipped_budget` / `limit_up_industry_backfill_skipped_budget`。
+- `data.budget` 给出两个预算与 `elapsed_ms`/`deadline_exhausted`，用于判断这一轮是“源慢”还是“步骤被预算截断”。
