@@ -1021,6 +1021,37 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
     return None
 
 
+def annotate_failure_diagnostics(result: dict) -> dict:
+    """Attach reason_code/http_status/attempts to a failed or degraded envelope.
+
+    The public contract already carries attempts; this adds the two fields a consumer
+    needs to forward a failure without guessing (2026-10-27: the bot side reported
+    bare internal_error with no reason_code/http_status/attempts). Never invents a
+    value: missing evidence stays None.
+    """
+
+    meta = result.get("_meta")
+    if not isinstance(meta, dict):
+        return result
+    result.setdefault("ok", meta.get("status") != "error")
+    if not isinstance(meta.get("attempts"), list):
+        meta["attempts"] = []
+    if not isinstance(meta.get("reason_code"), str) or not meta.get("reason_code"):
+        codes = [attempt.get("error_code") for attempt in meta["attempts"]
+                 if isinstance(attempt, dict) and isinstance(attempt.get("error_code"), str)]
+        quality = meta.get("quality") if isinstance(meta.get("quality"), dict) else {}
+        codes.extend(code for code in (quality.get("reason_codes") or [])
+                     if isinstance(code, str))
+        meta["reason_code"] = codes[0] if codes else None
+    if "http_status" not in meta:
+        statuses = [item.get("http_status") for item in (meta.get("attempt_diagnostics") or [])
+                    if isinstance(item, dict) and type(item.get("http_status")) is int]
+        meta["http_status"] = statuses[0] if statuses else None
+    if not isinstance(meta.get("attempts_used"), int):
+        meta["attempts_used"] = len(meta["attempts"])
+    return result
+
+
 def _data_freshness(
     intent: str, params: dict, stamp: datetime | None, max_age_sec: int
 ) -> dict:
@@ -1699,6 +1730,11 @@ def _query_with(
         result["_meta"]["status"] = "degraded"
         result["_meta"]["quality"]["status"] = "partial"
         result["_meta"]["quality"]["reason_codes"] = reasons
+    if result["_meta"]["status"] in {"error", "degraded", "empty"}:
+        # 2026-10-27（P10/#9 等）：失败信封必须自带诊断字段——reason_code /
+        # http_status / attempts 已经有的不覆盖；没有的从 attempts/diagnostics 派生，
+        # 让消费端不必再回读 attempt_classification_trace。
+        annotate_failure_diagnostics(result)
     if result["_meta"]["freshness"].get("reason") == "intraday_bars_missing":
         reasons = result["_meta"]["quality"]["reason_codes"]
         if "intraday_bars_missing" not in reasons:
