@@ -974,6 +974,20 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
             return session_data_time(stamp)[0] if stamp else None
         except TradeCalendarUnavailable:
             return None
+    if intent == "sector_index":
+        # H20 #6：同花顺行业页没有数据时间，用上游响应头 Date（server_time）并按交易时段封顶；没有就 None
+        stamp = _stamp_from(data.get("server_time"))
+        if stamp is None:
+            return None
+        try:
+            capped = session_data_time(stamp)[0]
+        except TradeCalendarUnavailable:
+            return None
+        if capped.time() > datetime_time(15, 0):
+            capped = datetime.combine(capped.date(), datetime_time(15, 0), capped.tzinfo)
+        elif datetime_time(11, 30) < capped.time() < datetime_time(13, 0):
+            capped = datetime.combine(capped.date(), datetime_time(11, 30), capped.tzinfo)
+        return capped
     if intent in {"market_intraday_state", "review_sentiment"}:
         return _stamp_from(data.get("data_as_of"))
     if intent == "market_limit_state" or intent == "market_limit_board":

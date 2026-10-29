@@ -7,6 +7,10 @@
 """
 
 import re
+import threading
+from datetime import timedelta, timezone
+from email.utils import parsedate_to_datetime
+
 import requests
 
 _URL_TEMPLATE = "http://q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/{page}/"
@@ -56,7 +60,9 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
     Returns:
         {items, by_code, by_name, missing, source}
     """
+    _server.value = None
     rows = _fetch_all_industry_rows()
+    server_time = getattr(_server, "value", None)
     if isinstance(rows, dict) and rows.get("error"):
         return {
             "items": [],
@@ -81,6 +87,9 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
             result["recovered_missing"] = sorted(set(result["missing"]) - set(retried["missing"]))
             result = {**retried, "retry_attempts": 2,
                       "recovered_missing": result["recovered_missing"]}
+    if server_time:
+        result["server_time"] = server_time
+        result["data_time_basis"] = "http_date_header"
     return result
 
 
@@ -127,10 +136,29 @@ def _select_industries(rows: list[dict], codes, names) -> dict:
     }
 
 
+_server = threading.local()
+
+
+def _remember_server_time(resp) -> None:
+    """页面本身不带数据时间；响应头 Date 是上游服务器生成该页的时间（H20 #6），取最早一页的。"""
+    headers = getattr(resp, "headers", None) or {}
+    value = headers.get("Date") if hasattr(headers, "get") else None
+    if getattr(_server, "value", None) is not None or not value:
+        return
+    try:
+        moment = parsedate_to_datetime(str(value))
+    except (TypeError, ValueError):
+        return
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    _server.value = moment.astimezone(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+
+
 def _fetch_industry_page(page: int) -> tuple[list[dict], str | None]:
     resp = requests.get(_URL_TEMPLATE.format(page=page), headers=_HEADERS, timeout=10)
     if resp.status_code != 200:
         return [], f"HTTP_{resp.status_code}"
+    _remember_server_time(resp)
     resp.encoding = "gbk"
     return _parse_industry_rows(resp.text), None
 
