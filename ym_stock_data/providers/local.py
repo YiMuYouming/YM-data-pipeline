@@ -36,6 +36,10 @@ from .base import ProviderOutcome
 MINUTE_PERIODS = frozenset({"1m", "5m", "15m", "60m"})
 MINUTE_SIZES = {"1m": 1, "5m": 5, "15m": 15, "60m": 60}
 SESSION_START = dtime(9, 30)
+SESSION_END = dtime(15, 0)
+LUNCH_START, LUNCH_END = dtime(11, 30), dtime(13, 0)
+#: 创业板（300/301）、科创板（688/689）有 15:05—15:30 盘后固定价格交易；它不是连续竞价分钟
+AFTER_HOURS_PRICING_PREFIXES = ("300", "301", "688", "689")
 
 
 def _now() -> datetime:
@@ -66,6 +70,10 @@ def annotate_minute_bars(raw: dict, params: dict, *, source: str | None = None,
     now = now or _now()
     session_bars: list[tuple[datetime | None, dict]] = []
     pre_dropped = 0
+    post_dropped = 0
+    off_dropped = 0
+    after_hours: list[dict] = []
+    code = str(params.get("code") or raw.get("code") or "")
     for bar in bars:
         if not isinstance(bar, dict):
             continue
@@ -78,8 +86,19 @@ def annotate_minute_bars(raw: dict, params: dict, *, source: str | None = None,
             continue
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=TZ_SHANGHAI)
-        if moment.time() < SESSION_START:
+        clock = moment.time()
+        if clock < SESSION_START:
             pre_dropped += 1
+            continue
+        if LUNCH_START < clock < LUNCH_END:
+            off_dropped += 1  # 午休时段不该有分钟行
+            continue
+        if clock > SESSION_END:
+            # H6：15:00 之后的行不是连续竞价分钟，不混进 1m
+            if code.startswith(AFTER_HOURS_PRICING_PREFIXES):
+                after_hours.append(bar)
+            else:
+                post_dropped += 1
             continue
         session_bars.append((moment, bar))
     total = len(session_bars)
@@ -118,6 +137,12 @@ def annotate_minute_bars(raw: dict, params: dict, *, source: str | None = None,
     result["truncated"] = truncated
     result["dropped_bars"] = dropped
     result["pre_session_bars_dropped"] = pre_dropped
+    result["post_session_bars_dropped"] = post_dropped
+    result["off_session_bars_dropped"] = off_dropped
+    if after_hours:
+        result["after_hours_pricing"] = {
+            "bars": after_hours,
+            "note": "创业板／科创板盘后固定价格交易（15:05—15:30），不是连续竞价分钟，单列、不混入 1m。"}
     result["requested_count"] = requested
     if closes:
         # 未完成末根的量价还会变：last_close 与均线只按已完成分钟。
