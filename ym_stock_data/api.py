@@ -1159,7 +1159,32 @@ def _fill_snapshot_codes(
     for code in params["codes"]:
         if _snapshot_row_failure(code, data.get(code), now, max_age_sec) is not None:
             data.pop(code, None)
+            continue
+        # H20 #9：保留下来的行带 lag_sec（取数时刻减行情时点，午休不计），滞后不再只能靠肉眼比分钟线
+        quote_time = _parse_fact_datetime(data[code].get("quote_time")) if isinstance(data.get(code), dict) else None
+        if quote_time is not None:
+            try:
+                lag = market_fact_age_seconds(quote_time, now)
+            except TradeCalendarUnavailable:
+                lag = None
+            if lag is not None:
+                data[code]["lag_sec"] = int(max(0, lag))
     return report
+
+
+def _degrade_stale_realtime(meta: dict, intent: str) -> None:
+    """盘中（含 09:15 起集合竞价）实时类数据新鲜度是 stale，信封不能再标 success（H20 #9 / 10-28 #5）。"""
+    if intent not in _REALTIME_TIERED or meta.get("status") != "success":
+        return
+    if (meta.get("freshness") or {}).get("status") != "stale":
+        return
+    quality = meta.setdefault("quality", {})
+    reasons = quality.setdefault("reason_codes", [])
+    if "DATA_STALE" not in reasons:
+        reasons.append("DATA_STALE")
+    meta["status"] = "degraded"
+    if quality.get("status") in (None, "normal"):
+        quality["status"] = "semantic_degraded"
 
 
 def _quality_failure_code(
@@ -1749,6 +1774,7 @@ def _query_with(
         # http_status / attempts 已经有的不覆盖；没有的从 attempts/diagnostics 派生，
         # 让消费端不必再回读 attempt_classification_trace。
         annotate_failure_diagnostics(result)
+    _degrade_stale_realtime(result["_meta"], intent)
     if result["_meta"]["freshness"].get("reason") == "intraday_bars_missing":
         reasons = result["_meta"]["quality"]["reason_codes"]
         if "intraday_bars_missing" not in reasons:
