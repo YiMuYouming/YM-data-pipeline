@@ -7,6 +7,8 @@
 `from ym_stock_data import query` 与仓库根 `./ym-data`；所有成功、合法空集和失败都返回
 contract 1.0，并在 `_meta` 中保留真实 provider、attempt chain、质量与错误码。
 
+铸剑两期项目已由本人于2026-10-31确认完成，历史与成果去向见[项目归档](/Users/yimu/Documents/YouMingVault/90_🗄️Archive/03_📁临时项目/2026-10-31_铸剑/README.md)；移交的工程及数据事项统一回[正式后续待办](/Users/yimu/Documents/YouMingVault/10_⚡Now/01_💰弈沐资本/后续待办.md)，按需另行开启。
+
 ## 快速开始
 
 当前生产版本、已知缺口及后续测试从 [渠道工作区总览](docs/README.md) 开始；
