@@ -116,7 +116,7 @@ _ALLOWED_PARAMS = {
     ),
     "market_limit_state": frozenset({"date", "limit_type", "previous_date", "include_promotion"}),
     "market_limit_board": frozenset({"kind", "date"}),
-    "market_intraday_state": frozenset({"use_case"}),
+    "market_intraday_state": frozenset({"use_case", "snapshot_mode"}),
     "market_hot_rank": frozenset({"source", "trade_date", "limit"}),
     "industry_flow": frozenset({"trade_date", "limit", "use_case"}),
     "fund_flow": frozenset({"trade_date", "limit"}),
@@ -297,6 +297,8 @@ def _validate_params(intent: str, params: dict) -> None:
         raise ValueError(f"unsupported {intent} params: {', '.join(sorted(unknown))}")
     if "use_case" in params and params["use_case"] not in _USE_CASES:
         raise ValueError("unsupported use_case")
+    if 'snapshot_mode' in params and params['snapshot_mode'] != 'close':
+        raise ValueError('snapshot_mode only accepts close; omit it for automatic intraday/15:00 selection')
     if params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
         # J20-1：分钟后备只服务采集/回放/影子；拒绝把该用途扩散到其它 intent 或日线。
         if intent != "stock_kline" or str(

@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import math
 import time
+from copy import deepcopy
+from fnmatch import fnmatchcase
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, time as dtime
@@ -18,6 +20,7 @@ from pathlib import Path
 
 from . import indicators
 from .contracts import TZ_SHANGHAI
+from .providers.base import ProviderOutcome
 from .trading_calendar import (
     TradeCalendarUnavailable,
     is_trading_day,
@@ -40,6 +43,10 @@ SNAPSHOT_MAX_WORKERS = len(SNAPSHOT_BATCHES)
 SNAPSHOT_BATCH_BUDGET_SEC = 6.0
 # 整轮硬预算：尾部锦上添花步骤（行业回填/腾讯补码）在预算耗尽时跳过并标缺口。
 TOTAL_BUDGET_SEC = 7.5
+LIMIT_METADATA_BUDGET_SEC = 3.0
+CLOSE_SNAPSHOT_BATCH_BUDGET_SEC = 20.0
+CLOSE_TOTAL_BUDGET_SEC = 30.0
+CLOSE_METADATA_BUDGET_SEC = 8.0
 INDUSTRY_BACKFILL_MIN_REMAINING_SEC = 0.3
 STRUCTURAL_FILL_MIN_REMAINING_SEC = 0.3
 # 涨停池行业回填的硬预算（与 providers/stocktoday.py 的同名常量同口径）：宁可
@@ -125,7 +132,27 @@ def dedupe_latest(rows: list[dict]) -> dict[str, dict]:
     return latest
 
 
-def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
+def _bounded_table(provider, name, params, deadline=None):
+    if deadline is None or not callable(getattr(provider, '_request_intraday_table', None)):
+        return provider._request_table(name, params)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return ProviderOutcome('stocktoday', 'timeout', error_code='TIMEOUT')
+    return provider._request_intraday_table(name, params, timeout_sec=remaining)
+
+
+def _store_stk_limits(trade_date, limits):
+    cache = STK_LIMIT_CACHE / f'{trade_date}.json'
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_suffix('.tmp')
+        tmp.write_text(json.dumps(limits, ensure_ascii=False), encoding='utf-8')
+        tmp.replace(cache)
+    except OSError:
+        pass
+
+
+def _stk_limit(provider, trade_date: str, deadline=None, *, cache_write=True) -> dict[str, dict]:
     cache = STK_LIMIT_CACHE / f"{trade_date}.json"
     try:
         cached = json.loads(cache.read_text(encoding="utf-8"))
@@ -133,7 +160,7 @@ def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
             return cached
     except (OSError, ValueError):
         pass
-    outcome = provider._request_table("stk_limit", {"trade_date": trade_date})
+    outcome = _bounded_table(provider, "stk_limit", {"trade_date": trade_date}, deadline)
     items = (outcome.data or {}).get("items") if isinstance(outcome.data, dict) else None
     if outcome.status != "success" or not isinstance(items, list):
         return {}
@@ -142,14 +169,8 @@ def _stk_limit(provider, trade_date: str) -> dict[str, dict]:
         for row in items
         if isinstance(row, dict) and row.get("ts_code") and str(row.get("trade_date")) == trade_date
     }
-    if limits:
-        try:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            tmp = cache.with_suffix(".tmp")
-            tmp.write_text(json.dumps(limits, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(cache)
-        except OSError:
-            pass
+    if limits and cache_write:
+        _store_stk_limits(trade_date, limits)
     return limits
 
 
@@ -166,7 +187,7 @@ def _seal_time(first) -> str:
 
 
 def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = None,
-                    reads: int = 2):
+                    reads: int = 2, deadline=None):
     """Dated metadata only; snapshot membership and counts stay authoritative.
 
     2026-10-26（R3/7a）：网关对表读取会偶发**假空**（BATCH4/ths_daily 同一先例；本轮
@@ -180,8 +201,8 @@ def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = Non
     for _ in range(attempts):
         used += 1
         try:
-            outcome = provider._request_table(
-                "limit_list_d", {"trade_date": trade_date, "limit_type": "U"})
+            outcome = _bounded_table(provider,
+                "limit_list_d", {"trade_date": trade_date, "limit_type": "U"}, deadline)
         except Exception:
             if diagnostics is not None:
                 diagnostics.update(status="provider_error", reads=used,
@@ -349,13 +370,33 @@ def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None
     返回 ((pattern, outcome|None, timed_out), ...)。
     """
 
-    def load(pattern):
-        return provider._request_table("rt_k", {"ts_code": pattern})
-
     budget = SNAPSHOT_BATCH_BUDGET_SEC if budget_sec is None else budget_sec
+    attempts = {pattern: [] for pattern in patterns}
+    def load(pattern):
+        deadline = time.monotonic() + max(0.0, float(budget))
+        outcome = None
+        for number in range(2):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # Reserve part of the segment budget for exactly one retry.
+            attempt_deadline = time.monotonic() + remaining * (.8 if number == 0 else 1)
+            started = time.monotonic()
+            attempt = {'status': 'in_flight', 'error_code': None, 'latency_ms': None, 'rows': None}
+            attempts[pattern].append(attempt)
+            outcome = _bounded_table(provider, 'rt_k', {'ts_code': pattern}, attempt_deadline)
+            items = (outcome.data or {}).get('items') if isinstance(outcome.data, dict) else None
+            attempt.update(status=outcome.status, error_code=outcome.error_code,
+                           latency_ms=int((time.monotonic()-started)*1000), rows=len(items or []))
+            retryable = (outcome.status in ('empty', 'timeout') or
+                         outcome.error_code in ('TIMEOUT', 'UPSTREAM_TIMEOUT', 'NETWORK_TIMEOUT', 'EMPTY_UPSTREAM') or
+                         (outcome.status == 'success' and not items))
+            if not retryable:
+                break
+        return outcome
     workers = min(SNAPSHOT_MAX_WORKERS, len(patterns))
     if workers <= 1:
-        return [(pattern, load(pattern), False) for pattern in patterns]
+        return [(pattern, load(pattern), False, deepcopy(attempts[pattern])) for pattern in patterns]
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rt-k")
     results = []
     try:
@@ -364,9 +405,9 @@ def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None
         for pattern, future in zip(patterns, futures):
             remaining = max(0.0, deadline - time.monotonic())
             try:
-                results.append((pattern, future.result(timeout=remaining), False))
+                results.append((pattern, future.result(timeout=remaining), False, deepcopy(attempts[pattern])))
             except FuturesTimeout:
-                results.append((pattern, None, True))
+                results.append((pattern, None, True, deepcopy(attempts[pattern])))
     finally:
         # A running upstream request cannot be cancelled; do not join it either,
         # or the budget is spent a second time during shutdown.
@@ -374,8 +415,19 @@ def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None
     return results
 
 
+def _start_metadata(provider, trade_date, budget):
+    diagnostics = {}
+    deadline = time.monotonic() + budget
+    pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='limit-meta')
+    # Prefetch workers are read-only: no late cache write after an early failure.
+    limits = pool.submit(_stk_limit, provider, trade_date, deadline, cache_write=False)
+    details = pool.submit(_limit_metadata, provider, trade_date, diagnostics=diagnostics, deadline=deadline)
+    pool.shutdown(wait=False)
+    return limits, details, deadline, diagnostics
+
+
 def build(provider, *, now: datetime | None = None, quote_loader=None,
-          batch_budget_sec=None, total_budget_sec=None) -> dict:
+          batch_budget_sec=None, total_budget_sec=None, close_mode=None) -> dict:
     """Return the intraday state or raise IntradayStateError (no fallback).
 
     2026-10-27（P10）：盘中硬预算——单批超预算标缺口出 partial，整轮预算耗尽时
@@ -384,6 +436,13 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     """
 
     now = now or datetime.now(TZ_SHANGHAI)
+    if close_mode is None:
+        close_mode = is_trading_day(now.date()) and now.time() >= dtime(15, 0)
+    if batch_budget_sec is None:
+        batch_budget_sec = CLOSE_SNAPSHOT_BATCH_BUDGET_SEC if close_mode else SNAPSHOT_BATCH_BUDGET_SEC
+    if total_budget_sec is None:
+        total_budget_sec = CLOSE_TOTAL_BUDGET_SEC if close_mode else TOTAL_BUDGET_SEC
+    metadata_budget = CLOSE_METADATA_BUDGET_SEC if close_mode else LIMIT_METADATA_BUDGET_SEC
     # 名册一跳 2~6s：与快照并发提前发起，回填阶段只是取结果（provider 没这个能力就算了）。
     prefetch = (getattr(provider, "prefetch_board_metadata", None)
                 or getattr(provider, "prefetch_board_roster", None))
@@ -395,6 +454,11 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     started_monotonic = time.monotonic()
     total_budget = TOTAL_BUDGET_SEC if total_budget_sec is None else total_budget_sec
     deadline = started_monotonic + max(0.0, float(total_budget))
+    try:
+        metadata_date = session_data_time(now)[0].strftime('%Y%m%d')
+    except TradeCalendarUnavailable:
+        raise IntradayStateError('QUALITY_TRADE_CALENDAR_UNAVAILABLE')
+    metadata_job = _start_metadata(provider, metadata_date, metadata_budget)
     rows: list[dict] = []
     batch_latest: list[datetime] = []
     batches = []
@@ -402,20 +466,22 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     # P10：单批超预算/失败不再整轮失败，如实记缺口后继续用已取到的批次。
     partial_reasons: list[str] = []
     first_failure: IntradayStateError | None = None
-    for pattern, outcome, timed_out in _fetch_snapshot_batches(
+    for pattern, outcome, timed_out, attempts in _fetch_snapshot_batches(
             provider, budget_sec=batch_budget_sec):
-        if timed_out:
+        if timed_out or outcome is None:
             batches.append({"ts_code": pattern, "status": "timeout",
                             "error_code": "SNAPSHOT_BATCH_TIMEOUT", "rows": 0,
                             "latency_ms": None, "budget_ms": round(
                                 (SNAPSHOT_BATCH_BUDGET_SEC if batch_budget_sec is None
-                                 else batch_budget_sec) * 1000)})
+                                 else batch_budget_sec) * 1000), 'attempts': attempts})
             partial_reasons.append("snapshot_batch_timeout:" + pattern)
+            if first_failure is None:
+                first_failure = IntradayStateError('SNAPSHOT_BATCH_TIMEOUT', 'timeout')
             continue
         items = (outcome.data or {}).get("items") if isinstance(outcome.data, dict) else None
         batches.append({"ts_code": pattern, "status": outcome.status,
                         "error_code": outcome.error_code, "rows": len(items or []),
-                        "latency_ms": outcome.latency_ms})
+                        "latency_ms": outcome.latency_ms, 'attempts': attempts})
         if outcome.status != "success" or not items:
             partial_reasons.append("snapshot_batch_failed:" + pattern)
             if first_failure is None:
@@ -453,25 +519,26 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     # 彼此独立：并发取，省掉串行的一整跳（真实回放 limit_list_d 单跳 0.4~2.1s）。
     # 这两跳同样要受整轮预算约束：预算耗尽时不再等它们（如实标缺口），
     # 否则"快照 6s + limit-meta 各 15s"仍会破 8s（2026-10-27 21:32 真实回放 12.1s）。
-    metadata_observation: dict = {}
+    if metadata_date != trade_date:
+        metadata_job[0].cancel(); metadata_job[1].cancel()
+        metadata_job = _start_metadata(provider, trade_date, metadata_budget)
+    limits_future, metadata_future, metadata_deadline, metadata_observation = metadata_job
     budget_limited: list[str] = []
     limits: dict = {}
     limit_metadata: dict = {}
-    meta_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="limit-meta")
-    try:
-        limits_future = meta_pool.submit(_stk_limit, provider, trade_date)
-        metadata_future = meta_pool.submit(_limit_metadata, provider, trade_date,
-                                           diagnostics=metadata_observation)
-        limits, limits_timeout = _wait_or_default(
-            limits_future, max(0.0, deadline - time.monotonic()), {})
-        if limits_timeout:
-            budget_limited.append("stk_limit_budget_exhausted")
-        limit_metadata, metadata_timeout = _wait_or_default(
-            metadata_future, max(0.0, deadline - time.monotonic()), {})
-        if metadata_timeout:
-            budget_limited.append("limit_metadata_budget_exhausted")
-    finally:
-        meta_pool.shutdown(wait=False)
+    limits, limits_timeout = _wait_or_default(limits_future, max(0.0, metadata_deadline-time.monotonic()), {})
+    if limits_timeout:
+        budget_limited.append('stk_limit_budget_exhausted')
+    elif limits:
+        _store_stk_limits(trade_date, limits)
+    limit_metadata, metadata_timeout = _wait_or_default(metadata_future, max(0.0, metadata_deadline-time.monotonic()), {})
+    if metadata_timeout:
+        # Copy: the timed-out worker must not mutate the returned diagnostics later.
+        metadata_observation = {'status': 'timeout', 'error_code': 'LIMIT_METADATA_BUDGET_EXHAUSTED',
+                                'budget_ms': round(metadata_budget*1000)}
+        budget_limited.append('limit_metadata_budget_exhausted')
+    else:
+        metadata_observation = dict(metadata_observation)
     gaps: list[str] = []
     gaps.extend(budget_limited)
     universe = {code for code in limits if not code.startswith(B_SHARE_PREFIXES)}
@@ -501,7 +568,15 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
         gaps.append("snapshot_gap_too_large_to_fill")
     covered = len(universe & set(latest)) if universe else len(latest)
     coverage = round(covered / len(universe) * 100, 2) if universe else None
+    for batch in batches:
+        segment = {code for code in universe if fnmatchcase(code, batch['ts_code'])}
+        segment_covered = len(segment & set(latest))
+        batch['coverage'] = {'covered': segment_covered, 'universe': len(segment) if universe else None,
+                             'pct': round(segment_covered / len(segment)*100, 2) if segment else None}
     partial = bool(partial_reasons)
+    close_complete = bool(close_mode and universe and not partial and covered == len(universe))
+    if close_mode and not close_complete:
+        gaps.append('close_snapshot_incomplete')
     gaps.extend(partial_reasons)
     if coverage is not None and coverage < COVERAGE_MINIMUM:
         if partial:
@@ -643,8 +718,11 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
         "breadth_buckets": buckets,
         "previous_ladder_board_source": board_source,
         "partial": partial,
+        'close_snapshot_complete': close_complete if close_mode else None,
         "source_gaps": gaps,
         "budget": {"total_budget_sec": float(total_budget),
+                   'mode': 'close' if close_mode else 'intraday',
+                   'limit_metadata_budget_sec': float(metadata_budget),
                    "snapshot_batch_budget_sec": float(
                        SNAPSHOT_BATCH_BUDGET_SEC if batch_budget_sec is None
                        else batch_budget_sec),

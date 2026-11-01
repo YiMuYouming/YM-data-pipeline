@@ -86,7 +86,7 @@ Hermes 看板经公共 `market_facts` intent 读取同一环境的独立事实�
 | `stocktoday_data` | 显式 StockToday 只读数据集 | `api_name`, `params`, `fields`, `max_rows` |
 | `review_sentiment` | 无 `query`：市场宽度与情绪（读 indicators）；有 `query`：显式研究筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date`, `lang`, `version` |
 | `market_limit_state` | 涨跌停池聚合；`data.date` 是数据实际交易日 | 可选 `date`、`include_promotion` |
-| `market_intraday_state` | 盘中宽度、情绪、涨跌停、炸板、连板梯队（StockToday 全市场快照，无后备） | 无 |
+| `market_intraday_state` | 盘中宽度、情绪、涨跌停、炸板、连板梯队（StockToday 全市场快照，无后备） | 可选 `snapshot_mode=close`；默认交易日15:00起自动用收盘预算 |
 | `market_facts` | 已封存交易日的晋级率、涨跌停及短线收益 | 可选 `trade_date` |
 | `market_limit_board` | 涨停、跌停、炸板、昨日涨停明细 | `kind`, `date` |
 | `market_hot_rank` | 同花顺或东财热榜 | `source`, `trade_date`, `limit` |

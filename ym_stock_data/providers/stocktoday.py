@@ -699,7 +699,11 @@ class StockTodayProvider:
     def _numeric_code(value):
         return value if type(value) is int else 0
 
-    def _request_table(self, name, nested, *, fields="", max_rows=MAX_ROWS, diagnostic=False):
+    def _request_intraday_table(self, name, nested, *, timeout_sec):
+        connect = min(1.0, max(.01, timeout_sec / 4))
+        return self._request_table(name, nested, timeout=(connect, max(.01, timeout_sec-connect)))
+
+    def _request_table(self, name, nested, *, fields="", max_rows=MAX_ROWS, diagnostic=False, timeout=None):
         started = self.clock.monotonic()
         try:
             token = self.token_loader()
@@ -721,7 +725,7 @@ class StockTodayProvider:
             response = self.post(
                 f"{ENDPOINT}/{name}",
                 json={"api_name": name, "token": token, "params": wire_params, "fields": fields},
-                timeout=(4, 15),
+                timeout=timeout if timeout is not None else (4, 15),
                 allow_redirects=False,
             )
             http_status = response.status_code if type(response.status_code) is int else 0
@@ -1185,13 +1189,14 @@ class StockTodayProvider:
             provenance=last.provenance if last else None,
         )
 
-    def _call_intraday_state(self, intent):
+    def _call_intraday_state(self, intent, params=None):
         from .. import intraday_state
 
         started = self.clock.monotonic()
         try:
             state = intraday_state.build(
-                self, now=datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI)
+                self, now=datetime.fromtimestamp(self.clock.time(), TZ_SHANGHAI),
+                close_mode=True if (params or {}).get('snapshot_mode') == 'close' else None
             )
         except intraday_state.IntradayStateError as error:
             # A missing mandatory snapshot batch is a failed composite, not a
@@ -2303,7 +2308,7 @@ class StockTodayProvider:
         if intent == "market_intraday_state" or (
             intent == "review_sentiment" and params.get("query") in (None, "", [])
         ):
-            return self._call_intraday_state(intent)
+            return self._call_intraday_state(intent, params)
         if intent == "market_limit_board":
             return self._call_limit_board(params)
         if intent == "market_hot_rank":

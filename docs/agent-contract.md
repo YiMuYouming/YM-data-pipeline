@@ -467,3 +467,10 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 - 部分批次缺失时 `data.partial=true` + `source_gaps` 点名缺哪批，信封 `_meta.partial=true`、status=degraded、quality.status=partial。全部批次都失败时仍按第一个源错误码整轮失败（不造 partial 假象）；覆盖不足只有在**没有**批次缺口时才失败。
 - 整轮预算（`TOTAL_BUDGET_SEC`，默认 7.5s）耗尽时跳过尾部锦上添花步骤并如实标 `structural_gap_fill_skipped_budget` / `limit_up_industry_backfill_skipped_budget`。
 - `data.budget` 给出两个预算与 `elapsed_ms`/`deadline_exhausted`，用于判断这一轮是“源慢”还是“步骤被预算截断”。
+
+### 2026-11-01 周末第二批：分段重试与独立元数据预算
+
+- 保留四段 `6*.SH / 0*.SZ / 3*.SZ / *.BJ`、最多四个快照工作线程；单段超时或空返回在同段预算内最多重试一次，鉴权、套餐及限流错误不重试。StockToday 的快照请求连接/读取 timeout 绑定该次剩余预算，其他意图默认 timeout 不变。
+- 每段保留独立 attempts、原因码及按去重名册计算的 coverage；超时返回的是本轮已完成部分，不把迟到响应或旧轮数据当成当前成功。覆盖不足时宽度家数仍按原用法不采用，覆盖率阈值不改。
+- 涨停价及涨停元数据提前并发读取，使用独立3秒预算（收盘8秒），不占快照剩余预算；只读预取线程不写缓存，收到有效结果后才在本轮保存。若源日期与预取日期不同，按源日期重取。
+- 交易日15:00起自动用快照20秒、整轮30秒预算；公共 `query('market_intraday_state', snapshot_mode='close')` 可显式选择收盘取数，便于周末验收。收盘仍请求全部四段及缺码补取，`close_snapshot_complete` 仅在有名册且覆盖100%、无缺段时为true，否则带 `close_snapshot_incomplete`，不假称全量。该字段是数据完整性回执，不接交易放行。
