@@ -1,6 +1,4 @@
-"""H20 #6：sector_index 全天 DATA_TIME_UNKNOWN。同花顺行业摘要页不带数据时间，
-但响应头 Date 是上游服务器生成该页的时间——取它作数据时间（不是我们的取数时间），
-并按交易时段封顶：收盘后封到 15:00，午休封到 11:30，非交易日／盘前取上一收盘；头缺失仍如实 UNKNOWN。"""
+"""HTTP Date is retained as server time; missing quote clocks stay unknown (11-01 #10)."""
 import unittest
 from datetime import datetime
 from unittest.mock import patch
@@ -31,7 +29,8 @@ class ServerTime(unittest.TestCase):
     def test_http_date_becomes_server_time_in_taipei(self):
         result = fetch("Thu, 29 Oct 2026 02:30:00 GMT")  # 10:30 台北
         self.assertEqual("2026-10-29T10:30:00+08:00", result["server_time"])
-        self.assertEqual("http_date_header", result["data_time_basis"])
+        self.assertEqual("http_date_header", result["server_time_basis"])
+        self.assertEqual('DATA_TIME_UNKNOWN', result['data_time_reason_code'])
         self.assertEqual(["881175"], list(result["by_code"]))
 
     def test_missing_header_gives_no_server_time(self):
@@ -47,18 +46,18 @@ def as_of(server_time):
 
 
 class DataAsOf(unittest.TestCase):
-    def test_in_session_uses_the_server_time(self):
-        self.assertEqual(datetime.fromisoformat("2026-10-29T10:30:00+08:00"), as_of("2026-10-29T10:30:00+08:00"))
+    def test_in_session_server_time_is_not_quote_time(self):
+        self.assertIsNone(as_of("2026-10-29T10:30:00+08:00"))
 
     def test_after_close_is_capped_at_1500(self):
-        self.assertEqual(datetime(2026, 10, 29, 15, 0, tzinfo=TZ_SHANGHAI), as_of("2026-10-29T20:47:17+08:00"))
+        self.assertIsNone(as_of("2026-10-29T20:47:17+08:00"))
 
     def test_lunch_break_is_capped_at_1130(self):
-        self.assertEqual(datetime(2026, 10, 29, 11, 30, tzinfo=TZ_SHANGHAI), as_of("2026-10-29T12:10:00+08:00"))
+        self.assertIsNone(as_of("2026-10-29T12:10:00+08:00"))
 
     def test_non_trading_day_uses_previous_close(self):
         got = as_of("2026-10-31T10:00:00+08:00")  # 周六
-        self.assertEqual(datetime(2026, 10, 30, 15, 0, tzinfo=TZ_SHANGHAI), got)
+        self.assertIsNone(got)
 
     def test_no_server_time_stays_unknown(self):
         self.assertIsNone(as_of(None))

@@ -8,7 +8,7 @@
 
 import re
 import threading
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import requests
@@ -89,7 +89,7 @@ def fetch_sector_index(codes: list[str] | None = None, names: list[str] | None =
                       "recovered_missing": result["recovered_missing"]}
     if server_time:
         result["server_time"] = server_time
-        result["data_time_basis"] = "http_date_header"
+        result["server_time_basis"] = "http_date_header"
     return result
 
 
@@ -127,12 +127,27 @@ def _select_industries(rows: list[dict], codes, names) -> dict:
         deduped.append(row)
         seen.add(row["code"])
 
+    quote_times = []
+    for row in deduped:
+        value = row.get('quote_time') or row.get('data_as_of')
+        try:
+            if not isinstance(value, str) or len(value) < 19:
+                raise ValueError('quote time absent')
+            stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            quote_times.append(stamp.replace(tzinfo=timezone(timedelta(hours=8))) if stamp.tzinfo is None else stamp)
+        except ValueError:
+            quote_times = []
+            break
+    data_time = min(quote_times).isoformat(timespec='seconds') if quote_times else None
     return {
         "items": deduped,
         "by_code": {row["code"]: row for row in deduped},
         "by_name": {row["name"]: row for row in deduped},
         "missing": missing,
         "source": "ths_industry",
+        'data_as_of': data_time,
+        'data_time_basis': 'upstream_quote_time' if data_time else 'provider_not_supplied',
+        'data_time_reason_code': None if data_time else 'DATA_TIME_UNKNOWN',
     }
 
 

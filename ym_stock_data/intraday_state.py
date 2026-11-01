@@ -229,8 +229,20 @@ def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = Non
         code = str(row.get("ts_code") or "").split(".")[0]
         if len(code) != 6 or not code.isdigit():
             continue
+        amount = _number(row.get('fd_amount'))
+        amount = amount if amount is not None and amount >= 0 else None
+        opened = _number(row.get('open_times'))
+        opened = int(opened) if opened is not None and opened >= 0 and opened == int(opened) else None
+        reasons = []
+        if amount is None:
+            reasons.append(('UPSTREAM_FIELD_NOT_PROVIDED' if row.get('fd_amount') is None else 'UPSTREAM_FIELD_INVALID') + ':seal_amount')
+        if opened is None:
+            reasons.append(('UPSTREAM_FIELD_NOT_PROVIDED' if row.get('open_times') is None else 'UPSTREAM_FIELD_INVALID') + ':open_count')
         rows[code] = {"industry": str(row.get("industry") or "").strip(),
-                      "seal_time": _seal_time(row.get("first_time"))}
+                      "seal_time": _seal_time(row.get("first_time")),
+                      'seal_amount': amount, 'seal_amount_unit': 'upstream_unverified',
+                      'seal_amount_source_field': 'fd_amount', 'open_count': opened,
+                      'field_reason_codes': reasons}
     if diagnostics is not None:
         diagnostics["matched_count"] = len(rows)
         if items and not rows:
@@ -676,8 +688,11 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
             gaps.append("limit_up_industry_unresolved")
     for code in limit_sets["up"]:
         row = metadata.get(code) or {}
+        missing_reason = ('UPSTREAM_NO_METADATA_ROW' if metadata_observation.get('status') in ('success', 'empty')
+                          else 'METADATA_UNAVAILABLE')
         if row.get("seal_time") and row["seal_time"] > data_as_of.strftime("%H:%M:%S"):
             row = {}
+            missing_reason = 'METADATA_AFTER_SNAPSHOT'
         industry = str(row.get("industry") or "").strip()
         source = "limit_list_d" if industry else ""
         if not industry and code in (backfill.get("industries") or {}):
@@ -685,7 +700,11 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
             industry = str(filled.get("name") or "")
             source = str(filled.get("source") or "ths_member:881")
         detail[code].update(industry=industry, seal_time=row.get("seal_time") or "",
-                            industry_source=source or "unresolved")
+                            industry_source=source or "unresolved",
+                            seal_amount=row.get('seal_amount'), seal_amount_unit='upstream_unverified',
+                            seal_amount_source_field='fd_amount',
+                            open_count=row.get('open_count'),
+                            field_reason_codes=row.get('field_reason_codes') if row else [missing_reason])
     if any(not detail[c].get("industry") for c in limit_sets["up"]):
         if "limit_up_industry_unresolved" not in gaps:
             gaps.append("limit_up_industry_unresolved")

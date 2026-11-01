@@ -474,3 +474,8 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 - 每段保留独立 attempts、原因码及按去重名册计算的 coverage；超时返回的是本轮已完成部分，不把迟到响应或旧轮数据当成当前成功。覆盖不足时宽度家数仍按原用法不采用，覆盖率阈值不改。
 - 涨停价及涨停元数据提前并发读取，使用独立3秒预算（收盘8秒），不占快照剩余预算；只读预取线程不写缓存，收到有效结果后才在本轮保存。若源日期与预取日期不同，按源日期重取。
 - 交易日15:00起自动用快照20秒、整轮30秒预算；公共 `query('market_intraday_state', snapshot_mode='close')` 可显式选择收盘取数，便于周末验收。收盘仍请求全部四段及缺码补取，`close_snapshot_complete` 仅在有名册且覆盖100%、无缺段时为true，否则带 `close_snapshot_incomplete`，不假称全量。该字段是数据完整性回执，不接交易放行。
+
+### 2026-11-01 周末第二批：板块行情时间与涨停字段
+
+- `sector_index.data_as_of` 仅取明确的上游行情时点；缺失为null，`data_time_reason_code=DATA_TIME_UNKNOWN`，公共_meta同样标未知。`server_time` 和 `server_time_basis=http_date_header` 单独保留响应时间，不封顶成行情时间；源未给时不以请求时间补造。
+- `market_intraday_state.limit_up` 保留元数据的封单原值 `seal_amount`（来源字段fd_amount，`seal_amount_unit=upstream_unverified`）、开板次数 `open_count`（来源open_times，0保持0）。缺字段、字段非法、上游无该标的元数据、元数据不可读、元数据晚于快照分别给独立原因码；不把超时标“上游无”，不推导封成比。
