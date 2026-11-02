@@ -103,6 +103,86 @@ class IntradayBudgetTests(unittest.TestCase):
         time.sleep(.05)
         self.assertFalse(list(Path(self.temp.name).glob('*.json')))
 
+    def test_close_round_spends_remaining_budget_on_fast_failed_segment(self):
+        """11-02 15:04 收盘轮：3*.SZ 两次 TIMEOUT 只用 2.3s，20s 预算剩 17s 仍整段缺失。"""
+
+        class Flaky(Source):
+            def __init__(self):
+                super().__init__(stamp='2026-10-30T15:00:00')
+                self.segment_attempts = 0
+
+            def _request_table(self, name, params, **kwargs):
+                if name == 'rt_k' and params['ts_code'] == '3*.SZ':
+                    self.segment_attempts += 1
+                    if self.segment_attempts <= 2:
+                        return ProviderOutcome('stocktoday', 'timeout', error_code='TIMEOUT')
+                return super()._request_table(name, params, **kwargs)
+
+        source = Flaky()
+        with patch.object(state, 'CLOSE_SNAPSHOT_BATCH_BUDGET_SEC', .4), \
+             patch.object(state, 'CLOSE_TOTAL_BUDGET_SEC', 1):
+            result = state.build(source, now=datetime(2026, 10, 30, 15, 4, 54, tzinfo=TZ_SHANGHAI),
+                                 quote_loader=lambda *a: {})
+        self.assertEqual(3, source.segment_attempts)
+        self.assertEqual(100, result['coverage']['pct'])
+        self.assertTrue(result['close_snapshot_complete'])
+
+    def test_close_round_spends_remaining_budget_on_empty_limit_metadata(self):
+        """11-02 15:04 收盘轮：limit_list_d 两次空返回只用 1.5s，8s 预算剩 6.5s 仍判空。"""
+
+        class EmptyMeta(Source):
+            def __init__(self):
+                super().__init__(stamp='2026-10-30T15:00:00')
+                self.meta_reads = 0
+
+            def _request_table(self, name, params, **kwargs):
+                if name == 'limit_list_d':
+                    self.meta_reads += 1
+                    if self.meta_reads <= 2:
+                        return ProviderOutcome('stocktoday', 'empty', data={'items': []})
+                    return ProviderOutcome('stocktoday', 'success', data={'items': [
+                        {'ts_code': '600001.SH', 'trade_date': params['trade_date'],
+                         'industry': '医药商业', 'first_time': '094957'}]})
+                return super()._request_table(name, params, **kwargs)
+
+        source = EmptyMeta()
+        with patch.object(state, 'CLOSE_SNAPSHOT_BATCH_BUDGET_SEC', .5), \
+             patch.object(state, 'CLOSE_TOTAL_BUDGET_SEC', 2):
+            result = state.build(source, now=datetime(2026, 10, 30, 15, 4, 54, tzinfo=TZ_SHANGHAI),
+                                 quote_loader=lambda *a: {})
+        self.assertEqual(3, source.meta_reads)
+        self.assertEqual('success', result['_stocktoday']['limit_metadata']['status'])
+
+    def test_close_round_stops_at_four_fast_failures_and_stays_partial(self):
+        """收盘持续快失败：四段尝试封顶，仍如实 partial、不假称收盘完整。"""
+
+        class Down(Source):
+            def __init__(self):
+                super().__init__(stamp='2026-10-30T15:00:00')
+                self.segment_attempts = 0
+                self.meta_reads = 0
+
+            def _request_table(self, name, params, **kwargs):
+                if name == 'rt_k' and params['ts_code'] == '3*.SZ':
+                    self.segment_attempts += 1
+                    return ProviderOutcome('stocktoday', 'timeout', error_code='TIMEOUT')
+                if name == 'limit_list_d':
+                    self.meta_reads += 1
+                    return ProviderOutcome('stocktoday', 'empty', data={'items': []})
+                return super()._request_table(name, params, **kwargs)
+
+        source = Down()
+        with patch.object(state, 'CLOSE_SNAPSHOT_BATCH_BUDGET_SEC', .4), \
+             patch.object(state, 'CLOSE_TOTAL_BUDGET_SEC', 1):
+            result = state.build(source, now=datetime(2026, 10, 30, 15, 4, 54, tzinfo=TZ_SHANGHAI),
+                                 quote_loader=lambda *a: {})
+        self.assertEqual(4, source.segment_attempts)
+        self.assertEqual(4, source.meta_reads)
+        self.assertTrue(result['partial'])
+        self.assertFalse(result['close_snapshot_complete'])
+        self.assertIn('close_snapshot_incomplete', result['source_gaps'])
+        self.assertEqual(4, len(result['_stocktoday']['batches'][2]['attempts']))
+
     def test_explicit_close_mode_is_bounded_public_parameter(self):
         from ym_stock_data.api import _validate_params
         _validate_params('market_intraday_state', {'snapshot_mode': 'close'})

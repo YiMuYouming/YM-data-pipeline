@@ -47,6 +47,14 @@ LIMIT_METADATA_BUDGET_SEC = 3.0
 CLOSE_SNAPSHOT_BATCH_BUDGET_SEC = 20.0
 CLOSE_TOTAL_BUDGET_SEC = 30.0
 CLOSE_METADATA_BUDGET_SEC = 8.0
+# 11-02 15:04 收盘轮实测：3*.SZ 两次 TIMEOUT 只用 2.3s，20s 段预算还剩 17s 仍整段
+# 缺失；limit_list_d 两次空返回只用 1.5s，8s 元数据预算还剩 6.5s 仍判空。收盘轮
+# 不能用"固定两次"提前放弃——收盘在原预算内总共最多尝试四次，成功、不可重试错误、
+# 次数上限或预算耗尽即停。盘中保持总共两次，守住 7.5s 整轮预算。
+SNAPSHOT_ATTEMPT_LIMIT = 2
+CLOSE_SNAPSHOT_ATTEMPT_LIMIT = 4
+LIMIT_METADATA_READS = 2
+CLOSE_LIMIT_METADATA_READS = 4
 INDUSTRY_BACKFILL_MIN_REMAINING_SEC = 0.3
 STRUCTURAL_FILL_MIN_REMAINING_SEC = 0.3
 # 涨停池行业回填的硬预算（与 providers/stocktoday.py 的同名常量同口径）：宁可
@@ -191,8 +199,9 @@ def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = Non
     """Dated metadata only; snapshot membership and counts stay authoritative.
 
     2026-10-26（R3/7a）：网关对表读取会偶发**假空**（BATCH4/ths_daily 同一先例；本轮
-    5 次真实回放里第 5 次 limit_list_d 就返回空表、55 行 industry 全空）。空表重试
-    一次再接受为空——多一跳换掉一次静默的行业缺口；鉴权/套餐类错误不重试。
+    5 次真实回放里第 5 次 limit_list_d 就返回空表、55 行 industry 全空）。空表先重试
+    再接受为空——多一跳换掉一次静默的行业缺口；鉴权/套餐类错误不重试。读取次数由
+    `reads` 限定（盘中总共两次、收盘总共四次），次数上限或预算耗尽即停。
     """
 
     attempts = max(1, int(reads))
@@ -372,7 +381,8 @@ def _wait_or_default(future, timeout, default):
         return default, True
 
 
-def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None):
+def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None,
+                            attempt_limit=None):
     """Fetch every wildcard batch concurrently, keeping the fixed batch order.
 
     2026-10-27（P10）：并发只解决"四批串行"，不解决"单批慢"。任一慢批次会被上游
@@ -380,18 +390,23 @@ def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None
     超预算的批次不再等（线程继续在后台跑完，但不阻塞返回），由调用方如实标
     timeout 缺口。结果顺序仍按 SNAPSHOT_BATCHES，键与诊断字段不变。
     返回 ((pattern, outcome|None, timed_out), ...)。
+
+    2026-11-02（R08）：收盘轮在原预算内总共最多尝试四次（盘中两次），成功、不可
+    重试错误、次数上限或预算耗尽即停；快失败不再白扔剩余预算。
     """
 
     budget = SNAPSHOT_BATCH_BUDGET_SEC if budget_sec is None else budget_sec
+    limit = max(1, int(SNAPSHOT_ATTEMPT_LIMIT if attempt_limit is None else attempt_limit))
     attempts = {pattern: [] for pattern in patterns}
     def load(pattern):
         deadline = time.monotonic() + max(0.0, float(budget))
         outcome = None
-        for number in range(2):
+        for number in range(limit):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            # Reserve part of the segment budget for exactly one retry.
+            # The first attempt may use at most 80% of the segment budget,
+            # leaving room for the remaining attempts inside the same budget.
             attempt_deadline = time.monotonic() + remaining * (.8 if number == 0 else 1)
             started = time.monotonic()
             attempt = {'status': 'in_flight', 'error_code': None, 'latency_ms': None, 'rows': None}
@@ -427,13 +442,15 @@ def _fetch_snapshot_batches(provider, patterns=SNAPSHOT_BATCHES, budget_sec=None
     return results
 
 
-def _start_metadata(provider, trade_date, budget):
+def _start_metadata(provider, trade_date, budget, reads=None):
     diagnostics = {}
     deadline = time.monotonic() + budget
     pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='limit-meta')
     # Prefetch workers are read-only: no late cache write after an early failure.
     limits = pool.submit(_stk_limit, provider, trade_date, deadline, cache_write=False)
-    details = pool.submit(_limit_metadata, provider, trade_date, diagnostics=diagnostics, deadline=deadline)
+    details = pool.submit(_limit_metadata, provider, trade_date, diagnostics=diagnostics,
+                          reads=LIMIT_METADATA_READS if reads is None else reads,
+                          deadline=deadline)
     pool.shutdown(wait=False)
     return limits, details, deadline, diagnostics
 
@@ -455,6 +472,9 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     if total_budget_sec is None:
         total_budget_sec = CLOSE_TOTAL_BUDGET_SEC if close_mode else TOTAL_BUDGET_SEC
     metadata_budget = CLOSE_METADATA_BUDGET_SEC if close_mode else LIMIT_METADATA_BUDGET_SEC
+    snapshot_attempt_limit = (CLOSE_SNAPSHOT_ATTEMPT_LIMIT if close_mode
+                              else SNAPSHOT_ATTEMPT_LIMIT)
+    metadata_reads = CLOSE_LIMIT_METADATA_READS if close_mode else LIMIT_METADATA_READS
     # 名册一跳 2~6s：与快照并发提前发起，回填阶段只是取结果（provider 没这个能力就算了）。
     prefetch = (getattr(provider, "prefetch_board_metadata", None)
                 or getattr(provider, "prefetch_board_roster", None))
@@ -470,7 +490,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
         metadata_date = session_data_time(now)[0].strftime('%Y%m%d')
     except TradeCalendarUnavailable:
         raise IntradayStateError('QUALITY_TRADE_CALENDAR_UNAVAILABLE')
-    metadata_job = _start_metadata(provider, metadata_date, metadata_budget)
+    metadata_job = _start_metadata(provider, metadata_date, metadata_budget, reads=metadata_reads)
     rows: list[dict] = []
     batch_latest: list[datetime] = []
     batches = []
@@ -479,7 +499,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     partial_reasons: list[str] = []
     first_failure: IntradayStateError | None = None
     for pattern, outcome, timed_out, attempts in _fetch_snapshot_batches(
-            provider, budget_sec=batch_budget_sec):
+            provider, budget_sec=batch_budget_sec, attempt_limit=snapshot_attempt_limit):
         if timed_out or outcome is None:
             batches.append({"ts_code": pattern, "status": "timeout",
                             "error_code": "SNAPSHOT_BATCH_TIMEOUT", "rows": 0,
@@ -533,7 +553,7 @@ def build(provider, *, now: datetime | None = None, quote_loader=None,
     # 否则"快照 6s + limit-meta 各 15s"仍会破 8s（2026-10-27 21:32 真实回放 12.1s）。
     if metadata_date != trade_date:
         metadata_job[0].cancel(); metadata_job[1].cancel()
-        metadata_job = _start_metadata(provider, trade_date, metadata_budget)
+        metadata_job = _start_metadata(provider, trade_date, metadata_budget, reads=metadata_reads)
     limits_future, metadata_future, metadata_deadline, metadata_observation = metadata_job
     budget_limited: list[str] = []
     limits: dict = {}
