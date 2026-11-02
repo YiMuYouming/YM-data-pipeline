@@ -479,3 +479,9 @@ round3 修正后的口径，终修补充质量贯穿与字段独立：
 
 - `sector_index.data_as_of` 仅取明确的上游行情时点；缺失为null，`data_time_reason_code=DATA_TIME_UNKNOWN`，公共_meta同样标未知。`server_time` 和 `server_time_basis=http_date_header` 单独保留响应时间，不封顶成行情时间；源未给时不以请求时间补造。
 - `market_intraday_state.limit_up` 保留元数据的封单原值 `seal_amount`（来源字段fd_amount，`seal_amount_unit=upstream_unverified`）、开板次数 `open_count`（来源open_times，0保持0）。缺字段、字段非法、上游无该标的元数据、元数据不可读、元数据晚于快照分别给独立原因码；不把超时标“上游无”，不推导封成比。
+
+### 2026-11-02 R09：板块部分返回与领涨股时点
+
+- 同花顺行业摘要按页读取，整轮 7.5 秒 deadline；每页读取放在有界 future 中等候，**不以 `requests` 的 `timeout=(connect, read)` 充当硬墙钟**（滴流响应/多地址连接可能越界）。到 deadline 即返回，晚到线程的结果丢弃，本路径不回写任何缓存。预算耗尽或后页失败时，**保留已取到的页**，返回 `data.partial=true` 与 `partial_reason_code=SECTOR_PARTIAL_<TIMEOUT|NETWORK_ERROR|HTTP_*>`；信封 `status=degraded`、`quality.status=partial` 并带同一原因码。首次已取 A 但缺 B、整表重读又失败时，合并重读中已取到的行（按 code 去重）再标 partial；一个请求对象都没取到仍是失败（`NETWORK_ERROR`/`TIMEOUT`），不冒充合法空或部分成功。
+- `sector_index` 的板块行情时点与领涨股时点分开：`data_as_of`/`data_time_reason_code` 只描述板块行情行，`leader_data_as_of`/`leader_time_status`/`leader_time_reason_code` 只描述领涨股字段。领涨股时间缺失即 `unknown` + `DATA_TIME_UNKNOWN`，**不得**继承板块 `quote_time`、HTTP `server_time` 或 `fetched_at`；新旧逐行比该行自己的 `quote_time`（不跨板块取 min），源显式给出且早于该行行情时标 `older_than_quote` + `LEADER_TIME_OLDER_THAN_QUOTE`，原值保留，行上也带 `leader_data_as_of`/`leader_time_status`。
+- `stocktoday` 的 `sector_index`（ths_index）请求同样放在 7.5 秒有界 future 中，超时即返回 `TIMEOUT`，晚到结果不写 provider 状态；保留 `type=I` 行业闸；`field_evidence` 无源时间时为 `null` + `provider_not_supplied`，不再写空串。

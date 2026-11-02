@@ -15,6 +15,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from concurrent.futures import wait as futures_wait
 from contextlib import closing
 from dataclasses import replace
@@ -50,6 +51,9 @@ CODE_BOARD_MAX_WORKERS = 8
 # 盘中涨停池行业回填是"锦上添花"的补字段：给它一个硬预算，宁可这一轮少填几只
 # （如实进 unresolved + partial 缺口），也不让 market_intraday_state 破 8s。
 INDUSTRY_BACKFILL_BUDGET_SEC = 2.5
+# 2026-11-02 R09：sector_index 的 ths_index 一跳必须有总墙钟上限（调用方 8s），
+# 不再沿用 _request_table 的 (4, 15) 默认超时。
+SECTOR_INDEX_BUDGET_SEC = 7.5
 # 行业回填的主源是 bak_basic（一次调用拿全市场当日行业，实测 ~2s / 5578 行）：
 # 比逐码 ths_member 反查（55 码 * 0.2~1.1s）便宜一个量级。当日尚未发布时退到
 # 最近一个已发布交易日，并把 industry_as_of 如实标回去（申万行业调整很慢）。
@@ -703,7 +707,7 @@ class StockTodayProvider:
         connect = min(1.0, max(.01, timeout_sec / 4))
         return self._request_table(name, nested, timeout=(connect, max(.01, timeout_sec-connect)))
 
-    def _request_table(self, name, nested, *, fields="", max_rows=MAX_ROWS, diagnostic=False, timeout=None):
+    def _request_table(self, name, nested, *, fields="", max_rows=MAX_ROWS, diagnostic=False, timeout=None, write_state=True):
         started = self.clock.monotonic()
         try:
             token = self.token_loader()
@@ -786,7 +790,8 @@ class StockTodayProvider:
                     )
                 if "套餐专属" in message or "升级套餐" in message:
                     remember = getattr(self.budget, "remember_not_entitled", None)
-                    if remember is not None:
+                    # 有界调用超时后晚到的响应不得再改下一轮状态。
+                    if remember is not None and write_state:
                         remember(name, now=self.clock.time(), token_fp=token_fp)
                     return self._fail(
                         started,
@@ -1408,7 +1413,25 @@ class StockTodayProvider:
             nested["ts_code"] = ",".join(str(code) for code in codes)
         if names:
             nested["name"] = ",".join(str(name) for name in names)
-        outcome = self._request_table("ths_index", nested)
+        # 与公共 sector_index 同一 8 秒调用预算：requests 的 socket timeout 不是
+        # 硬墙钟，放在有界 future 里等到整轮 deadline 即返回；晚到结果丢弃，
+        # 且不写 provider 状态（write_state=False）。
+        started = self.clock.monotonic()
+        deadline = started + SECTOR_INDEX_BUDGET_SEC
+        connect = min(1.0, max(.01, SECTOR_INDEX_BUDGET_SEC / 4))
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sector-index")
+        try:
+            future = pool.submit(
+                self._request_table, "ths_index", nested,
+                timeout=(connect, max(.01, SECTOR_INDEX_BUDGET_SEC - connect)),
+                write_state=False)
+            try:
+                outcome = future.result(
+                    timeout=max(.01, deadline - self.clock.monotonic()))
+            except FuturesTimeout:
+                return self._fail(started, "TIMEOUT", "timeout")
+        finally:
+            pool.shutdown(wait=False)
         if outcome.error_code:
             return outcome
         raw = outcome.data if isinstance(outcome.data, dict) else {}
@@ -1420,9 +1443,19 @@ class StockTodayProvider:
         found_codes = {str(row.get("ts_code") or "").split(".")[0] for row in items}
         found_names = {row.get("name") for row in items}
         rejected = sorted(wanted_codes - found_codes) + sorted(set(names) - found_names)
-        evidence = {str(row.get("ts_code") or "").split(".")[0]: {
-            "data_as_of": row.get("updated_at") or row.get("trade_time") or row.get("trade_date") or "",
-            "source": "stocktoday:ths_index"} for row in items}
+        evidence = {}
+        for row in items:
+            code = str(row.get("ts_code") or "").split(".")[0]
+            field = next((key for key in ("updated_at", "trade_time", "trade_date")
+                          if row.get(key)), None)
+            stamp = row.get(field) if field else None
+            evidence[code] = {
+                "data_as_of": stamp,
+                "data_time_basis": (f"upstream_{field}" if field
+                                    else "provider_not_supplied"),
+                "data_time_reason_code": None if stamp else "DATA_TIME_UNKNOWN",
+                "source": "stocktoday:ths_index",
+            }
         return ProviderOutcome(
             self.name,
             outcome.status,

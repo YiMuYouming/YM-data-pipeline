@@ -1760,6 +1760,30 @@ def _query_with(
         result["_meta"]["status"] = "degraded"
         result["_meta"]["quality"]["status"] = "partial"
         result["_meta"]["quality"]["reason_codes"] = reasons
+    if intent == "sector_index" and isinstance(data, dict):
+        # 2026-11-02 R09：多页摘要中途失败时保留已取到的板块，但必须显式标
+        # partial——既不能整轮丢弃，也不能让 0 行看起来像合法空。
+        if data.get("partial"):
+            reasons = list(result["_meta"]["quality"].get("reason_codes") or [])
+            for code in (data.get("partial_reason_code"), "SECTOR_PARTIAL_RETURN"):
+                if code and code not in reasons:
+                    reasons.append(code)
+            result["_meta"]["partial"] = True
+            if result["_meta"]["status"] in {"success", "empty"}:
+                result["_meta"]["status"] = "degraded"
+            result["_meta"]["quality"]["status"] = "partial"
+            result["_meta"]["quality"]["reason_codes"] = reasons
+        # 领涨股没有自己的源时间就是未知，不能说成与板块行情同一时点。
+        if data.get("leader_time_status") in {"unknown", "older_than_quote"}:
+            reasons = result["_meta"]["quality"].get("reason_codes") or []
+            code = data.get("leader_time_reason_code")
+            if code and code not in reasons:
+                reasons.append(code)
+            result["_meta"]["quality"]["reason_codes"] = reasons
+            if result["_meta"]["status"] == "success":
+                result["_meta"]["status"] = "degraded"
+            if result["_meta"]["quality"]["status"] == "normal":
+                result["_meta"]["quality"]["status"] = "semantic_degraded"
     if result["_meta"]["status"] in {"error", "degraded", "empty"}:
         # 2026-10-27（P10/#9 等）：失败信封必须自带诊断字段——reason_code /
         # http_status / attempts 已经有的不覆盖；没有的从 attempts/diagnostics 派生，
