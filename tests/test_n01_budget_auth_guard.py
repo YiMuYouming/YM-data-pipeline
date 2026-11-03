@@ -17,6 +17,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
+from tests.fixed_clock import FIXED_NOW, FIXED_NOW_ISO
 from ym_stock_data.providers import stocktoday as st
 from ym_stock_data.providers.stocktoday import RequestBudget, StockTodayProvider
 
@@ -57,6 +58,28 @@ def _provider(transport, budget, *, now=1_790_000_000.0):
         budget=budget,
         clock=_Clock(now),
     )
+
+
+def _tencent_snapshot_stub(quote_time):
+    """回退源夹具：quote_time 由调用方给出，不由运行当日/当前墙钟推导。"""
+
+    from ym_stock_data.providers.base import ProviderOutcome
+
+    class TencentStub:
+        name = "tencent"
+
+        def call(self, _intent, params):
+            rows = {
+                code: {
+                    "code": code, "price": 10.0, "last_close": 9.5, "open": 9.8,
+                    "high": 10.2, "low": 9.7, "volume": 1000, "amount": 10000.0,
+                    "quote_time": quote_time, "change_pct": 1.0,
+                }
+                for code in params["codes"]
+            }
+            return ProviderOutcome("tencent", "success", data=rows)
+
+    return TencentStub()
 
 
 class DefaultLimitTests(unittest.TestCase):
@@ -538,36 +561,26 @@ class PublicDiagnosticsTests(unittest.TestCase):
         self.assertEqual(840, cooldown["retry_after_seconds"])
         self.assertNotIn(SECRET, json.dumps(result))
 
-    def test_fallback_success_is_not_reported_as_the_refused_provider(self):
-        from ym_stock_data.providers.base import ProviderOutcome
+    def _fallback_snapshot(self, *, clock, quote_time, filename="fallback.sqlite3"):
+        """回退链公共信封：验证时钟与 quote_time 成对冻结，质量校验仍走真实实现。"""
 
-        class TencentStub:
-            name = "tencent"
-
-            def call(self, _intent, params):
-                quote_time = self.clock_text
-                rows = {
-                    code: {
-                        "code": code, "price": 10.0, "last_close": 9.5, "open": 9.8,
-                        "high": 10.2, "low": 9.7, "volume": 1000, "amount": 10000.0,
-                        "quote_time": quote_time, "change_pct": 1.0,
-                    }
-                    for code in params["codes"]
-                }
-                return ProviderOutcome("tencent", "success", data=rows)
-
-        from datetime import datetime as _dt
-
-        stub = TencentStub()
-        stub.clock_text = _dt.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+        stub = _tencent_snapshot_stub(quote_time)
         transport = Mock(return_value=_response(
             200, payload={"code": 0, "data": [{"ts_code": "600519.SH"}]}))
         provider = self._provider(transport, RequestBudget(
-            self.root / "fallback.sqlite3", per_minute=1, per_day=0))
+            self.root / filename, per_minute=1, per_day=0))
         provider._request_table("daily", {"ts_code": "600519.SH"})  # 用掉唯一名额
 
-        with patch.dict(self.api.PROVIDER_REGISTRY, {"stocktoday": provider, "tencent": stub}):
-            result = self.api.query("stock_snapshot", codes=["600000"], use_case="realtime_poll")
+        with patch.object(self.api, "_now_shanghai", return_value=clock), patch.dict(
+            self.api.PROVIDER_REGISTRY, {"stocktoday": provider, "tencent": stub}
+        ):
+            return self.api.query("stock_snapshot", codes=["600000"], use_case="realtime_poll")
+
+    def test_fallback_success_is_not_reported_as_the_refused_provider(self):
+        # 跨午夜真实墙钟下行情时点必然落在闭市区间，只会命中真实质量门的
+        # QUALITY_SNAPSHOT_STALE。这里把时钟与 quote_time 冻结到同一盘中时点，
+        # 只隔离时间，不绕过、不放宽质量校验。
+        result = self._fallback_snapshot(clock=FIXED_NOW, quote_time=FIXED_NOW_ISO)
 
         self.assertEqual("tencent", result["_meta"]["provider_used"])
         self.assertIn("600000", result["data"])
@@ -575,6 +588,31 @@ class PublicDiagnosticsTests(unittest.TestCase):
         self.assertEqual("stocktoday", result["_meta"]["attempt_diagnostics"][0]["provider"])
         self.assertNotEqual("error", result["_meta"]["status"])
         self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_fallback_quality_boundary_is_measured_on_the_same_frozen_clock(self):
+        from ym_stock_data.routing import route_for
+
+        max_age = route_for("stock_snapshot", {"use_case": "realtime_poll"}).max_age_sec
+        fresh = self._fallback_snapshot(
+            clock=FIXED_NOW + timedelta(seconds=max_age),
+            quote_time=FIXED_NOW_ISO,
+            filename="boundary-ok.sqlite3",
+        )
+        self.assertEqual("tencent", fresh["_meta"]["provider_used"])
+        self.assertNotEqual("error", fresh["_meta"]["status"])
+
+        stale = self._fallback_snapshot(
+            clock=FIXED_NOW + timedelta(seconds=max_age + 1),
+            quote_time=FIXED_NOW_ISO,
+            filename="boundary-stale.sqlite3",
+        )
+        self.assertIsNone(stale["_meta"]["provider_used"])
+        self.assertEqual("error", stale["_meta"]["status"])
+        attempts = {item["provider"]: item for item in stale["_meta"]["attempts"]}
+        self.assertEqual("quality_failure", attempts["tencent"]["status"])
+        self.assertEqual("QUALITY_SNAPSHOT_STALE", attempts["tencent"]["error_code"])
+        self.assertEqual("stocktoday", stale["_meta"]["local_budget"]["provider"])
+        self.assertNotIn(SECRET, json.dumps(stale))
 
     def test_auth_failure_stays_the_public_reason_code(self):
         transport = Mock(return_value=_response(401, text="unauthorized"))
