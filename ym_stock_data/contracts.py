@@ -31,6 +31,17 @@ SOURCE_TIERS = frozenset({"primary", "fallback", "explicit"})
 POLICY_STATUSES = frozenset({"active", "inactive"})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 TZ_SHANGHAI = timezone(timedelta(hours=8))
+# 2026-11-03（N01）：只有传输层瞬时失败值得再要一次；鉴权、限流/冷却、本地预算
+# 耗尽再重试只会继续打供应商，必须原样上报。消费链统一用这个判据。
+RETRYABLE_ERROR_CODES = frozenset(
+    {"TIMEOUT", "UPSTREAM_TIMEOUT", "NETWORK_TIMEOUT", "NETWORK_ERROR", "EMPTY_UPSTREAM"}
+)
+
+
+def retryable_failure(error_code: str | None) -> bool:
+    """True only for transient transport failures that a caller may retry once."""
+
+    return str(error_code or "") in RETRYABLE_ERROR_CODES
 
 
 @dataclass(frozen=True)

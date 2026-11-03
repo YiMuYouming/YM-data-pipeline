@@ -895,13 +895,14 @@ class CoreRepairTests(unittest.TestCase):
         self.assertEqual("success", result["_meta"]["attempts"][1]["status"])
         self.assertEqual("fresh", result["_meta"]["freshness"]["status"])
 
-    def test_stocktoday_daily_budget_is_environment_configurable_without_default_5000_cap(self):
+    def test_stocktoday_budget_defaults_to_documented_limits_and_is_configurable(self):
+        # 2026-11-03（N01）：缺省改为文档口径的 80/分钟、18000/日；环境变量仍可覆盖。
         with tempfile.TemporaryDirectory() as tmp:
             budget_path = Path(tmp) / "budget.json"
             with patch.dict(os.environ, {}, clear=True):
                 default_budget = RequestBudget(budget_path)
-            self.assertEqual(0, default_budget.per_day)
-            self.assertEqual(0, default_budget.per_minute)
+            self.assertEqual(18000, default_budget.per_day)
+            self.assertEqual(80, default_budget.per_minute)
 
             with patch.dict(
                 os.environ,

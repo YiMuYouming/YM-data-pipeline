@@ -866,6 +866,10 @@ def classify(observation: Mapping[str, Any]) -> str:
     provenance = observation.get("provenance") if isinstance(observation.get("provenance"), Mapping) else {}
     http_status = provenance.get("http_status")
     upstream_code = provenance.get("upstream_code")
+    # 2026-11-03（N01）：网关的 403 正文可能是「IP 异常临时封禁」，此时适配器已
+    # 判为 RATE_LIMITED；按错误码优先，避免把供应商限流记成鉴权拒绝。
+    if error_code == "RATE_LIMITED":
+        return "rate_limited"
     if http_status in {401, 403}:
         return "auth_denied"
     if http_status == 429:
@@ -876,8 +880,6 @@ def classify(observation: Mapping[str, Any]) -> str:
         return "rate_limited"
     if error_code in {"AUTH_MISSING", "AUTH_STORAGE_UNAVAILABLE", "AUTH_DENIED"}:
         return "auth_denied"
-    if error_code in {"RATE_LIMITED"}:
-        return "rate_limited"
     if error_code in {"TIMEOUT"}:
         return "timeout"
     if error_code in {"INVALID_PARAMS"}:

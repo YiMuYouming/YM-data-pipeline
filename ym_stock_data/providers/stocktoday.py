@@ -37,7 +37,23 @@ from .stocktoday_catalog import API_PARAMS
 from .stocktoday_inventory import load_inventory
 
 ENDPOINT = "https://tushare.citydata.club"
+# 2026-11-03（N01）：文档口径的保守内缩限额是 80/分钟、18000/日（供应商 Skill 记
+# 100/20000，超限报「请求超限20000次」）。缺省必须生效——"不设上限"时本地预算日志
+# 一天登记过 4.4 万条；这是**本地登记量，不等于供应商成功调用量，也不等于已购额度**。
+# 显式环境变量覆盖仍然有效，"0" 是显式关闭。
+DEFAULT_PER_MINUTE = 80
+DEFAULT_PER_DAY = 18000
 DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-budget.sqlite3"
+# 预算库与冷却状态的落盘位置可显式指向隔离目录（测试/旁路诊断），不改变生产默认。
+BUDGET_PATH_ENV = "YM_STOCKTODAY_BUDGET_PATH"
+# 请求来源标签（如 tianyuan / bots / cli），只用于预算归属诊断；不入库凭据。
+REQUEST_SOURCE_ENV = "YM_STOCKTODAY_REQUEST_SOURCE"
+# 429/限流后的短冷却；403「IP 异常临时封禁」优先按网关给的预计解封时间，
+# 解析不到时保守取 15 分钟（样本：网关提示"预计14分钟后自动解封"）。
+VENDOR_COOLDOWN_SECONDS = 60
+VENDOR_IP_BAN_COOLDOWN_SECONDS = 900
+COOLDOWN_MIN_SECONDS = 60
+COOLDOWN_MAX_SECONDS = 3600
 # 板块成员按交易日缓存（审计回复 11 二.2：成员变动慢）。一天一个文件，
 # 盘上持久——provider 重启也命中，不是进程内存。
 BOARD_MEMBER_CACHE_ROOT = Path.home() / ".cache" / "ym-stock-data" / "board_members"
@@ -117,16 +133,72 @@ EXAMPLE_PARAMS = {
 }
 
 
+def default_budget_path() -> Path:
+    """Resolve the budget database path, allowing an explicit isolated directory."""
+
+    raw = os.getenv(BUDGET_PATH_ENV)
+    return Path(raw.strip()) if raw and raw.strip() else DEFAULT_BUDGET_PATH
+
+
+def request_source() -> str:
+    """Sanitized caller label for budget attribution (never a credential)."""
+
+    raw = os.getenv(REQUEST_SOURCE_ENV) or "unknown"
+    cleaned = re.sub(r"[^A-Za-z0-9_.:-]", "", raw)[:32]
+    return cleaned or "unknown"
+
+
+_WAIT_SECONDS_RE = re.compile(r"(\d{1,4})\s*(小时|分钟|分|秒)")
+_WAIT_UNIT_SECONDS = {"小时": 3600, "分钟": 60, "分": 60, "秒": 1}
+
+
+def _bounded_cooldown(seconds, *, fallback) -> int:
+    try:
+        value = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return fallback
+    return max(COOLDOWN_MIN_SECONDS, min(COOLDOWN_MAX_SECONDS, value))
+
+
+def _cooldown_seconds(message, response=None, *, default):
+    """Bound the vendor's own wait hint (Retry-After or "预计N分钟后"), else default."""
+
+    header = None
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        getter = getattr(headers, "get", None)
+        if callable(getter):
+            try:
+                header = getter("Retry-After")
+            except Exception:
+                header = None
+    if isinstance(header, str) and header.strip():
+        text = header.strip()
+        if text.isdigit():
+            return _bounded_cooldown(text, fallback=default)
+        try:
+            from email.utils import parsedate_to_datetime
+
+            parsed = parsedate_to_datetime(text)
+            return _bounded_cooldown(parsed.timestamp() - time.time(), fallback=default)
+        except (TypeError, ValueError, OverflowError):
+            pass
+    match = _WAIT_SECONDS_RE.search(str(message or ""))
+    if match:
+        return _bounded_cooldown(int(match.group(1)) * _WAIT_UNIT_SECONDS[match.group(2)], fallback=default)
+    return _bounded_cooldown(default, fallback=default)
+
+
 class RequestBudget:
     """Shared local ceiling, not a claim about the vendor's purchased quota."""
 
-    def __init__(self, path=DEFAULT_BUDGET_PATH, *, per_minute=None, per_day=None):
-        self.path = Path(path)
+    def __init__(self, path=None, *, per_minute=None, per_day=None):
+        self.path = default_budget_path() if path is None else Path(path)
         self.per_minute = self._limit_from_env(
-            "YM_STOCKTODAY_PER_MINUTE", 0
+            "YM_STOCKTODAY_PER_MINUTE", DEFAULT_PER_MINUTE
         ) if per_minute is None else per_minute
         self.per_day = self._limit_from_env(
-            "YM_STOCKTODAY_PER_DAY", 0
+            "YM_STOCKTODAY_PER_DAY", DEFAULT_PER_DAY
         ) if per_day is None else per_day
         if not isinstance(self.per_minute, int) or self.per_minute < 0:
             raise ValueError("per_minute must be a non-negative integer")
@@ -160,9 +232,24 @@ class RequestBudget:
         with lock:
             return self._acquire_locked(now, day_start)
 
+    # 2026-11-03（N01）：登记行补 pid/source 便于归属诊断；旧库只有 at 列，
+    # 迁移只做 ALTER ADD COLUMN，保留既有登记（不重置、不改历史时间）。
+    _REQUESTS_DDL = "CREATE TABLE IF NOT EXISTS requests (at REAL NOT NULL, pid INTEGER, source TEXT)"
+
+    @classmethod
+    def _ensure_requests_schema(cls, con):
+        con.execute(cls._REQUESTS_DDL)
+        columns = {row[1] for row in con.execute("PRAGMA table_info(requests)")}
+        if "pid" not in columns:
+            con.execute("ALTER TABLE requests ADD COLUMN pid INTEGER")
+        if "source" not in columns:
+            con.execute("ALTER TABLE requests ADD COLUMN source TEXT")
+
     def _acquire_locked(self, now, day_start):
+        source = request_source()
         with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
-            con.execute("CREATE TABLE IF NOT EXISTS requests (at REAL NOT NULL)")
+            self._ensure_requests_schema(con)
+            con.commit()
             con.execute("BEGIN IMMEDIATE")
             con.execute("DELETE FROM requests WHERE at < ?", (min(day_start, now - 60),))
             minute, day = con.execute(
@@ -173,7 +260,10 @@ class RequestBudget:
                 self.per_day and day >= self.per_day
             ):
                 return False
-            con.execute("INSERT INTO requests VALUES (?)", (now,))
+            con.execute(
+                "INSERT INTO requests (at, pid, source) VALUES (?, ?, ?)",
+                (now, os.getpid(), source),
+            )
         return True
 
     # Keyed by a token fingerprint so a new token (e.g. after a plan upgrade)
@@ -242,6 +332,99 @@ class RequestBudget:
             return 1.0
         return max(1.0, float(oldest + 60 - now))
 
+    def describe_refusal(self, *, now=None):
+        """Sanitized attribution for a refused acquire.
+
+        Reports which cap refused (minute/day), the current count and cap, the
+        requesting pid/source label, and the top sources in the current minute
+        window. Never includes the token, endpoint or upstream body.
+        """
+
+        now = time.time() if now is None else now
+        day_start = math.floor((now + 28800) / 86400) * 86400 - 28800
+        try:
+            with closing(sqlite3.connect(self.path, timeout=1)) as con:
+                self._ensure_requests_schema(con)
+                minute, day = con.execute(
+                    "SELECT COALESCE(SUM(at > ?),0), COALESCE(SUM(at >= ?),0) FROM requests",
+                    (now - 60, day_start),
+                ).fetchone()
+                try:
+                    rows = con.execute(
+                        "SELECT COALESCE(source, 'unknown'), COUNT(*) FROM requests "
+                        "WHERE at > ? GROUP BY COALESCE(source, 'unknown') "
+                        "ORDER BY COUNT(*) DESC, COALESCE(source, 'unknown') LIMIT 3",
+                        (now - 60,),
+                    ).fetchall()
+                except sqlite3.Error:
+                    rows = []
+                oldest = con.execute(
+                    "SELECT MIN(at) FROM requests WHERE at > ?", (now - 60,)
+                ).fetchone()[0]
+        except (OSError, sqlite3.Error):
+            return None
+        if self.per_day and day >= self.per_day:
+            # 日额度只能等下一个上海日界，不能用 60 秒窗口表达等待。
+            scope, used, cap, wait_seconds = "day", int(day), int(self.per_day), None
+        elif self.per_minute and minute >= self.per_minute:
+            # 真实滚动 60 秒：等到窗口内最早一条滑出才有一个名额。
+            wait = max(1.0, float(oldest) + 60 - now) if oldest is not None else 1.0
+            scope, used, cap, wait_seconds = "minute", int(minute), int(self.per_minute), round(wait, 3)
+        else:
+            return None
+        return {
+            "scope": scope,
+            "used": used,
+            "cap": cap,
+            "wait_seconds": wait_seconds,
+            "requester": {"pid": os.getpid(), "source": request_source()},
+            "minute_sources": [{"source": str(name), "count": int(count)} for name, count in rows],
+        }
+
+    # 2026-11-03（N01）：供应商侧限流/临时封禁的冷却，按 provider 作用域落盘。
+    # 与本地预算分开：冷却期间不发请求，但也不消耗本地额度。
+    # 读取失败必须向上抛：状态库损坏时按"未知"放行会继续打供应商，等同 fail open。
+    _COOLDOWN_DDL = "CREATE TABLE IF NOT EXISTS vendor_cooldown (scope TEXT PRIMARY KEY, until REAL NOT NULL)"
+
+    def cooldown_remaining(self, *, now=None, scope="stocktoday"):
+        """Seconds left in a vendor cooldown, or ``None`` when not cooling down.
+
+        Raises ``OSError``/``sqlite3.Error`` when the state store cannot be read,
+        so the caller fails closed instead of treating damage as "no cooldown".
+        """
+
+        now = time.time() if now is None else now
+        # 冷启动：父目录可能还不存在（acquire 的 mkdir 还没跑过）。缺目录是正常初始化，
+        # 不是状态库损坏；先补目录，连接/读取失败才向上抛（fail closed）。
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path, timeout=1)) as con:
+            con.execute(self._COOLDOWN_DDL)
+            row = con.execute(
+                "SELECT until FROM vendor_cooldown WHERE scope=?", (scope,)
+            ).fetchone()
+        if not row:
+            return None
+        remaining = float(row[0]) - now
+        return remaining if remaining > 0 else None
+
+    def start_cooldown(self, seconds, *, now=None, scope="stocktoday"):
+        """Extend the cooldown to the later deadline; concurrent callers cannot shorten it."""
+
+        now = time.time() if now is None else now
+        until = now + max(0.0, float(seconds))
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path, timeout=1)) as con, con:
+            con.execute(self._COOLDOWN_DDL)
+            con.execute(
+                "INSERT INTO vendor_cooldown (scope, until) VALUES (?, ?) "
+                "ON CONFLICT(scope) DO UPDATE SET until = MAX(vendor_cooldown.until, excluded.until)",
+                (scope, until),
+            )
+            row = con.execute(
+                "SELECT until FROM vendor_cooldown WHERE scope=?", (scope,)
+            ).fetchone()
+        return float(row[0]) if row else until
+
 
 def token_fingerprint(token) -> str:
     """First 8 hex chars of the token's SHA-256; never the token itself."""
@@ -249,6 +432,41 @@ def token_fingerprint(token) -> str:
     import hashlib
 
     return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()[:8]
+
+
+# 2026-11-03（N01）：网关对 403 会用正文表达「IP 异常临时封禁」，这属于供应商侧
+# 限流，不是 token 鉴权失败。分类只输出枚举，正文既不进结果也不进日志。
+_TEMPORARY_BAN_WORDS = ("封禁", "临时封", "ip异常", "ip 异常", "banned", "temporarily blocked")
+_RATE_WORDS = ("限流", "超限", "频率", "too many requests", "rate limit", "ratelimit")
+
+
+def _response_http_message(response, body) -> str:
+    """Best-effort sanitized message for classification; bounded and never stored."""
+
+    if isinstance(body, dict):
+        message = body.get("msg")
+        if isinstance(message, str) and message.strip():
+            return message[:512]
+    text = getattr(response, "text", "")
+    return text[:512] if isinstance(text, str) else ""
+
+
+# "IP" 在中文正文里两侧都是 CJK（\b 不算边界），只排除英文字母紧邻的假阳性。
+_IP_TOKEN_RE = re.compile(r"(?:^|[^a-z])ip(?:[^a-z]|$)", re.IGNORECASE)
+
+
+def _temporary_ip_ban(message) -> bool:
+    lowered = str(message or "").lower()
+    if any(word in lowered for word in _TEMPORARY_BAN_WORDS):
+        return True
+    return bool(_IP_TOKEN_RE.search(lowered)) and any(
+        word in lowered for word in ("异常", "限制", "禁止", "ban", "block")
+    )
+
+
+def _rate_limited_message(message) -> bool:
+    lowered = str(message or "").lower()
+    return any(word in lowered for word in _RATE_WORDS)
 
 
 # Plan-sensitive realtime APIs checked by `./ym-data stocktoday entitlement`.
@@ -644,7 +862,7 @@ class StockTodayProvider:
         *,
         token_loader=load_token,
         post=None,
-        budget_path=DEFAULT_BUDGET_PATH,
+        budget_path=None,
         budget=None,
         member_cache_root=BOARD_MEMBER_CACHE_ROOT,
         roster_cache_root=BOARD_ROSTER_CACHE_ROOT,
@@ -685,23 +903,46 @@ class StockTodayProvider:
         http_status=0,
         upstream_code=0,
         total_present=False,
+        extra=None,
     ):
+        provenance = self._provenance(
+            http_status=http_status,
+            upstream_code=upstream_code,
+            total_present=total_present,
+        )
+        if extra:
+            # Sanitized attribution only: never the token, URL or upstream body.
+            provenance.update(extra)
         return ProviderOutcome(
             self.name,
             status,
             error_code=code,
             latency_ms=int((self.clock.monotonic() - started) * 1000),
             auth={"required": True, "status": auth},
-            provenance=self._provenance(
-                http_status=http_status,
-                upstream_code=upstream_code,
-                total_present=total_present,
-            ),
+            provenance=provenance,
         )
 
     @staticmethod
     def _numeric_code(value):
         return value if type(value) is int else 0
+
+    def _start_cooldown(self, seconds, *, write_state=True):
+        """Remember a vendor-side cooldown; late responses never rewrite it.
+
+        Returns the deadline, or ``None`` when nothing was written.  A storage
+        failure is reported through provenance (``cooldown_persisted=False``)
+        instead of being silently dropped.
+        """
+
+        if not write_state or seconds <= 0:
+            return None, False
+        start = getattr(self.budget, "start_cooldown", None)
+        if start is None:
+            return None, False
+        try:
+            return start(seconds, now=self.clock.time(), scope=self.name), True
+        except (OSError, sqlite3.Error):
+            return None, False
 
     def _request_intraday_table(self, name, nested, *, timeout_sec):
         connect = min(1.0, max(.01, timeout_sec / 4))
@@ -719,9 +960,32 @@ class StockTodayProvider:
         not_entitled = getattr(self.budget, "not_entitled", None)
         if not_entitled is not None and not_entitled(name, now=self.clock.time(), token_fp=token_fp):
             return self._fail(started, "PLAN_NOT_ENTITLED", "incompatible")
+        # 供应商冷却期间直接失败：不发请求，也不消耗本地额度，避免限流时反复重试。
+        # 冷却状态读不出来时按预算不可用 fail closed，不能当作"无冷却"继续打上游。
+        cooling = getattr(self.budget, "cooldown_remaining", None)
+        if cooling is not None:
+            try:
+                remaining = cooling(now=self.clock.time(), scope=self.name)
+            except (OSError, sqlite3.Error):
+                return self._fail(started, "LOCAL_BUDGET_UNAVAILABLE", extra={"storage": "cooldown"})
+            if remaining:
+                return self._fail(
+                    started,
+                    "RATE_LIMITED",
+                    extra={
+                        "vendor_reason": "cooldown",
+                        "cooldown_remaining_sec": int(math.ceil(remaining)),
+                    },
+                )
         try:
             if not self.budget.acquire(now=self.clock.time()):
-                return self._fail(started, "LOCAL_BUDGET_EXHAUSTED")
+                describe = getattr(self.budget, "describe_refusal", None)
+                attribution = describe(now=self.clock.time()) if describe is not None else None
+                return self._fail(
+                    started,
+                    "LOCAL_BUDGET_EXHAUSTED",
+                    extra={"local_budget": attribution} if attribution else None,
+                )
         except (OSError, sqlite3.Error):
             return self._fail(started, "LOCAL_BUDGET_UNAVAILABLE")
         try:
@@ -746,14 +1010,40 @@ class StockTodayProvider:
             except (ValueError, TypeError):
                 body_json_error = True
             upstream_code = self._numeric_code(body.get("code")) if isinstance(body, dict) else 0
+            http_message = _response_http_message(response, body)
             if http_status == 429:
+                seconds = _cooldown_seconds(http_message, response, default=VENDOR_COOLDOWN_SECONDS)
+                _, persisted = self._start_cooldown(seconds, write_state=write_state)
                 return self._fail(
                     started,
                     "RATE_LIMITED",
                     http_status=http_status,
                     upstream_code=upstream_code,
+                    extra={
+                        "vendor_reason": "rate_limit",
+                        "cooldown_seconds": seconds,
+                        "cooldown_persisted": persisted,
+                    },
                 )
             if http_status in {401, 403}:
+                # 403 正文是「IP 异常临时封禁」时属于供应商限流（冷却），
+                # 只有真正的凭据/权限拒绝才是 AUTH_DENIED。
+                if http_status == 403 and _temporary_ip_ban(http_message):
+                    seconds = _cooldown_seconds(
+                        http_message, response, default=VENDOR_IP_BAN_COOLDOWN_SECONDS
+                    )
+                    _, persisted = self._start_cooldown(seconds, write_state=write_state)
+                    return self._fail(
+                        started,
+                        "RATE_LIMITED",
+                        http_status=http_status,
+                        upstream_code=upstream_code,
+                        extra={
+                            "vendor_reason": "ip_temporary_ban",
+                            "cooldown_seconds": seconds,
+                            "cooldown_persisted": persisted,
+                        },
+                    )
                 return self._fail(
                     started,
                     "AUTH_DENIED",
@@ -776,6 +1066,38 @@ class StockTodayProvider:
             if upstream_code != 0:
                 message = str(body.get("msg", ""))
                 lowered = message.lower()
+                # 先判限流/临时封禁：网关也会用业务码 + IP 封禁文案表达限流，
+                # 这类失败可冷却后重试，不能记成鉴权失败。
+                if _temporary_ip_ban(message):
+                    seconds = _cooldown_seconds(
+                        message, response, default=VENDOR_IP_BAN_COOLDOWN_SECONDS
+                    )
+                    _, persisted = self._start_cooldown(seconds, write_state=write_state)
+                    return self._fail(
+                        started,
+                        "RATE_LIMITED",
+                        http_status=http_status,
+                        upstream_code=upstream_code,
+                        extra={
+                            "vendor_reason": "ip_temporary_ban",
+                            "cooldown_seconds": seconds,
+                            "cooldown_persisted": persisted,
+                        },
+                    )
+                if _rate_limited_message(message) or upstream_code in {429, -429}:
+                    seconds = _cooldown_seconds(message, response, default=VENDOR_COOLDOWN_SECONDS)
+                    _, persisted = self._start_cooldown(seconds, write_state=write_state)
+                    return self._fail(
+                        started,
+                        "RATE_LIMITED",
+                        http_status=http_status,
+                        upstream_code=upstream_code,
+                        extra={
+                            "vendor_reason": "rate_limit",
+                            "cooldown_seconds": seconds,
+                            "cooldown_persisted": persisted,
+                        },
+                    )
                 if (
                     any(word in lowered for word in ("token", "权限", "积分", "认证"))
                     or upstream_code in {401, 403, 40203, -2001, -2002}
@@ -797,13 +1119,6 @@ class StockTodayProvider:
                         started,
                         "PLAN_NOT_ENTITLED",
                         "incompatible",
-                        http_status=http_status,
-                        upstream_code=upstream_code,
-                    )
-                if any(word in message for word in ("限流", "超限", "频率")) or upstream_code in {429, -429}:
-                    return self._fail(
-                        started,
-                        "RATE_LIMITED",
                         http_status=http_status,
                         upstream_code=upstream_code,
                     )

@@ -218,7 +218,8 @@ def _limit_metadata(provider, trade_date: str, *, diagnostics: dict | None = Non
                                    error_code="METADATA_REQUEST_FAILED",
                                    returned_count=0, matched_count=0, latency_ms=None)
             return {}
-        if outcome.error_code in {"AUTH_DENIED", "PLAN_NOT_ENTITLED", "AUTH_MISSING", "RATE_LIMITED"}:
+        if outcome.error_code in {"AUTH_DENIED", "PLAN_NOT_ENTITLED", "AUTH_MISSING", "RATE_LIMITED",
+                                  "LOCAL_BUDGET_EXHAUSTED", "LOCAL_BUDGET_UNAVAILABLE"}:
             break
         if outcome.status != "empty" or used >= attempts:
             break

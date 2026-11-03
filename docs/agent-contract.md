@@ -68,6 +68,21 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 空 `boards` 与缺少该容器不同。盘中全市场必需批次空报 `SNAPSHOT_BATCH_EMPTY`，
 整个复合意图为 error，保留最后正常值的决定仍由消费者执行。
 
+2026-11-03（N01）补充：`LOCAL_BUDGET_EXHAUSTED` / `LOCAL_BUDGET_UNAVAILABLE` 是本地
+预算或冷却状态库的失败，不是供应商返回；`RATE_LIMITED` 同时覆盖 429 与「IP 异常
+临时封禁」的 403，真正的 401/403 凭据拒绝仍是 `AUTH_DENIED`。这三类失败都不得
+重试。预算耗尽的 `provenance.local_budget`（scope/used/cap/requester）与限流的
+`provenance.vendor_reason`/`cooldown_seconds` 是脱敏归属字段，只新增、不改既有
+`http_status`/`upstream_code`/`total_present`。
+
+公共信封：`_meta.attempt_diagnostics[]` 的 `kind` 新增 `local_budget` 与
+`vendor_cooldown`；同时提供 `_meta.local_budget`（scope/used/cap/wait_seconds/
+requester/minute_sources）与 `_meta.vendor_cooldown`（vendor_reason/
+retry_after_seconds/cooldown_seconds/cooldown_persisted），均带 `provider`。
+`scope="day"` 严格优先于 `minute`，`wait_seconds` 是真实滚动 60 秒的等待；
+`_meta.reason_code` 中 `AUTH_*` 严格优先。字段不存在表示没有该类失败，不是 null。
+MW 侧契约见 `shared/implementation/2026-11-03-repairs/MW/pipeline-interface.md`。
+
 每个 degraded 信封必须带 `quality.reason_codes`。降级链保留先前失败码；
 StockToday 的 unknown/stale 时间、截断、缺代码、重复代码分别写
 `DATA_TIME_UNKNOWN`、`DATA_STALE`、`UPSTREAM_TRUNCATED`、`MISSING_CODES`、

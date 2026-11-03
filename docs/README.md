@@ -57,8 +57,9 @@
 
 2026-09-27 起 StockToday 为个股与全市场指标的核心源、腾讯为个股后备（REPAIR_PLAN v2）；
 当前套餐只含个股实时（`rt_k`、`rt_min`、`stk_limit`），指数由腾讯、板块由同花顺作首要源（2026-09-28 正式口径，
-加购后再评估切回）。本地预算由运行环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、
-`YM_STOCKTODAY_PER_DAY=18000`，详见 StockToday 文档。
+加购后再评估切回）。本地预算缺省即 80 次/分钟、18000 次/日，
+可用 `YM_STOCKTODAY_PER_MINUTE` / `YM_STOCKTODAY_PER_DAY` 显式覆盖，详见
+[StockToday 接入边界](STOCKTODAY.md)。
 
 ## 验收时必须读的字段
 

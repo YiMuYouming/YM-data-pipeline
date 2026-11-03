@@ -1,12 +1,16 @@
 """全局配置 — 服务器、缓存、API KEY 路径"""
 
+import os
 from pathlib import Path
 
 # 缓存目录
 CACHE_DIR = Path.home() / ".ym-stock-data" / "cache"
 
-# 跨进程 provider 健康与 breaker 状态
-PROVIDER_STATE_PATH = Path.home() / ".ym-stock-data" / "state" / "providers.sqlite3"
+# 跨进程 provider 健康与 breaker 状态。2026-11-03（N02）：允许显式指向隔离目录，
+# 使默认测试与旁路诊断不碰生产状态；缺省路径不变。
+PROVIDER_STATE_PATH = Path(
+    os.getenv("YM_PROVIDER_STATE_PATH") or (Path.home() / ".ym-stock-data" / "state" / "providers.sqlite3")
+)
 
 # PyTDX 服务器列表 (IP, port)
 PYTDX_SERVERS = [

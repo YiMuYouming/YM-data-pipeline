@@ -1048,6 +1048,11 @@ def annotate_failure_diagnostics(result: dict) -> dict:
         codes.extend(code for code in (quality.get("reason_codes") or [])
                      if isinstance(code, str))
         meta["reason_code"] = codes[0] if codes else None
+    # 2026-11-03 N01：鉴权失败严格优先于预算/限流诊断，预算耗尽不能盖住凭据问题。
+    auth_codes = [attempt.get("error_code") for attempt in meta["attempts"]
+                  if isinstance(attempt, dict) and attempt.get("error_code") in _AUTH_ERROR_CODES]
+    if auth_codes:
+        meta["reason_code"] = auth_codes[0]
     if "http_status" not in meta:
         statuses = [item.get("http_status") for item in (meta.get("attempt_diagnostics") or [])
                     if isinstance(item, dict) and type(item.get("http_status")) is int]
@@ -1366,25 +1371,107 @@ def _failure_quality(intent: str, params: dict, status: str, count: int) -> dict
     return quality
 
 
+_AUTH_ERROR_CODES = frozenset({"AUTH_MISSING", "AUTH_STORAGE_UNAVAILABLE", "AUTH_DENIED"})
+
+
+def _safe_int(value):
+    return value if type(value) is int else None
+
+
+def _safe_float(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return round(value, 3) if math.isfinite(value) else None
+
+
+def _safe_label(value, *, limit=32):
+    text = re.sub(r"[^A-Za-z0-9_.:-]", "", str(value or ""))[:limit]
+    return text or "unknown"
+
+
+def _budget_diagnostic(outcome: ProviderOutcome, budget: dict) -> dict:
+    """Sanitized local-budget attribution for the public envelope.
+
+    Only enumerated counters/labels leave the provider: no token, endpoint or
+    upstream body. ``provider`` always names the attempt that was refused, so a
+    later fallback success is never mistaken for the refused attempt's data.
+    """
+
+    sources = []
+    for item in budget.get("minute_sources") or []:
+        if isinstance(item, dict) and len(sources) < 3:
+            sources.append({"source": _safe_label(item.get("source")),
+                            "count": _safe_int(item.get("count")) or 0})
+    requester = budget.get("requester") if isinstance(budget.get("requester"), dict) else {}
+    scope = budget.get("scope") if budget.get("scope") in {"day", "minute"} else None
+    return {
+        "provider": outcome.provider,
+        "kind": "local_budget",
+        "status": outcome.status,
+        "error_code": outcome.error_code,
+        "scope": scope,
+        "used": _safe_int(budget.get("used")),
+        "cap": _safe_int(budget.get("cap")),
+        "wait_seconds": _safe_float(budget.get("wait_seconds")) if scope == "minute" else None,
+        "requester": {"pid": _safe_int(requester.get("pid")),
+                      "source": _safe_label(requester.get("source"))},
+        "minute_sources": sources,
+        "latency_ms": max(0, int(outcome.latency_ms)),
+    }
+
+
+def _cooldown_diagnostic(outcome: ProviderOutcome, provenance: dict) -> dict:
+    remaining = _safe_float(provenance.get("cooldown_remaining_sec"))
+    window = _safe_float(provenance.get("cooldown_seconds"))
+    return {
+        "provider": outcome.provider,
+        "kind": "vendor_cooldown",
+        "status": outcome.status,
+        "error_code": outcome.error_code,
+        "vendor_reason": _safe_label(provenance.get("vendor_reason")),
+        "retry_after_seconds": remaining if remaining is not None else window,
+        "cooldown_seconds": window,
+        "cooldown_persisted": provenance.get("cooldown_persisted") is True,
+        "latency_ms": max(0, int(outcome.latency_ms)),
+    }
+
+
 def _transport_diagnostic(outcome: ProviderOutcome) -> dict | None:
-    """Return structured transport-failure detail, if the provider reported one.
+    """Return structured attempt detail, if the provider reported one.
 
     2026-10-26 R3 item8a：只收集 kind=transport_failure（腾讯分钟 HTTP/传输失败），
     合法空（EMPTY_UPSTREAM）不进这里，保证两者不会混。
+    2026-11-03 N01：追加 local_budget / vendor_cooldown 两类脱敏诊断，供公共
+    `_meta` 直接消费；仍带 `provider`，不冒充当前成功数据。
     """
 
     provenance = outcome.provenance if isinstance(outcome.provenance, dict) else {}
-    if provenance.get("kind") != "transport_failure":
-        return None
-    return {
-        "provider": outcome.provider,
-        "status": outcome.status,
-        "error_code": outcome.error_code,
-        "error_type": provenance.get("error_type"),
-        "http_status": provenance.get("http_status"),
-        "elapsed_ms": provenance.get("elapsed_ms"),
-        "latency_ms": outcome.latency_ms,
-    }
+    if provenance.get("kind") == "transport_failure":
+        return {
+            "provider": outcome.provider,
+            "status": outcome.status,
+            "error_code": outcome.error_code,
+            "error_type": provenance.get("error_type"),
+            "http_status": provenance.get("http_status"),
+            "elapsed_ms": provenance.get("elapsed_ms"),
+            "latency_ms": outcome.latency_ms,
+        }
+    if isinstance(provenance.get("local_budget"), dict):
+        return _budget_diagnostic(outcome, provenance["local_budget"])
+    if provenance.get("vendor_reason"):
+        return _cooldown_diagnostic(outcome, provenance)
+    return None
+
+
+def _preferred_budget(diagnostics: list[dict]) -> dict | None:
+    """Day cap is strictly prior to the rolling minute window."""
+
+    for scope in ("day", "minute"):
+        for item in diagnostics:
+            if item.get("scope") == scope:
+                return item
+    return diagnostics[0] if diagnostics else None
 
 
 def _source_tier(
@@ -1704,12 +1791,20 @@ def _query_with(
     )
     if attempt_diagnostics:
         # 2026-10-26 R3 item8a：传输失败的可诊断信息（错误类型/HTTP 状态/耗时）。
+        # 2026-11-03 N01：同一列表也承载脱敏的预算/冷却诊断（每条都带 provider）。
         result["_meta"]["attempt_diagnostics"] = attempt_diagnostics
         reasons = result["_meta"]["quality"].setdefault("reason_codes", [])
         for item in attempt_diagnostics:
             code = item.get("error_code")
             if code and code not in reasons:
                 reasons.append(code)
+        budget_items = [item for item in attempt_diagnostics if item.get("kind") == "local_budget"]
+        if budget_items:
+            # Day cap 严格优先于滚动分钟窗口；provider 字段说明是哪一个尝试被拒。
+            result["_meta"]["local_budget"] = _preferred_budget(budget_items)
+        cooldown_items = [item for item in attempt_diagnostics if item.get("kind") == "vendor_cooldown"]
+        if cooldown_items:
+            result["_meta"]["vendor_cooldown"] = cooldown_items[-1]
     if call_params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
         # 只作审计标记，不改变 provider/quality/attempts 既有标记。
         result["_meta"]["evidence_use_case"] = call_params["use_case"]

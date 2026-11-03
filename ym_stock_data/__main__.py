@@ -16,6 +16,7 @@ from .acceptance import (
     validate_daily_acceptance,
 )
 from .api import query as canonical_query
+from .contracts import retryable_failure
 from .doctor import (
     collect_diagnostics,
     setup_pywencai,
@@ -220,6 +221,15 @@ def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
 
 
+def _retry_allowed(result: dict) -> bool:
+    """Retry only transient transport failures; rate limits and budgets must stop."""
+
+    meta = result.get("_meta") or {}
+    attempts = meta.get("attempts") or []
+    error_code = (attempts[-1] or {}).get("error_code") if attempts else None
+    return retryable_failure(error_code)
+
+
 def _collect_history(store, trade_date: str, normalize):
     responses = {}
     for kind in ("U", "D", "Z", "STEP"):
@@ -231,6 +241,8 @@ def _collect_history(store, trade_date: str, normalize):
                                       params={"trade_date": trade_date, "limit_type": kind}))
             if (result.get("_meta") or {}).get("status") in {"success", "empty"}:
                 break
+            if not _retry_allowed(result):
+                break
         responses[kind] = result
     return store.ingest_limits(trade_date, normalize(trade_date, responses))
 
@@ -241,6 +253,8 @@ def _collect_daily(store, trade_date: str):
         result = canonical_query("stocktoday_data", api_name="daily",
                                  params={"trade_date": trade_date}, max_rows=6000)
         if (result.get("_meta") or {}).get("status") == "success":
+            break
+        if not _retry_allowed(result):
             break
     return store.ingest_daily(trade_date, result)
 

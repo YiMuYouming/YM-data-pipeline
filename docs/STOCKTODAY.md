@@ -69,10 +69,37 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 
 ## 本地预算边界
 
-代码默认值仍为 `0`（不设上限）；限额只由运行环境设置。依据供应商 Skill 的
-100 次/分钟与 20000 次/日（超限报 `请求超限20000次`），本机 `.env` 与 Hermes
-服务环境设置 `YM_STOCKTODAY_PER_MINUTE=80`、`YM_STOCKTODAY_PER_DAY=18000`。
-上游返回的 429、限流或 breaker 状态仍会保留，跨进程预算锁也继续生效。
+代码缺省值就是文档口径的 **80 次/分钟、18000 次/日**（供应商 Skill 记 100/20000，
+超限报 `请求超限20000次`；缺省取更保守的一档）。环境变量 `YM_STOCKTODAY_PER_MINUTE`
+/ `YM_STOCKTODAY_PER_DAY`（兼容 `YIMU_` 前缀）可显式覆盖；写 `0` 是显式关闭上限，
+非法值回落到缺省而不是静默失守。跨进程计数在 SQLite 事务内完成，分钟窗口与上海
+日界（UTC+8 零点）都按真实时间判定；失败的请求同样计入额度（本地登记量**不等于**
+供应商成功调用量，也不等于已购额度）。
+
+- 预算库位置可用 `YM_STOCKTODAY_BUDGET_PATH` 指向隔离目录（测试、旁路诊断）；
+  旧库只做 `ALTER TABLE ADD COLUMN` 迁移，不清历史登记。
+- 预算耗尽的失败码是 `LOCAL_BUDGET_EXHAUSTED`。provider 的
+  `provenance.local_budget` 与公共 query 的 `_meta.local_budget` /
+  `_meta.attempt_diagnostics[kind=local_budget]` 都给出脱敏归属：`scope=minute|day`
+  （**日额度严格优先于分钟窗口**）、`used`、`cap`、`wait_seconds`（仅分钟：真实滚动
+  60 秒窗口内最早一条滑出的秒数，≥1 且 ≤60；日额度为 null）、`requester={pid,source}`
+  与当前分钟按来源的计数。来源标签由 `YM_STOCKTODAY_REQUEST_SOURCE` 显式提供
+  （如 `tianyuan`、`bots`、`cli`），不写凭据。公共契约见
+  `shared/implementation/2026-11-03-repairs/MW/pipeline-interface.md`。
+- 父目录不存在时首次使用会自动建目录（正常初始化）；只有文件存在却读不通才按
+  `LOCAL_BUDGET_UNAVAILABLE` fail closed。
+- 429 与「IP 异常临时封禁」这类 403 都是**供应商限流**，返回 `RATE_LIMITED` 并落盘
+  冷却：优先用 `Retry-After` 或正文「预计 N 分钟后解封」，解析不到时用保守默认
+  （限流 60 秒、临时封禁 15 分钟，夹在 60 秒~1 小时）；并发写冷却取较晚截止，
+  不会被后到的短冷却缩短。冷却期间不发请求、不消耗额度。
+- 真正的 401/403 鉴权失败仍是 `AUTH_DENIED`，不冷却、不缓存；公共信封的
+  `_meta.reason_code` 让鉴权失败严格优先于预算/限流诊断。冷却状态在
+  `_meta.vendor_cooldown`（provider、`vendor_reason`、`retry_after_seconds`、
+  `cooldown_seconds`、`cooldown_persisted`），预算在 `_meta.local_budget`；两者都
+  带 `provider`，不会冒充当前成功数据。冷却/预算状态库读不出来时按
+  `LOCAL_BUDGET_UNAVAILABLE` fail closed，不当作「无冷却」继续打上游。
+- 消费链只对传输层瞬时失败（`TIMEOUT`/`NETWORK_ERROR` 等）重试一次；限流、预算
+  与鉴权失败原样上报，不再重试。
 
 2026-09-27 实测（`shared/archive/research/ssot-audit-2026-09-27/raw/phase0/stocktoday_probe_20260927.txt`）：
 
