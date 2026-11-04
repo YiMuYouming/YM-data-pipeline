@@ -17,9 +17,34 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from ym_stock_data.__main__ import main
+from ym_stock_data.__main__ import main, _collect_daily
 from ym_stock_data.market_facts import MarketFactStore
 from tests.test_market_facts import limit_result, row
+
+
+class DailyCollectionCoverageTests(unittest.TestCase):
+    def test_daily_collection_requests_full_upstream_page_before_sealing(self):
+        """The vendor defaults to 5,000 rows even with a larger client max_rows."""
+        day = "20261104"
+        rows = [
+            {"ts_code": f"{index:06d}.SZ", "trade_date": day,
+             "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5,
+             "pre_close": 10.0, "pct_chg": 5.0, "vol": 100.0, "amount": 1000.0}
+            for index in range(5572)
+        ]
+
+        def daily_response(intent, **kwargs):
+            requested = kwargs["params"].get("limit", 5000)
+            return {"data": {"items": rows[:requested], "truncated": False,
+                             "total_present": False},
+                    "_meta": {"status": "success", "provider_used": "stocktoday",
+                              "fetched_at": "2026-11-04T20:00:00+08:00"}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = MarketFactStore(Path(directory) / "facts.sqlite3")
+            with patch("ym_stock_data.__main__.canonical_query", side_effect=daily_response):
+                receipt = _collect_daily(store, day)
+            self.assertEqual(5572, receipt["row_count"])
 
 
 def _stocktoday_result(day, up_rows):

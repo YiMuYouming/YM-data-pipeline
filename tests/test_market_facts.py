@@ -372,6 +372,15 @@ class MarketFactStoreTests(unittest.TestCase):
         self.assertEqual(report["style_inputs"]["昨日涨停家数3日均值"], 20.0)
         self.assertEqual(report["style_inputs"]["midcap_above_ma20_pct"], 25.0)
 
+        # Re-sealing the same provider facts is a new immutable revision, not
+        # extra turnover or a second bar on the same trading day.
+        self.store.ingest_daily("20260924", {
+            "data": {"items": items, "truncated": False, "total_present": False},
+            "_meta": {"status": "success", "provider_used": "stocktoday",
+                      "fetched_at": "2026-09-24T18:00:00+08:00"},
+        })
+        self.assertEqual(inputs, self.store.style_inputs("20260924"))
+
     def test_is_trading_day_formats(self):
         from datetime import date
         from ym_stock_data.trading_calendar import is_trading_day

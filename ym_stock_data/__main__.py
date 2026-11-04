@@ -251,7 +251,9 @@ def _collect_daily(store, trade_date: str):
     result = None
     for _ in range(2):
         result = canonical_query("stocktoday_data", api_name="daily",
-                                 params={"trade_date": trade_date}, max_rows=6000)
+                                 # max_rows only limits local decoding; the vendor
+                                 # defaults to 5,000 unless its page limit is explicit.
+                                 params={"trade_date": trade_date, "limit": 6000}, max_rows=6000)
         if (result.get("_meta") or {}).get("status") == "success":
             break
         if not _retry_allowed(result):

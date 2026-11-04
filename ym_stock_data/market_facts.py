@@ -630,6 +630,7 @@ class MarketFactStore:
                 FROM daily_runs r
                 JOIN daily_rows d ON r.id = d.run_id
                 WHERE r.trade_date <= ?
+                  AND r.id IN (SELECT MAX(id) FROM daily_runs GROUP BY trade_date)
                 GROUP BY r.trade_date
                 ORDER BY r.trade_date DESC
                 LIMIT 20
@@ -700,6 +701,7 @@ class MarketFactStore:
                 FROM daily_runs r
                 JOIN daily_rows d ON r.id = d.run_id
                 WHERE r.trade_date = ?
+                  AND r.id = (SELECT MAX(id) FROM daily_runs WHERE trade_date = r.trade_date)
                 ORDER BY d.amount_thousand_cny DESC
                 LIMIT 100
                 """,
@@ -718,6 +720,7 @@ class MarketFactStore:
                     FROM daily_runs r
                     JOIN daily_rows d ON r.id = d.run_id
                     WHERE r.trade_date IN ({placeholders_w}) AND d.code IN ({placeholders_c})
+                      AND r.id IN (SELECT MAX(id) FROM daily_runs GROUP BY trade_date)
                     ORDER BY r.trade_date ASC
                     """,
                     (*recent_20_days, *cohort_codes),
