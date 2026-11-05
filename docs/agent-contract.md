@@ -79,6 +79,9 @@ StockToday 的 A 股实时报价 observation 与统一质量门共用同一交�
 `vendor_cooldown`；同时提供 `_meta.local_budget`（scope/used/cap/wait_seconds/
 requester/minute_sources）与 `_meta.vendor_cooldown`（vendor_reason/
 retry_after_seconds/cooldown_seconds/cooldown_persisted），均带 `provider`。
+实际收到上游拒绝时另带 `http_status`、`upstream_code`、`wait_source`
+（`retry_after`、`message` 或 `default`）和 `vendor_wait_seconds`。
+供应商没有可解析的等待提示时，`vendor_wait_seconds` 为 `null`。
 `scope="day"` 严格优先于 `minute`，`wait_seconds` 是真实滚动 60 秒的等待；
 `_meta.reason_code` 中 `AUTH_*` 严格优先。字段不存在表示没有该类失败，不是 null。
 MW 侧契约见 `shared/implementation/2026-11-03-repairs/MW/pipeline-interface.md`。
@@ -208,6 +211,9 @@ empty，不表示全市场无板块。`member_coverage` 由持有成员证据的
 - **不得**把请求日、缓存标签或 `fetched_at` 赋给 `_meta.data_as_of`；
   消费者不得用缓存标签认证成员新鲜或历史成员。真实历史成员**无法验收**。
 - `data.data_as_of` 为**兼容保留**，语义仅是缓存分组标签，不是成员生效日。
+- `min_fetched_at` 可选，接收带时区的 ISO 8601 时间。它只限制允许复用的缓存；
+  取数后仍须按每个板块自己的 `fetched_at` 判断采集时间。批次失败保留错误结果，
+  已成功分片写入同日缓存，续跑只补缺失或早于要求的板块。
 - 新增 `requested_trade_date`（请求日语义）与 `cache_trade_date`（缓存键语义），
   两者分开命名，避免与观测时点混淆。
 - `_quality_failure_code` 对 `board_members` 的既有豁免不变：成员按交易日缓存，

@@ -91,7 +91,7 @@ _ALLOWED_PARAMS = {
     "realtime_market": frozenset({"use_case"}),
     "sector_index": frozenset({"codes", "names"}),
     "concept_index": frozenset({"codes", "names"}),
-    "board_members": frozenset({"codes", "trade_date"}),
+    "board_members": frozenset({"codes", "trade_date", "min_fetched_at"}),
     # 反查只收 codes/names：没有日期参数——成员关系是"当前名册"，真实生效日 unknown。
     "stock_boards": frozenset({"codes", "names"}),
     "board_daily_kline": frozenset({"codes", "start_date", "end_date"}),
@@ -373,7 +373,7 @@ def _validate_params(intent: str, params: dict) -> None:
             raise ValueError("market_board_strength board_ids must be a list")
         params["board_ids"] = [str(b) for b in (board_ids or [])] or None
     elif intent == "board_members":
-        # 只收 codes（成员查询没有按板块名走的通道，见 intent_registry 注释）。
+        # 成员查询按 codes 取板块，没有按板块名走的通道。
         # 板块码的形状检查是**第二道**闸（K1）：行业 881、概念六个实测前缀，
         # 类型判据在数据源侧（ths_index 的 type 字段）；这里挡的是把个股码
         # （600519）当板块码传进来。允许带 .TI 后缀——ths_index 返回的就是
@@ -399,6 +399,17 @@ def _validate_params(intent: str, params: dict) -> None:
                     r"\d{4}-\d{2}-\d{2}|\d{8}", day):
                 raise ValueError("board_members trade_date must use YYYYMMDD")
             params["trade_date"] = _normalize_ymd(day)
+        cutoff = params.get("min_fetched_at")
+        if cutoff is not None:
+            parsed = None
+            try:
+                if isinstance(cutoff, str):
+                    parsed = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+            if parsed is None or parsed.tzinfo is None:
+                raise ValueError("board_members min_fetched_at must use an ISO 8601 timestamp with a timezone")
+            params["min_fetched_at"] = parsed.isoformat()
     elif intent == "stock_boards":
         # 反查（R3/7c）：codes 是个股六位码（可带 SH/SZ/BJ 前后缀），names 是板块名。
         # 两个方向至少给一个；形状检查只挡形状，不判"这只票有没有行业"——那是数据的事。
@@ -1424,7 +1435,7 @@ def _budget_diagnostic(outcome: ProviderOutcome, budget: dict) -> dict:
 def _cooldown_diagnostic(outcome: ProviderOutcome, provenance: dict) -> dict:
     remaining = _safe_float(provenance.get("cooldown_remaining_sec"))
     window = _safe_float(provenance.get("cooldown_seconds"))
-    return {
+    result = {
         "provider": outcome.provider,
         "kind": "vendor_cooldown",
         "status": outcome.status,
@@ -1435,6 +1446,15 @@ def _cooldown_diagnostic(outcome: ProviderOutcome, provenance: dict) -> dict:
         "cooldown_persisted": provenance.get("cooldown_persisted") is True,
         "latency_ms": max(0, int(outcome.latency_ms)),
     }
+    wait_source = provenance.get("wait_source")
+    if wait_source in ("retry_after", "message", "default"):
+        result.update({
+            "http_status": _safe_int(provenance.get("http_status")),
+            "upstream_code": _safe_int(provenance.get("upstream_code")),
+            "wait_source": wait_source,
+            "vendor_wait_seconds": _safe_int(provenance.get("vendor_wait_seconds")),
+        })
+    return result
 
 
 def _transport_diagnostic(outcome: ProviderOutcome) -> dict | None:

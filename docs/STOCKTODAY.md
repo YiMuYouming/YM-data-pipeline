@@ -90,7 +90,8 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
   `LOCAL_BUDGET_UNAVAILABLE` fail closed。
 - 429 与「IP 异常临时封禁」这类 403 都是**供应商限流**，返回 `RATE_LIMITED` 并落盘
   冷却：优先用 `Retry-After` 或正文「预计 N 分钟后解封」，解析不到时用保守默认
-  （限流 60 秒、临时封禁 15 分钟，夹在 60 秒~1 小时）；并发写冷却取较晚截止，
+  （限流 60 秒、临时封禁 15 分钟）。本地最少等 60 秒，超过一小时的有效提示按原时长执行。
+  并发写冷却取较晚截止，
   不会被后到的短冷却缩短。冷却期间不发请求、不消耗额度。
 - 真正的 401/403 鉴权失败仍是 `AUTH_DENIED`，不冷却、不缓存；公共信封的
   `_meta.reason_code` 让鉴权失败严格优先于预算/限流诊断。冷却状态在
@@ -98,6 +99,10 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
   `cooldown_seconds`、`cooldown_persisted`），预算在 `_meta.local_budget`；两者都
   带 `provider`，不会冒充当前成功数据。冷却/预算状态库读不出来时按
   `LOCAL_BUDGET_UNAVAILABLE` fail closed，不当作「无冷却」继续打上游。
+- 网关实际拒绝的响应会在 `_meta.vendor_cooldown` 补充 HTTP 状态、业务码、
+  `wait_source` 与 `vendor_wait_seconds`。预算库的 `vendor_cooldown_events` 同步
+  保留脱敏事件（时间、PID、来源标签、状态码、拒绝类型和等待秒数），写入新事件时
+  清理七天以前的旧记录。缓存冷却直接拦下的调用不计入拒绝事件。
 - 消费链只对传输层瞬时失败（`TIMEOUT`/`NETWORK_ERROR` 等）重试一次；限流、预算
   与鉴权失败原样上报，不再重试。
 

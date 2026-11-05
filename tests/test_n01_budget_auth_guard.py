@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from email.utils import formatdate
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -128,6 +130,32 @@ class DefaultLimitTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             provider = StockTodayProvider(token_loader=lambda: SECRET, post=Mock())
         self.assertEqual(st.DEFAULT_BUDGET_PATH, provider.budget.path)
+
+    def test_request_source_defaults_to_known_entrypoints(self):
+        cases = {
+            "scripts/build_next_day_plan.py": "mw-c6",
+            "/workspace/tianyuan/src/tianyuan/web/server.py": "tianyuan-web",
+            "/workspace/tianyuan/src/tianyuan/live.py": "tianyuan-live",
+            "/workspace/DailyBriefing/scripts/run_current_a_share_query.py": "ymintel-a-share",
+            "/workspace/live-dashboard/scripts/bridge.py": "live-dashboard",
+            "/workspace/.venv/bin/ym-data": "ym-data-cli",
+            "/workspace/.venv/bin/pytest": "pytest",
+            "/unrelated/scripts/bridge.py": "unknown",
+        }
+        with patch.dict(os.environ, {}, clear=True):
+            for entrypoint, source in cases.items():
+                with self.subTest(entrypoint=entrypoint), patch.object(sys, "argv", [entrypoint]):
+                    self.assertEqual(source, st.request_source())
+            with patch.object(Path, "cwd", return_value=Path("/workspace/live-dashboard")):
+                with patch.object(sys, "argv", ["scripts/bridge.py"]):
+                    self.assertEqual("live-dashboard", st.request_source())
+
+    def test_explicit_request_source_preserves_sanitization_and_priority(self):
+        with patch.object(sys, "argv", ["scripts/build_next_day_plan.py"]):
+            with patch.dict(os.environ, {st.REQUEST_SOURCE_ENV: "mw-check /A"}, clear=True):
+                self.assertEqual("mw-checkA", st.request_source())
+            with patch.dict(os.environ, {st.REQUEST_SOURCE_ENV: " 无效 "}, clear=True):
+                self.assertEqual("unknown", st.request_source())
 
 
 class BoundaryTests(unittest.TestCase):
@@ -366,19 +394,45 @@ class CooldownDurationTests(unittest.TestCase):
         self.assertEqual("cooldown", blocked.provenance["vendor_reason"])
         self.assertEqual(1, self.transport.call_count)
 
-    def test_retry_after_header_is_parsed_and_bounded(self):
+    def test_retry_after_header_is_preserved_past_one_hour(self):
         response = _response(429)
         response.headers = {"Retry-After": "120"}
         self.transport.return_value = response
         self.assertEqual(120, self._call().provenance["cooldown_seconds"])
 
-        self.budget.start_cooldown(1, now=self.clock._now, scope="stocktoday")  # 清到最短也不影响
         self.budget = RequestBudget(Path(self.path.parent) / "b.sqlite3", per_minute=0, per_day=0)
-        self.clock = _Clock(_shanghai_ts(2026, 11, 3, 10, 0, 0))
         response = _response(429)
-        response.headers = {"Retry-After": "99999"}
+        response.headers = {"Retry-After": "7200"}
         self.transport.return_value = response
-        self.assertEqual(3600, self._call().provenance["cooldown_seconds"])
+        self.assertEqual(7200, self._call().provenance["cooldown_seconds"])
+        self.budget = RequestBudget(self.budget.path, per_minute=0, per_day=0)
+        self.clock._now += 3601
+        blocked = self._call()
+        self.assertEqual(3599, blocked.provenance["cooldown_remaining_sec"])
+        self.assertEqual(2, self.transport.call_count)
+
+    def test_retry_after_http_date_uses_the_provider_clock(self):
+        response = _response(429)
+        response.headers = {"Retry-After": formatdate(self.clock.time() + 7201, usegmt=True)}
+        self.transport.return_value = response
+        self.assertEqual(7201, self._call().provenance["cooldown_seconds"])
+
+    def test_rejection_is_kept_without_response_body_or_credential(self):
+        self.transport.return_value = _response(
+            403, payload={"code": 1, "msg": f"IP异常，临时封禁，预计2小时后解封 {SECRET}"})
+        with patch.dict(os.environ, {st.REQUEST_SOURCE_ENV: "n01-first-hop"}):
+            result = self._call()
+        self.assertEqual(7200, result.provenance["cooldown_seconds"])
+        self.clock._now += 61
+        self.assertEqual("cooldown", self._call().provenance["vendor_reason"])
+
+        with sqlite3.connect(self.path) as con:
+            rows = con.execute(
+                "SELECT source, http_status, upstream_code, reason, wait_source, wait_seconds "
+                "FROM vendor_cooldown_events"
+            ).fetchall()
+        self.assertEqual([("n01-first-hop", 403, 1, "ip_temporary_ban", "message", 7200)], rows)
+        self.assertNotIn(SECRET.encode(), self.path.read_bytes())
 
     def test_unknown_ban_wait_uses_conservative_default(self):
         self.transport.return_value = _response(403, text="IP异常，临时封禁")
@@ -559,6 +613,9 @@ class PublicDiagnosticsTests(unittest.TestCase):
         self.assertEqual("stocktoday", cooldown["provider"])
         self.assertEqual("ip_temporary_ban", cooldown["vendor_reason"])
         self.assertEqual(840, cooldown["retry_after_seconds"])
+        self.assertEqual(403, cooldown["http_status"])
+        self.assertEqual("message", cooldown["wait_source"])
+        self.assertEqual(840, cooldown["vendor_wait_seconds"])
         self.assertNotIn(SECRET, json.dumps(result))
 
     def _fallback_snapshot(self, *, clock, quote_time, filename="fallback.sqlite3"):

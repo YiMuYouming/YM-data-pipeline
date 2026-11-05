@@ -17,10 +17,12 @@ import json
 import socket
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from ym_stock_data import api, query
+from ym_stock_data.contracts import TZ_SHANGHAI
 from ym_stock_data.provider_policy import CompiledPolicy
 from ym_stock_data.provider_state import ProviderState
 from ym_stock_data.providers.base import ProviderOutcome
@@ -146,6 +148,14 @@ class ZhujianP2Base(unittest.TestCase):
 
 class IndexKlineCsIStandardizationTests(ZhujianP2Base):
     """R-A：index_kline 接受显式 .CSI 后缀，经 index_daily 标准化。"""
+
+    def setUp(self):
+        super().setUp()
+        replayed_at = datetime(2026, 10, 16, 18, tzinfo=TZ_SHANGHAI)
+        clock = patch.object(api, "_now_shanghai", return_value=replayed_at)
+        clock.start()
+        self.addCleanup(clock.stop)
+        self.provider.clock = Mock(time=replayed_at.timestamp, monotonic=lambda: 0.0)
 
     def test_csi_suffix_is_accepted_and_routed_to_index_daily(self):
         sealed = _sealed("index_daily_000985_csi.json")

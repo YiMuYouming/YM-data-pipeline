@@ -134,7 +134,7 @@ _SPECS = (
         # 只收 codes：ths_member 没有按板块名查的参数，ths_index 的按名查询
         # 在线实测返回空——给 names 留一条走不通的路比不给更坏。
         required=("codes",),
-        optional=("codes", "trade_date"),
+        optional=("codes", "trade_date", "min_fetched_at"),
     ),
     IntentSpec(
         "stock_boards",

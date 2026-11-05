@@ -98,11 +98,20 @@ class BoardMembersApiTests(unittest.TestCase):
             pipeline_api._validate_params(
                 "board_members", {"codes": ["881121"], "trade_date": "昨天"})
 
+    def test_minimum_fetch_time_requires_timezone(self):
+        with self.assertRaisesRegex(ValueError, "with a timezone"):
+            pipeline_api._validate_params(
+                "board_members", {"codes": ["881121"], "min_fetched_at": "2026-10-02T15:00:00"})
+        params = {"codes": ["881121"], "min_fetched_at": "2026-10-02T07:00:00Z"}
+        pipeline_api._validate_params("board_members", params)
+        self.assertEqual("2026-10-02T07:00:00+00:00", params["min_fetched_at"])
+
 
 class BoardMembersAdapterTests(unittest.TestCase):
     """适配器：后缀归一、逐板块取数、按交易日缓存、data_as_of。"""
 
-    def _provider(self, rows_by_board, *, cache_root, calls=None):
+    def _provider(self, rows_by_board, *, cache_root, calls=None,
+                  fetched_at="2026-10-02T21:00:00+08:00"):
         from ym_stock_data.providers import stocktoday as st
 
         provider = st.StockTodayProvider(
@@ -112,10 +121,13 @@ class BoardMembersAdapterTests(unittest.TestCase):
             if calls is not None:
                 calls.append((name, dict(nested)))
             code = str(nested.get("ts_code") or "")
+            if isinstance(rows_by_board.get(code), str):
+                return st.ProviderOutcome(
+                    "stocktoday", "error", error_code=rows_by_board[code])
             return st.ProviderOutcome(
                 "stocktoday", "success" if code in rows_by_board else "empty",
                 data={"items": rows_by_board.get(code, []), "_stocktoday": {}},
-                fetched_at="2026-10-02T21:00:00+08:00", latency_ms=1)
+                fetched_at=fetched_at, latency_ms=1)
 
         provider._request_table = _fake_request_table
         return provider
@@ -228,6 +240,47 @@ class BoardMembersAdapterTests(unittest.TestCase):
         self.assertEqual("error", out.status)
         self.assertEqual("UPSTREAM_ERROR", out.error_code)
         self.assertFalse((Path(tmp) / "20260930.json").exists())
+
+    def test_interrupted_batch_resumes_only_missing_boards(self):
+        rows = {
+            "881121.TI": _member_rows("881121.TI", ["000011.SZ"]),
+            "881155.TI": "RATE_LIMITED",
+        }
+        params = {"codes": ["881121", "881155"], "trade_date": "20261002"}
+        with TemporaryDirectory() as tmp:
+            first = self._provider(rows, cache_root=tmp).call("board_members", params)
+            self.assertEqual("RATE_LIMITED", first.error_code)
+            self.assertIsNone(first.data)
+            rows["881155.TI"] = _member_rows("881155.TI", ["600789.SH"])
+            calls = []
+            second = self._provider(
+                rows, cache_root=tmp, calls=calls,
+                fetched_at="2026-10-02T22:00:00+08:00",
+            ).call("board_members", {
+                **params, "min_fetched_at": "2026-10-02T15:00:00+08:00",
+            })
+
+        self.assertEqual(["881155.TI"], [p["ts_code"] for _, p in calls])
+        self.assertEqual(["881121", "881155"], [b["board_id"] for b in second.data["boards"]])
+        self.assertEqual("2026-10-02T21:00:00+08:00", second.data["boards"][0]["fetched_at"])
+        self.assertEqual("unknown", second.data["membership_time_status"])
+
+    def test_minimum_fetch_time_refreshes_only_older_cache_entries(self):
+        rows = {"881121.TI": _member_rows("881121.TI", ["000011.SZ"])}
+        params = {"codes": ["881121"], "trade_date": "20261002"}
+        calls = []
+        with TemporaryDirectory() as tmp:
+            self._provider(
+                rows, cache_root=tmp, calls=calls, fetched_at="2026-10-02T14:00:00+08:00",
+            ).call("board_members", params)
+            provider = self._provider(rows, cache_root=tmp, calls=calls)
+            cutoff = {**params, "min_fetched_at": "2026-10-02T07:00:00Z"}
+            refreshed = provider.call("board_members", cutoff)
+            cached = provider.call("board_members", cutoff)
+
+        self.assertEqual(2, len(calls))
+        self.assertEqual("2026-10-02T21:00:00+08:00", refreshed.data["boards"][0]["fetched_at"])
+        self.assertEqual(refreshed.data, cached.data)
 
 
 class BoardMembersNormalizerTests(unittest.TestCase):
