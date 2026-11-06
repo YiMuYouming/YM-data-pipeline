@@ -467,6 +467,17 @@ class CooldownDurationTests(unittest.TestCase):
         with sqlite3.connect(self.path) as con:
             self.assertEqual(3, con.execute("SELECT COUNT(*) FROM requests").fetchone()[0])
 
+    def test_realtime_path_ignores_preparation_clock_without_opt_in(self):
+        self.transport.return_value = _response(
+            200, payload={"code": 0, "data": [{"ts_code": "600519.SH"}]})
+        with patch.dict(os.environ), patch.object(st, "_last_paced_request_at", 0.0):
+            os.environ.pop("YM_STOCKTODAY_REQUEST_INTERVAL_SECONDS", None)
+            provider = self._provider()
+            for _ in range(2):
+                result = provider._request_intraday_table("rt_k", {"ts_code": "600519.SH"}, timeout_sec=4)
+                self.assertEqual("success", result.status)
+        self.assertEqual(2, self.transport.call_count)
+
     def test_concurrent_cooldowns_never_shorten_the_deadline(self):
         start = _shanghai_ts(2026, 11, 3, 10, 0, 0)
         self.budget.start_cooldown(840, now=start, scope="stocktoday")
