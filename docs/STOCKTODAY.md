@@ -76,6 +76,10 @@ Agent 不读取私有 inventory、不调用私有模块、不拼接 provider fal
 日界（UTC+8 零点）都按真实时间判定；失败的请求同样计入额度（本地登记量**不等于**
 供应商成功调用量，也不等于已购额度）。
 
+Market Watch 的独立备料进程使用 `YM_STOCKTODAY_REQUEST_INTERVAL_SECONDS=2`，按
+`mw-review-prep` 标记来源。该变量缺省为 0；开启后同一进程的 StockToday 实际请求
+串行并按起始时间留间隔，跨意图和适配器实例共用节奏，继续使用现有共享预算账本。
+
 - 预算库位置可用 `YM_STOCKTODAY_BUDGET_PATH` 指向隔离目录（测试、旁路诊断）；
   旧库只做 `ALTER TABLE ADD COLUMN` 迁移，不清历史登记。
 - 预算耗尽的失败码是 `LOCAL_BUDGET_EXHAUSTED`。provider 的

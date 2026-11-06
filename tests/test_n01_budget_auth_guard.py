@@ -438,6 +438,35 @@ class CooldownDurationTests(unittest.TestCase):
         self.transport.return_value = _response(403, text="IP异常，临时封禁")
         self.assertEqual(900, self._call().provenance["cooldown_seconds"])
 
+    def test_preparation_spaces_wire_requests_using_the_shared_budget(self):
+        clock = Mock()
+        elapsed = 0.0
+        starts = []
+
+        def sleep(seconds):
+            nonlocal elapsed
+            elapsed += seconds
+
+        clock.time = lambda: self.clock.time() + elapsed
+        clock.monotonic = lambda: elapsed
+        clock.sleep = sleep
+
+        def post(*args, **kwargs):
+            starts.append(elapsed)
+            sleep(0.25)
+            return _response(200, payload={"code": 0, "data": [{"ts_code": "600519.SH"}]})
+
+        with patch.dict(os.environ, {"YM_STOCKTODAY_REQUEST_INTERVAL_SECONDS": "2"}), \
+             patch.object(st, "_last_paced_request_at", None):
+            for _ in range(3):
+                # Public query constructs a fresh provider for each intent call.
+                provider = StockTodayProvider(token_loader=lambda: SECRET, post=post,
+                                              budget=self.budget, clock=clock)
+                self.assertEqual("success", provider._request_table("daily", {"ts_code": "600519.SH"}).status)
+        self.assertEqual([0.0, 2.0, 4.0], starts)
+        with sqlite3.connect(self.path) as con:
+            self.assertEqual(3, con.execute("SELECT COUNT(*) FROM requests").fetchone()[0])
+
     def test_concurrent_cooldowns_never_shorten_the_deadline(self):
         start = _shanghai_ts(2026, 11, 3, 10, 0, 0)
         self.budget.start_cooldown(840, now=start, scope="stocktoday")

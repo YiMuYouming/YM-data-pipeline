@@ -51,6 +51,9 @@ DEFAULT_BUDGET_PATH = Path.home() / ".cache" / "ym-stock-data" / "stocktoday-bud
 BUDGET_PATH_ENV = "YM_STOCKTODAY_BUDGET_PATH"
 # 请求来源标签（如 tianyuan / bots / cli），只用于预算归属诊断；不入库凭据。
 REQUEST_SOURCE_ENV = "YM_STOCKTODAY_REQUEST_SOURCE"
+REQUEST_INTERVAL_ENV = "YM_STOCKTODAY_REQUEST_INTERVAL_SECONDS"
+_PACED_REQUEST_LOCK = threading.Lock()
+_last_paced_request_at = None
 _REQUEST_SOURCE_ENTRYPOINTS = {
     "scripts/build_next_day_plan.py": "mw-c6",
     "scripts/board_evidence_collect.py": "mw-board-evidence",
@@ -926,6 +929,9 @@ class StockTodayProvider:
         self.code_board_cache_root = Path(code_board_cache_root)
         self.industry_basic_cache_root = Path(industry_basic_cache_root)
         self.clock = clock or time
+        self.request_interval = float(os.getenv(REQUEST_INTERVAL_ENV) or "0")
+        if not math.isfinite(self.request_interval) or self.request_interval < 0:
+            raise ValueError(f"{REQUEST_INTERVAL_ENV} must be finite and non-negative")
 
     def probe(self):
         try:
@@ -1007,7 +1013,21 @@ class StockTodayProvider:
         connect = min(1.0, max(.01, timeout_sec / 4))
         return self._request_table(name, nested, timeout=(connect, max(.01, timeout_sec-connect)))
 
-    def _request_table(self, name, nested, *, fields="", max_rows=MAX_ROWS, diagnostic=False, timeout=None, write_state=True):
+    def _request_table(self, name, nested, **options):
+        if not self.request_interval:
+            return self._request_table_unpaced(name, nested, **options)
+        # Public query may construct a provider for each intent. The worker
+        # shares one serial wire slot across all of those instances.
+        with _PACED_REQUEST_LOCK:
+            if _last_paced_request_at is not None:
+                remaining = self.request_interval - (self.clock.monotonic() - _last_paced_request_at)
+                if remaining > 0:
+                    self.clock.sleep(remaining)
+            return self._request_table_unpaced(name, nested, **options)
+
+    def _request_table_unpaced(self, name, nested, *, fields="", max_rows=MAX_ROWS,
+                              diagnostic=False, timeout=None, write_state=True):
+        global _last_paced_request_at
         started = self.clock.monotonic()
         try:
             token = self.token_loader()
@@ -1049,6 +1069,8 @@ class StockTodayProvider:
             return self._fail(started, "LOCAL_BUDGET_UNAVAILABLE")
         try:
             wire_params = {**nested, "ts_type_name": f"{ENDPOINT}/"}
+            if self.request_interval:
+                _last_paced_request_at = self.clock.monotonic()
             response = self.post(
                 f"{ENDPOINT}/{name}",
                 json={"api_name": name, "token": token, "params": wire_params, "fields": fields},
