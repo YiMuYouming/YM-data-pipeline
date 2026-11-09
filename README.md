@@ -81,7 +81,7 @@ Hermes 看板经公共 `market_facts` intent 读取同一环境的独立事实�
 | --- | --- | --- |
 | `realtime_market` | 指数、成交额、涨跌家数 | 无 |
 | `sector_index` | 行业板块 | `names` / `codes` |
-| `stock_snapshot` | 个股行情与均线快照 | `codes` |
+| `stock_snapshot` | 个股行情与均线快照 | `codes`；可选成对 `quote_age_policy="wall_clock"`, `max_quote_age_seconds=180` |
 | `stock_kline` | 个股 K 线 | `code`, `period`, `count` |
 | `stocktoday_data` | 显式 StockToday 只读数据集 | `api_name`, `params`, `fields`, `max_rows` |
 | `review_sentiment` | 无 `query`：市场宽度与情绪（读 indicators）；有 `query`：显式研究筛选 | `query`, `limit`, `expected_row_shape`, `expected_count`, `date`, `lang`, `version` |
@@ -175,6 +175,20 @@ V3 `_meta` 的 `pipeline_version`、`route_policy_version`、`source_tier` 和
 消费者不得自行改序。
 
 ### 新鲜度与降级
+
+需要按自然时间拒绝旧报价的消费者可显式调用：
+`query("stock_snapshot", codes=["600519"], quote_age_policy="wall_clock", max_quote_age_seconds=180)`。
+这两个参数必须成对提供，阈值为非负整数（不接受 bool）；仅支持 `stock_snapshot`。
+严格模式要求 `YYYY-MM-DD[T或空格]HH:MM:SS` 的完整源日期时间（可带微秒及
+`Z`/`±HH:MM` 时区；无时区沿用上海时间），纯日期、缺时刻及其他分隔符不接受。
+StockToday严格模式保留选中源时刻原文，不先补秒或改写分隔符。补齐集合只列最终保留的
+后备行；响应后过期而被剔除的代码在补齐回执记录拒绝原因。
+严格模式不扣午休，源时点必须属于当前交易日且不晚于校验时间，恰好 180 秒允许、
+超过即拒绝。缺失或不合格代码仍由既有腾讯路线补齐，后备也须满足相同阈值；
+不能补齐时保留错误/缺失，不返回旧行。`quote_time` 保持源值，`lag_sec` 与
+`_meta.freshness` 均按自然秒，后者带 `age_policy="wall_clock"` 和调用方阈值；
+`data_as_of` 是保留报价中最早的真实源时点，`fetched_at` 仍仅是接收时间。
+未提供这两个参数时，既有交易时段计龄、路由和其他消费者行为保持不变。
 
 `_meta.fetched_at` 只是接收时间；`_meta.data_as_of` 是数据自身时间，`_meta.freshness`
 按它计算：盘中 ≤180 秒 `fresh`（显示“约 N 分钟前”，不算降级）、180–600 秒 `aging`、

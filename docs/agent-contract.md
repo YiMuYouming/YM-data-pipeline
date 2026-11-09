@@ -11,6 +11,29 @@ Agent / Skill 的唯一数据入口是 `from ym_stock_data import query` 与仓�
 
 ## 公共 API 与契约
 
+`stock_snapshot` 可选成对参数 `quote_age_policy="wall_clock"` 与
+`max_quote_age_seconds=<非负整数>`；bool、float、NaN、负值、未知策略、缺少另一参数
+或用于其他 intent 均抛 `ValueError`，不调用 provider。参数由管道消费，绝不透传上游。
+该模式从响应返回后的时间按自然秒逐行检查：源 `quote_time` 必须显式含完整日期与
+秒级时刻，形如 `YYYY-MM-DD[T或空格]HH:MM:SS`（可带1–6位小数秒及 `Z`/`±HH:MM`
+时区，无时区沿用上海时间）；纯日期、紧凑日期、缺时刻、非标准分隔符皆拒绝。
+行校验、lag_sec与严格data_as_of共用此解析，不通过日级解析器补00:00或15:00。
+公共层仅对StockToday快照适配器设置受限内部标记 `_strict_quote_time=True`，使其
+保留实际选中 `updated_at` / `trade_time` 原文；避免适配器宽松解析先补秒或正规化分隔符。
+标记不进入远端请求，不向其他provider传递；默认适配输出保持。最终重验剔除后备行时，
+`filled_by_fallback` / `fill_attempt.filled` 仅列实际保留代码，`fill_attempt.rejected`
+记录最终拒绝；真实请求status保留，最终无后备行时移除 `FILLED_BY_FALLBACK`。
+源时点必须属于当前
+交易日、非未来且年龄不超过阈值（等于允许），午休不暂停。主源、逐码补齐及整批
+后备均执行同一限制；不能补齐的行删除并保留错误/缺失与覆盖率，最终返回前再次
+检查，防止请求期间其他行刚过期。`source="stocktoday"` 也不能绕过严格校验，
+仍遵守显式单源、不补后备的既有边界。
+`quote_time` 不改写，`_meta.data_as_of` 保留真实最早源时点，`lag_sec` 与
+`freshness.age_sec` 为自然秒；`freshness.age_policy="wall_clock"`、
+`freshness.max_age_sec` 使用调用方阈值，`fetched_at` 只是接收时间。
+无显式参数时保持默认交易时段计龄和既有阈值，不改变通用日历及其他 intent。
+离线公共入口回归：`tests/test_snapshot_wall_clock.py`。
+
 新代码只调用 `query(intent, **params)`，不得直接 import `ym_stock_data.sources` 或 `ym_stock_data.v2`。结果统一使用 contract 1.0：`data` 加 `_meta`，其中必须保留 `status`、真实 `provider_used`、完整 `attempts`、`quality`、`fetched_at` 与稳定错误码。
 
 正常、合法空集和失败都只由 canonical `build_result` 构造。参数验证发生在任何 provider 调用前。合法空集是否继续由各 RouteSpec 的 `empty_policy` 决定；带显式 `query` 的 `review_sentiment` 按 `continue_until_exhausted` 策略继续穷尽自然语言 screener，顺序固定为 OpenAPI → pywencai → TDX screener → 专用 Wind `stock_data.search_stocks`。`pytdx_screener` 只保留为实验性显式 provider，不进入 canonical 自动降级链，也不进入正式 live gate。Wind 必须使用 `wind_screener` 专名并严格验证 tabular `Wind代码`，不得借泛化 `wind_mcp` 扩展其它 intent。穷尽不保证有结果。畸形 payload、无效空响应、route 外 provenance、鉴权或 provider 错误必须形成可审计 attempt 并按兼容路由继续。

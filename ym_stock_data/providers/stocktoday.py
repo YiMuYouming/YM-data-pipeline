@@ -2804,7 +2804,11 @@ class StockTodayProvider:
                 if not row or type(row.get("close")) not in (float, int) or not math.isfinite(row["close"]) or row["close"] <= 0:
                     continue
                 price, previous = row["close"], row.get("pre_close")
-                vendor_stamp = _timestamp(row.get("updated_at")) or _timestamp(row.get("trade_time"))
+                vendor_value = row.get("updated_at")
+                vendor_stamp = _timestamp(vendor_value)
+                if vendor_stamp is None:
+                    vendor_value = row.get("trade_time")
+                    vendor_stamp = _timestamp(vendor_value)
                 try:
                     timestamp, corrected = _session_time(vendor_stamp) if vendor_stamp else (None, False)
                 except TradeCalendarUnavailable:
@@ -2820,7 +2824,8 @@ class StockTodayProvider:
                     "amount": row.get("amount"),
                     "amount_wan": row["amount"] / 10000 if row.get("amount") is not None else None,
                     "volume": row.get("vol"),
-                    "quote_time": timestamp.isoformat() if timestamp else None,
+                    "quote_time": (vendor_value if params.get("_strict_quote_time") is True
+                                   else timestamp.isoformat() if timestamp else None),
                     "source": self.name,
                 }
                 if corrected:

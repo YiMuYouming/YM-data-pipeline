@@ -8,6 +8,7 @@ import math
 import queue
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, time as datetime_time, timedelta
 from typing import Callable
 
@@ -99,7 +100,7 @@ _ALLOWED_PARAMS = {
     "market_board_strength": frozenset(
         {"trade_date", "board_ids", "definitions", "member_coverage"}
     ),
-    "stock_snapshot": frozenset({"codes", "source", "use_case"}),
+    "stock_snapshot": frozenset({"codes", "source", "use_case", "quote_age_policy", "max_quote_age_seconds"}),
     "stock_kline": frozenset(
         {"code", "period", "count", "source", "adjustment", "use_case", "start_date", "end_date"}
     ),
@@ -316,6 +317,12 @@ def _validate_params(intent: str, params: dict) -> None:
     if intent in {"stock_snapshot", "stock_kline"} and "source" in params:
         validate_source(intent, params)
     if intent == "stock_snapshot":
+        age_params = {"quote_age_policy", "max_quote_age_seconds"}
+        if age_params.intersection(params):
+            if not age_params.issubset(params) or params["quote_age_policy"] != "wall_clock":
+                raise ValueError("quote age requires quote_age_policy='wall_clock' and max_quote_age_seconds")
+            if type(params["max_quote_age_seconds"]) is not int or params["max_quote_age_seconds"] < 0:
+                raise ValueError("max_quote_age_seconds must be a non-negative integer")
         codes = params.get("codes")
         if isinstance(codes, str):
             codes = [codes]
@@ -879,6 +886,16 @@ def _parse_fact_datetime(value: object) -> datetime | None:
     return parsed.replace(tzinfo=TZ_SHANGHAI) if parsed.tzinfo is None else parsed.astimezone(TZ_SHANGHAI)
 
 
+def _parse_strict_quote_datetime(value: object) -> datetime | None:
+    """A quote needs an explicit calendar date and time through seconds."""
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?",
+        value.strip(),
+    ):
+        return None
+    return _parse_fact_datetime(value)
+
+
 def _now_shanghai() -> datetime:
     return datetime.now(TZ_SHANGHAI)
 
@@ -912,7 +929,8 @@ def _fetch_time_failure(stamp: datetime, now: datetime, max_age_sec: int) -> str
 
 
 def _snapshot_row_failure(
-    requested: str, row: object, now: datetime, max_age_sec: int
+    requested: str, row: object, now: datetime, max_age_sec: int,
+    quote_age_policy: str | None = None,
 ) -> str | None:
     """Canonical quote contract for one requested code."""
 
@@ -933,9 +951,17 @@ def _snapshot_row_failure(
     for field in ("volume", "amount"):
         if not _finite_number(row.get(field)) or float(row[field]) < 0:
             return "QUALITY_SNAPSHOT_FIELDS"
-    quote_time = _parse_fact_datetime(row.get("quote_time"))
+    parse_quote = _parse_strict_quote_datetime if quote_age_policy == "wall_clock" else _parse_fact_datetime
+    quote_time = parse_quote(row.get("quote_time"))
     if quote_time is None:
         return "QUALITY_SNAPSHOT_FIELDS"
+    if quote_age_policy == "wall_clock":
+        try:
+            valid_day = is_trading_day(now.date()) and quote_time.date() == now.date()
+        except TradeCalendarUnavailable:
+            return "QUALITY_TRADE_CALENDAR_UNAVAILABLE"
+        age = (now - quote_time).total_seconds()
+        return "QUALITY_SNAPSHOT_STALE" if not valid_day or age < 0 or age > max_age_sec else None
     return _market_fact_time_failure(
         quote_time, now, max_age_sec, "QUALITY_SNAPSHOT_STALE"
     )
@@ -966,8 +992,9 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
     if not isinstance(data, dict):
         return None
     if intent == "stock_snapshot":
+        parse_quote = _parse_strict_quote_datetime if params.get("quote_age_policy") == "wall_clock" else _stamp_from
         stamps = [
-            _stamp_from(row.get("quote_time"))
+            parse_quote(row.get("quote_time"))
             for code in params.get("codes", [])
             for row in [data.get(code)]
             if isinstance(row, dict)
@@ -975,6 +1002,8 @@ def _data_as_of(intent: str, params: dict, data: object) -> datetime | None:
         stamps = [stamp for stamp in stamps if stamp is not None]
         if not stamps:
             return None
+        if params.get("quote_age_policy") == "wall_clock":
+            return min(stamps)
         try:
             return min(session_data_time(stamp)[0] for stamp in stamps)
         except TradeCalendarUnavailable:
@@ -1079,9 +1108,20 @@ def _data_freshness(
     from .contracts import unknown_freshness
 
     if stamp is None:
-        return unknown_freshness(max_age_sec)
+        freshness = unknown_freshness(max_age_sec)
+        if intent == "stock_snapshot" and params.get("quote_age_policy") == "wall_clock":
+            freshness["age_policy"] = "wall_clock"
+        return freshness
     now = _now_shanghai()
     result = {"age_sec": None, "max_age_sec": max_age_sec, "basis": "data_as_of"}
+    if intent == "stock_snapshot" and params.get("quote_age_policy") == "wall_clock":
+        age = (now - stamp).total_seconds()
+        try:
+            valid_day = is_trading_day(now.date()) and stamp.date() == now.date()
+        except TradeCalendarUnavailable:
+            return {**unknown_freshness(max_age_sec), "age_policy": "wall_clock"}
+        return {**result, "age_policy": "wall_clock", "age_sec": max(0, int(age)),
+                "status": "fresh" if valid_day and 0 <= age <= max_age_sec else "stale"}
     if intent in _REALTIME_TIERED:
         try:
             age = market_fact_age_seconds(stamp, now)
@@ -1144,9 +1184,11 @@ def _fill_snapshot_codes(
     """
 
     now = _now_shanghai()
+    age_policy = params.get("quote_age_policy")
+    fill_age = max_age_sec if age_policy == "wall_clock" else NORMAL_DATA_AGE_SEC
     needs = [
         code for code in params["codes"]
-        if _snapshot_row_failure(code, data.get(code), now, NORMAL_DATA_AGE_SEC) is not None
+        if _snapshot_row_failure(code, data.get(code), now, fill_age, age_policy) is not None
     ]
     report = {"provider": "tencent", "requested": needs, "filled": [],
               "status": None, "error_code": None}
@@ -1158,20 +1200,27 @@ def _fill_snapshot_codes(
                                       error_code=_safe_error_code(type(error).__name__, "PROVIDER_ERROR"))
         report["status"], report["error_code"] = outcome.status, outcome.error_code
         rows = outcome.data if outcome.status == "success" and isinstance(outcome.data, dict) else {}
+        if age_policy == "wall_clock":
+            now = _now_shanghai()
         for code in needs:
             row = rows.get(code)
-            if _snapshot_row_failure(code, row, now, max_age_sec) is None:
+            if _snapshot_row_failure(code, row, now, max_age_sec, age_policy) is None:
                 data[code] = {**row, "source": "tencent"}
                 report["filled"].append(code)
     for code in params["codes"]:
-        if _snapshot_row_failure(code, data.get(code), now, max_age_sec) is not None:
+        failure = _snapshot_row_failure(code, data.get(code), now, max_age_sec, age_policy)
+        if failure is not None:
+            if age_policy == "wall_clock":
+                report.setdefault("rejected", {})[code] = failure
             data.pop(code, None)
             continue
         # H20 #9：保留下来的行带 lag_sec（取数时刻减行情时点，午休不计），滞后不再只能靠肉眼比分钟线
-        quote_time = _parse_fact_datetime(data[code].get("quote_time")) if isinstance(data.get(code), dict) else None
+        parse_quote = _parse_strict_quote_datetime if age_policy == "wall_clock" else _parse_fact_datetime
+        quote_time = parse_quote(data[code].get("quote_time")) if isinstance(data.get(code), dict) else None
         if quote_time is not None:
             try:
-                lag = market_fact_age_seconds(quote_time, now)
+                lag = ((now - quote_time).total_seconds() if age_policy == "wall_clock"
+                       else market_fact_age_seconds(quote_time, now))
             except TradeCalendarUnavailable:
                 lag = None
             if lag is not None:
@@ -1214,6 +1263,7 @@ def _quality_failure_code(
     if intent == "stocktoday_data" or (
         intent in {"stock_snapshot", "stock_kline"}
         and params.get("source") == "stocktoday"
+        and params.get("quote_age_policy") != "wall_clock"
     ):
         # Explicit source/dataset calls retain the provider observation so
         # callers can see stale/unknown/filter-degraded semantics directly.
@@ -1260,10 +1310,13 @@ def _quality_failure_code(
         # contract below.  StockToday as the routed primary may miss or age
         # individual codes: those are filled per code from Tencent afterwards,
         # so only an all-invalid batch fails here.
-        tolerant = outcome.provider == "stocktoday"
+        tolerant = outcome.provider == "stocktoday" and not (
+            params.get("source") == "stocktoday" and params.get("quote_age_policy") == "wall_clock"
+        )
         valid_rows = 0
         for requested in params["codes"]:
-            failure = _snapshot_row_failure(requested, data.get(requested), now, max_age_sec)
+            failure = _snapshot_row_failure(requested, data.get(requested), now, max_age_sec,
+                                            params.get("quote_age_policy"))
             if failure is None:
                 valid_rows += 1
             elif not tolerant:
@@ -1531,6 +1584,8 @@ def _query_with(
         compiled_policy = load_compiled_policy()
     spec: RouteSpec = compiled_policy.route(intent, call_params)
     _validate_params(intent, call_params)
+    if call_params.get("quote_age_policy") == "wall_clock":
+        spec = replace(spec, max_age_sec=call_params["max_quote_age_seconds"])
     attempts: list[ProviderAttempt] = []
     # 2026-10-26 R3 item8a：传输类失败的诊断信息单独保留。
     # attempts 仍严格保持四字段（provider/status/error_code/latency_ms），
@@ -1565,6 +1620,12 @@ def _query_with(
             # The use-case is a pipeline-owned routing profile, not a
             # provider selector.  Do not leak it into adapter payloads.
             provider_params.pop("use_case", None)
+            provider_params.pop("quote_age_policy", None)
+            provider_params.pop("max_quote_age_seconds", None)
+            if (provider_name == "stocktoday" and intent == "stock_snapshot"
+                    and call_params.get("quote_age_policy") == "wall_clock"):
+                # Adapter-only: preserve the selected raw source time before canonical validation.
+                provider_params["_strict_quote_time"] = True
             if (
                 provider_name == "pytdx"
                 and intent == "stock_snapshot"
@@ -1768,6 +1829,10 @@ def _query_with(
             ]
             if missing_after:
                 reasons.extend(sorted(coverage_codes))
+                if call_params.get("quote_age_policy") == "wall_clock":
+                    final_status = "degraded"
+                    final_quality["status"] = "partial"
+                    reasons.extend(sorted(set(fill_report.get("rejected", {}).values())))
             final_quality["reason_codes"] = reasons
             if fill_report["filled"]:
                 final_quality["reason_codes"] = sorted(
@@ -1775,6 +1840,40 @@ def _query_with(
                 )
             if not missing_after and final_quality.get("status") == "partial":
                 final_quality["status"] = "normal"
+    if (intent == "stock_snapshot" and call_params.get("quote_age_policy") == "wall_clock"
+            and isinstance(data, dict)):
+        # Final check also covers whole-route fallback and time spent filling other rows.
+        now = _now_shanghai()
+        rejected = {}
+        for code in call_params["codes"]:
+            failure = _snapshot_row_failure(code, data.get(code), now, spec.max_age_sec, "wall_clock")
+            if failure is not None:
+                rejected[code] = failure
+                data.pop(code, None)
+                continue
+            if isinstance(data.get(code), dict):
+                quote_time = _parse_strict_quote_datetime(data[code].get("quote_time"))
+                if quote_time is not None:
+                    data[code]["lag_sec"] = max(0, int((now - quote_time).total_seconds()))
+        if rejected and final_quality is not None:
+            requested_count = len(call_params["codes"])
+            final_quality.update(status="partial", requested_count=requested_count,
+                                 returned_count=requested_count - len(rejected),
+                                 missing=list(rejected), missing_count=len(rejected),
+                                 coverage=round((requested_count - len(rejected)) / requested_count, 6))
+            final_quality["reason_codes"] = sorted(set(final_quality.get("reason_codes") or [])
+                                                    | set(rejected.values()) | {"MISSING_CODES"})
+            final_status = "degraded"
+            observation = data.get("_stocktoday")
+            if isinstance(observation, dict):
+                observation["missing_codes"] = list(rejected)
+        if fill_report is not None:
+            fill_report["filled"] = [code for code in fill_report["filled"] if code in data]
+            if rejected:
+                fill_report.setdefault("rejected", {}).update(rejected)
+            if not fill_report["filled"] and final_quality is not None:
+                final_quality["reason_codes"] = [code for code in final_quality.get("reason_codes", [])
+                                                 if code != "FILLED_BY_FALLBACK"]
     stamp = _data_as_of(intent, call_params, data) if provider_used else None
     quality = final_quality or _failure_quality(
         intent, call_params, final_status, final_count
@@ -1806,7 +1905,8 @@ def _query_with(
         ),
         policy_evidence_sha256=policy_evidence_sha256,
         policy_status=policy_status,
-        data_as_of=stamp.isoformat(timespec="seconds") if stamp else None,
+        data_as_of=(stamp.isoformat() if call_params.get("quote_age_policy") == "wall_clock"
+                    else stamp.isoformat(timespec="seconds")) if stamp else None,
         freshness=_data_freshness(intent, call_params, stamp, spec.max_age_sec),
     )
     if attempt_diagnostics:
