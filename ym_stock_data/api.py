@@ -1777,7 +1777,8 @@ def _query_with(
                 error_code=_safe_error_code(type(error).__name__, "PROVIDER_ERROR"),
             )
         if (request_deadline is not None and time.monotonic() >= request_deadline
-                and outcome.error_code != "QUERY_BUDGET_EXCEEDED"):
+                # A handoff delay cannot turn a local no-work refusal into started work.
+                and outcome.error_code not in {"QUERY_BUDGET_EXCEEDED", "REQUEST_INFLIGHT", "REQUEST_START_FAILED"}):
             outcome = ProviderOutcome(provider_name, "timeout", error_code="QUERY_BUDGET_EXCEEDED",
                                       provenance={"request_budget": {"requested": True}})
         if request_deadline is not None and outcome.error_code in {"QUERY_BUDGET_EXCEEDED", "REQUEST_INFLIGHT", "REQUEST_START_FAILED"}:

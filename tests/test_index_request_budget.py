@@ -20,6 +20,7 @@ class IndexRequestBudgetTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 11, 16, 10, 0, tzinfo=TZ_SHANGHAI)
         self.calls = []
+        self.loads = []
         self.releases = []
         self.workers = []
         self.actions = {}
@@ -48,6 +49,7 @@ class IndexRequestBudgetTests(unittest.TestCase):
             self.assertFalse(worker.is_alive(), "test worker leaked")
 
     def loader(self, name):
+        self.loads.append(name)
         if threading.current_thread() is not threading.main_thread():
             self.workers.append(threading.current_thread())
         action = self.actions.get((name, "load"))
@@ -273,6 +275,87 @@ class IndexRequestBudgetTests(unittest.TestCase):
         with patch.object(api, "_bounded_provider_call", wraps=api._bounded_provider_call) as bounded:
             query("index_intraday_compare", period="15m")
         self.assertEqual({}, bounded.call_args.kwargs)
+
+    def test_busy_refusal_handoff_before_and_after_deadline_preserves_no_work(self):
+        self.providers = ("tencent",)
+        entered, _ = self.block("tencent")
+        self.request()
+        self.assertTrue(entered.is_set())
+        self.providers = ("tencent", "eastmoney_index")
+        original = api._bounded_provider_call
+        for handed_at in (100.5, 102.0):
+            with self.subTest(handed_at=handed_at):
+                elapsed = [100.0]
+                initial_loads = len(self.loads)
+
+                def handoff(*args, handed_at=handed_at, elapsed=elapsed, **kwargs):
+                    outcome = original(*args, **kwargs)
+                    if args[1] == "tencent":
+                        self.assertEqual("REQUEST_INFLIGHT", outcome.error_code)
+                        self.assertFalse(outcome.provenance["request_budget"]["requested"])
+                        elapsed[0] = handed_at
+                    return outcome
+
+                with patch.object(api.time, "monotonic", side_effect=lambda elapsed=elapsed: elapsed[0]), \
+                        patch.object(api, "_bounded_provider_call", side_effect=handoff):
+                    result = self.request(budget=1)
+                self.assertEqual("REQUEST_INFLIGHT", result["_meta"]["attempts"][0]["error_code"])
+                self.assertFalse(result["_meta"]["attempt_diagnostics"][0]["requested"])
+                self.assertEqual(1, self.loads.count("tencent"))
+                if handed_at < 101:
+                    self.assertEqual(initial_loads + 1, len(self.loads))
+                    self.assertEqual("eastmoney_index", result["_meta"]["provider_used"])
+                    self.assertEqual(3200, result["data"]["上证指数"])
+                else:
+                    self.assertEqual(initial_loads, len(self.loads))
+                    self.assertIsNone(result["data"])
+                    self.assertFalse(result["_meta"]["attempt_diagnostics"][-1]["requested"])
+
+    def test_start_refusal_handoff_before_and_after_deadline_preserves_no_work(self):
+        original = api._bounded_provider_call
+        for handed_at in (100.5, 102.0):
+            with self.subTest(handed_at=handed_at):
+                elapsed = [100.0]
+                attempts = []
+
+                def handoff(*args, handed_at=handed_at, elapsed=elapsed, attempts=attempts, **kwargs):
+                    attempts.append(args[1])
+                    outcome = original(*args, **kwargs)
+                    self.assertEqual("REQUEST_START_FAILED", outcome.error_code)
+                    self.assertFalse(outcome.provenance["request_budget"]["requested"])
+                    elapsed[0] = handed_at
+                    return outcome
+
+                with patch.object(api.time, "monotonic", side_effect=lambda elapsed=elapsed: elapsed[0]), \
+                        patch.object(api, "_bounded_provider_call", side_effect=handoff), \
+                        patch.object(api.threading.Thread, "start", side_effect=RuntimeError("SECRET")):
+                    result = self.request(budget=1)
+                self.assertEqual("REQUEST_START_FAILED", result["_meta"]["attempts"][0]["error_code"])
+                self.assertFalse(result["_meta"]["attempt_diagnostics"][0]["requested"])
+                self.assertEqual([], self.loads)
+                self.assertEqual(2 if handed_at < 101 else 1, len(attempts))
+                self.assertIsNone(result["data"])
+                self.assertNotIn("SECRET", json.dumps(result))
+        self.assertEqual("tencent", self.request()["_meta"]["provider_used"])
+
+    def test_started_source_handoff_after_deadline_still_discards_real_result(self):
+        elapsed = [100.0]
+        original = api._bounded_provider_call
+
+        def handoff(*args, **kwargs):
+            outcome = original(*args, **kwargs)
+            self.assertEqual("success", outcome.status)
+            elapsed[0] = 102.0
+            return outcome
+
+        with patch.object(api.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                patch.object(api, "_bounded_provider_call", side_effect=handoff):
+            result = self.request(budget=1)
+        self.assertEqual(["tencent"], self.loads)
+        self.assertEqual("QUERY_BUDGET_EXCEEDED", result["_meta"]["attempts"][0]["error_code"])
+        self.assertTrue(result["_meta"]["attempt_diagnostics"][0]["requested"])
+        self.assertIsNone(result["data"])
+        self.assertIsNone(result["_meta"]["provider_used"])
 
 
 if __name__ == "__main__":
