@@ -89,7 +89,7 @@ INDUSTRY_CODE_PREFIX = "881"
 _ALLOWED_PARAMS = {
     "market_facts": frozenset({"trade_date"}),
     "stocktoday_data": frozenset({"api_name", "params", "fields", "max_rows"}),
-    "realtime_market": frozenset({"use_case"}),
+    "realtime_market": frozenset({"use_case", "request_budget_seconds"}),
     "sector_index": frozenset({"codes", "names"}),
     "concept_index": frozenset({"codes", "names"}),
     "board_members": frozenset({"codes", "trade_date", "min_fetched_at"}),
@@ -132,6 +132,7 @@ _ALLOWED_PARAMS = {
             "start_date",
             "end_date",
             "adjustment",
+            "request_budget_seconds",
         }
     ),
     "index_intraday_compare": frozenset({"trade_date", "period", "use_case"}),
@@ -198,6 +199,8 @@ _COMPARE_PROVIDER_SECONDS = (3.0, 7.0, 4.0)
 _COMPARE_BREAKER_SECONDS = 60
 _compare_failures: dict[str, int] = {}
 _compare_lock = threading.Lock()
+_request_inflight: dict[tuple[str, str], object] = {}
+_request_inflight_lock = threading.Lock()
 
 
 def _compare_key(provider: str) -> str:
@@ -223,9 +226,84 @@ def _compare_record(provider: str, *, success: bool, state: ProviderState) -> No
         )
 
 
-def _bounded_provider_call(provider: object, provider_name: str, intent: str, params: dict, seconds: float):
-    """Bound this read-only comparison without waiting for a stuck upstream call."""
+def _bounded_provider_call(
+    provider: object, provider_name: str, intent: str, params: dict, seconds: float,
+    *, request_deadline: float | None = None,
+    provider_loader: Callable[[str], object] | None = None,
+):
+    """Bound a read; optional index requests retain their slot until work ends.
+
+    The comparison path deliberately keeps its existing independent behavior.
+    A timed-out request cannot cancel upstream work, share its result, or free
+    its provider/intent slot before that work has actually finished.
+    """
     result: queue.Queue = queue.Queue(maxsize=1)
+
+    if request_deadline is not None:
+        key = (provider_name, intent)
+        token = object()
+        started = time.monotonic()
+        requested = threading.Event()
+
+        def failure(code, was_requested):
+            return ProviderOutcome(
+                provider_name, "timeout" if code == "QUERY_BUDGET_EXCEEDED" else "provider_error",
+                error_code=code, latency_ms=max(0, int((time.monotonic() - started) * 1000)),
+                provenance={"request_budget": {"requested": was_requested}},
+            )
+
+        with _request_inflight_lock:
+            if time.monotonic() >= request_deadline:
+                return failure("QUERY_BUDGET_EXCEEDED", False)
+            if key in _request_inflight:
+                return failure("REQUEST_INFLIGHT", False)
+            _request_inflight[key] = token
+
+        def clear_slot():
+            with _request_inflight_lock:
+                if _request_inflight.get(key) is token:
+                    _request_inflight.pop(key)
+
+        def run_request():
+            try:
+                if time.monotonic() >= request_deadline:
+                    result.put((failure("QUERY_BUDGET_EXCEEDED", False), None))
+                    return
+                requested.set()
+                loaded = provider_loader(provider_name) if provider_loader is not None else provider
+                # Construction may itself consume the entire request budget.
+                if time.monotonic() >= request_deadline:
+                    result.put((failure("QUERY_BUDGET_EXCEEDED", True), None))
+                    return
+                outcome = loaded.call(intent, params)
+                if time.monotonic() >= request_deadline:
+                    outcome = failure("QUERY_BUDGET_EXCEEDED", True)
+                result.put((outcome, None))
+            except Exception as exc:  # noqa: BLE001 - forward to canonical exception classification.
+                result.put((None, exc))
+            finally:
+                clear_slot()
+
+        try:
+            threading.Thread(target=run_request, daemon=True, name="ym-index-request").start()
+        except Exception:  # noqa: BLE001 - a local thread failure must release its slot and return safely.
+            clear_slot()
+            return failure("REQUEST_START_FAILED", False)
+        except BaseException:
+            clear_slot()
+            raise
+        remaining = request_deadline - time.monotonic()
+        if remaining <= 0:
+            return failure("QUERY_BUDGET_EXCEEDED", requested.is_set())
+        try:
+            outcome, error = result.get(timeout=min(remaining, threading.TIMEOUT_MAX))
+        except queue.Empty:
+            return failure("QUERY_BUDGET_EXCEEDED", requested.is_set())
+        if time.monotonic() >= request_deadline:
+            return failure("QUERY_BUDGET_EXCEEDED", requested.is_set())
+        if error is not None:
+            raise error
+        return outcome
 
     def run():
         try:
@@ -1579,6 +1657,19 @@ def _query_with(
     """Canonical router core with private, test/smoke-only dependency injection."""
 
     call_params = dict(params)
+    request_deadline = None
+    if "request_budget_seconds" in call_params:
+        budget = call_params.pop("request_budget_seconds")
+        if intent not in {"realtime_market", "index_kline"}:
+            raise ValueError("request_budget_seconds only supports realtime_market and index_kline")
+        try:
+            valid = (not isinstance(budget, bool) and isinstance(budget, (int, float))
+                     and math.isfinite(budget) and budget > 0)
+        except (OverflowError, TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError("request_budget_seconds must be a finite positive number")
+        request_deadline = time.monotonic() + float(budget)
     provider_loader = provider_loader or _provider_for
     state_loader = state_loader or _provider_state
     policy_loader = policy_loader or load_compiled_policy
@@ -1609,6 +1700,11 @@ def _query_with(
     compare_state = state_loader() if compare_deadline is not None else None
 
     for provider_index, provider_name in enumerate(spec.providers):
+        if request_deadline is not None and time.monotonic() >= request_deadline:
+            attempts.append(ProviderAttempt(provider_name, "timeout", "QUERY_BUDGET_EXCEEDED", 0))
+            attempt_diagnostics.append({"provider": provider_name, "kind": "request_budget",
+                                        "error_code": "QUERY_BUDGET_EXCEEDED", "requested": False})
+            break
         if compare_deadline is not None:
             if time.monotonic() >= compare_deadline:
                 attempts.append(ProviderAttempt(provider_name, "timeout", "QUERY_BUDGET_EXCEEDED", 0))
@@ -1656,12 +1752,19 @@ def _query_with(
                 # provider; fallback providers must receive the public V2
                 # params unchanged.
                 provider_params["source"] = "stocktoday"
-            provider = provider_loader(provider_name)
-            if compare_deadline is not None:
+            if request_deadline is not None:
+                outcome = _bounded_provider_call(
+                    None, provider_name, intent, provider_params,
+                    request_deadline - time.monotonic(),
+                    request_deadline=request_deadline, provider_loader=provider_loader,
+                )
+            elif compare_deadline is not None:
+                provider = provider_loader(provider_name)
                 remaining = compare_deadline - time.monotonic()
                 allowed = min(remaining, _COMPARE_PROVIDER_SECONDS[min(provider_index, 2)])
                 outcome = _bounded_provider_call(provider, provider_name, intent, provider_params, allowed)
             else:
+                provider = provider_loader(provider_name)
                 outcome = provider.call(intent, provider_params)
         except (TimeoutError, socket.timeout):
             outcome = ProviderOutcome(provider_name, "timeout", error_code="TIMEOUT")
@@ -1673,6 +1776,20 @@ def _query_with(
                 "provider_error",
                 error_code=_safe_error_code(type(error).__name__, "PROVIDER_ERROR"),
             )
+        if (request_deadline is not None and time.monotonic() >= request_deadline
+                and outcome.error_code != "QUERY_BUDGET_EXCEEDED"):
+            outcome = ProviderOutcome(provider_name, "timeout", error_code="QUERY_BUDGET_EXCEEDED",
+                                      provenance={"request_budget": {"requested": True}})
+        if request_deadline is not None and outcome.error_code in {"QUERY_BUDGET_EXCEEDED", "REQUEST_INFLIGHT", "REQUEST_START_FAILED"}:
+            # Local refusal is neither a vendor error nor a global breaker event.
+            # Copy only pipeline-owned typed fields; diagnostics never affect the read.
+            try:
+                attempt_diagnostics.append({
+                    "provider": provider_name, "kind": "request_budget", "error_code": outcome.error_code,
+                    "requested": (outcome.provenance or {}).get("request_budget", {}).get("requested") is True,
+                })
+            except Exception:  # noqa: BLE001, S110 - diagnostic failure must not change the read.
+                pass
         outcome_status = (
             outcome.status
             if outcome.status in _CONTINUE_STATUSES | {"success", "empty"}
@@ -2078,6 +2195,23 @@ def _query_with(
             result["_meta"]["status"] = "degraded"
         if result["_meta"]["status"] == "degraded" and not reasons:
             reasons.append("QUALITY_PARTIAL")
+    if request_deadline is not None and provider_used is not None and time.monotonic() >= request_deadline:
+        # Include normalization, quality, and envelope work in final acceptance.
+        # Rebuild through the canonical failure contract, never retain late data.
+        attempts[-1] = replace(attempts[-1], status="timeout", error_code="QUERY_BUDGET_EXCEEDED")
+        attempt_diagnostics.append({"provider": provider_used, "kind": "request_budget",
+                                    "error_code": "QUERY_BUDGET_EXCEEDED", "requested": True})
+        result = build_result(
+            intent=intent, data=None, status="error", provider_used=None, attempts=attempts,
+            data_scope=spec.data_scope, trade_usage=spec.trade_usage,
+            quality={**_failure_quality(intent, call_params, "error", 0),
+                     "reason_codes": ["source_error", "QUERY_BUDGET_EXCEEDED"]}, max_age_sec=spec.max_age_sec,
+            pipeline_version=pipeline_version, route_policy_version=route_policy_version,
+            policy_evidence_sha256=policy_evidence_sha256, policy_status=policy_status,
+            source_tier=_source_tier(intent, call_params, spec, None, attempts),
+        )
+        result["_meta"]["attempt_diagnostics"] = attempt_diagnostics
+        annotate_failure_diagnostics(result)
     return result
 
 
