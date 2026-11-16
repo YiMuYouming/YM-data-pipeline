@@ -252,24 +252,25 @@ def _bounded_provider_call(
                 provenance={"request_budget": {"requested": was_requested}},
             )
 
-        with _request_inflight_lock:
-            if time.monotonic() >= request_deadline:
-                return failure("QUERY_BUDGET_EXCEEDED", False)
-            if key in _request_inflight:
-                return failure("REQUEST_INFLIGHT", False)
-            _request_inflight[key] = token
-
-        def clear_slot():
+        def clear_slot(*, only_unstarted=False):
             with _request_inflight_lock:
-                if _request_inflight.get(key) is token:
+                was_requested = requested.is_set()
+                if (_request_inflight.get(key) is token
+                        and not (only_unstarted and was_requested)):
                     _request_inflight.pop(key)
+                return was_requested
 
         def run_request():
             try:
-                if time.monotonic() >= request_deadline:
-                    result.put((failure("QUERY_BUDGET_EXCEEDED", False), None))
-                    return
-                requested.set()
+                with _request_inflight_lock:
+                    # Start/cancellation handoff: a revoked native thread must
+                    # never start provider work or release a replacement owner.
+                    if _request_inflight.get(key) is not token:
+                        return
+                    if time.monotonic() >= request_deadline:
+                        result.put((failure("QUERY_BUDGET_EXCEEDED", False), None))
+                        return
+                    requested.set()
                 loaded = provider_loader(provider_name) if provider_loader is not None else provider
                 # Construction may itself consume the entire request budget.
                 if time.monotonic() >= request_deadline:
@@ -285,12 +286,18 @@ def _bounded_provider_call(
                 clear_slot()
 
         try:
+            with _request_inflight_lock:
+                if time.monotonic() >= request_deadline:
+                    return failure("QUERY_BUDGET_EXCEEDED", False)
+                if key in _request_inflight:
+                    return failure("REQUEST_INFLIGHT", False)
+                _request_inflight[key] = token
             threading.Thread(target=run_request, daemon=True, name="ym-index-request").start()
-        except Exception:  # noqa: BLE001 - a local thread failure must release its slot and return safely.
-            clear_slot()
-            return failure("REQUEST_START_FAILED", False)
+        except Exception:  # noqa: BLE001 - report actual job ownership when start did not complete.
+            was_requested = clear_slot(only_unstarted=True)
+            return failure("REQUEST_START_FAILED", was_requested)
         except BaseException:
-            clear_slot()
+            clear_slot(only_unstarted=True)
             raise
         remaining = request_deadline - time.monotonic()
         if remaining <= 0:

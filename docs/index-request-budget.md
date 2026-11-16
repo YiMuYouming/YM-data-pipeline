@@ -23,11 +23,24 @@ NaN、无穷及无法转换为有限浮点数的大整数抛 `ValueError`；其�
 | --- | --- | --- |
 | `QUERY_BUDGET_EXCEEDED` | 总预算耗尽或结果迟到 | `request_budget`；是否已开始构造/调用 |
 | `REQUEST_INFLIGHT` | 相同来源及意图已有未结束 worker | `request_budget` / false |
-| `REQUEST_START_FAILED` | 本地 worker 启动失败，槽已释放 | `request_budget` / false |
+| `REQUEST_START_FAILED` | 本地启动调用未正常完成 | `request_budget`；未开始作业为 false，已开始为 true |
 
 `attempts` 保留原四字段形状；未发起的后备尝试明确 `requested=false`。诊断不复制
 原始异常正文、响应或凭据。上述本地预算/占槽行为不写全局 provider 熔断状态。
 不传参数仍使用原同步路径；既有 `index_intraday_compare` 的预算与状态保持独立。
+
+启动调用中断不证明作业已停止。worker开始作业与调用方撤销预约在同一槽锁内交接：
+尚未开始可撤销，之后才到达的旧线程不得工作或清除新owner；已经开始则保槽直到worker
+最终结束。`KeyboardInterrupt` 原样向上传播，不取消已开始的上游作业。真正未创建
+worker的启动资源失败为 `REQUEST_START_FAILED/requested=false`，释放槽并允许后续恢复。
+
+上述交接适用于普通 deadline、真实启动资源失败，以及启动调用中正常的已开始/未开始
+取消；真实 `Thread.start` 已启动作业后收到 SIGINT/`KeyboardInterrupt` 时，仍须保槽，
+不能把调用方异常当作上游已停止。预算超时使用返回/队列协议，不向 worker 注入异常。
+不承诺任意异步异常后的原地恢复：已核 CPython 3.11.15 的特定 `with` 正常退出
+清理点，debugger、coverage 或用户 trace 回调可额外插入 Python 异常投递点，使 Lock
+的退出清理被跳过并遗留锁。该 VM/instrumentation 限制及失败证据保留，本轮未把它
+宣称为已修，也未新增通用信号/取消框架；不能将该额外 trace 点等同普通 OS 信号检查点。
 
 这是工程等待预算，不能强杀 Python 中已进入上游的 worker，也不承诺操作系统硬实时。
 worker 卡住期间相应槽保持忙，调用方得到安全缺失；主线程还存在本地调度和信封处理开销。

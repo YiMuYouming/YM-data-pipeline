@@ -1,7 +1,11 @@
 """Optional index request budget: offline public boundary and worker lifetime."""
 
 import json
+import signal
 import socket
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 import unittest
@@ -356,6 +360,214 @@ class IndexRequestBudgetTests(unittest.TestCase):
         self.assertTrue(result["_meta"]["attempt_diagnostics"][0]["requested"])
         self.assertIsNone(result["data"])
         self.assertIsNone(result["_meta"]["provider_used"])
+
+    def test_real_sigint_after_started_job_retains_slot_and_propagates(self):
+        self.providers = ("tencent",)
+        entered, _ = self.block("tencent")
+        previous = sys.gettrace()
+
+        def interrupt(frame, event, arg):
+            if event == "return" and frame.f_code is threading.Thread.start.__code__:
+                sys.settrace(previous)
+                self.assertTrue(entered.wait(.5))
+                signal.raise_signal(signal.SIGINT)
+            return interrupt
+
+        try:
+            sys.settrace(interrupt)
+            with self.assertRaises(KeyboardInterrupt):
+                self.request(budget=.5)
+        finally:
+            sys.settrace(previous)
+        self.assertEqual(1, len(api._request_inflight))
+        self.assertTrue(self.workers[0].is_alive())
+        refused = self.request()
+        self.assertEqual("REQUEST_INFLIGHT", refused["_meta"]["attempts"][0]["error_code"])
+        self.assertEqual(["tencent"], self.loads)
+
+    def test_real_started_thread_revoked_before_job_cannot_work_or_clear_new_owner(self):
+        self.providers = ("tencent",)
+        paused, resume = threading.Event(), threading.Event()
+        self.releases.append(resume)
+        old_workers = []
+        previous_main, previous_workers = sys.gettrace(), threading.gettrace()
+
+        def pause_target(frame, event, arg):
+            if (event == "call" and frame.f_code.co_name == "run_request"
+                    and frame.f_code.co_filename == api.__file__):
+                old_workers.append(threading.current_thread())
+                self.workers.append(threading.current_thread())
+                paused.set()
+                if not resume.wait(1):
+                    raise AssertionError("test release missing")
+                return None
+            return pause_target
+
+        def interrupt(frame, event, arg):
+            if event == "return" and frame.f_code is threading.Thread.start.__code__:
+                sys.settrace(previous_main)
+                self.assertTrue(paused.wait(.5))
+                signal.raise_signal(signal.SIGINT)
+            return interrupt
+
+        try:
+            threading.settrace(pause_target)
+            sys.settrace(interrupt)
+            with self.assertRaises(KeyboardInterrupt):
+                self.request(budget=.5)
+        finally:
+            sys.settrace(previous_main)
+            threading.settrace(previous_workers)
+        self.assertEqual([], self.loads)
+        self.assertEqual({}, api._request_inflight)
+        entered, _ = self.block("tencent")
+        self.request()
+        self.assertTrue(entered.is_set())
+        with api._request_inflight_lock:
+            new_owner = api._request_inflight[("tencent", "realtime_market")]
+        resume.set()
+        old_workers[0].join(.25)
+        self.assertFalse(old_workers[0].is_alive(), "revoked worker entered provider work")
+        self.assertEqual(["tencent"], self.loads)
+        with api._request_inflight_lock:
+            self.assertIs(new_owner, api._request_inflight[("tencent", "realtime_market")])
+        busy = self.request()
+        self.assertEqual("REQUEST_INFLIGHT", busy["_meta"]["attempts"][0]["error_code"])
+        self.assertEqual(["tencent"], self.loads)
+
+    def test_real_start_rejected_before_native_creation_releases_and_recovers(self):
+        self.providers = ("tencent",)
+        previous = sys.gettrace()
+
+        def reject(frame, event, arg):
+            if event == "call" and frame.f_code is threading.Thread.start.__code__:
+                sys.settrace(previous)
+                raise RuntimeError("fixture_resource_unavailable")
+            return reject
+
+        try:
+            sys.settrace(reject)
+            rejected = self.request()
+        finally:
+            sys.settrace(previous)
+        self.assertEqual("REQUEST_START_FAILED", rejected["_meta"]["attempts"][0]["error_code"])
+        self.assertFalse(rejected["_meta"]["attempt_diagnostics"][0]["requested"])
+        self.assertEqual([], self.loads)
+        self.assertEqual({}, api._request_inflight)
+        self.assertEqual("tencent", self.request()["_meta"]["provider_used"])
+
+    def test_real_sigint_after_slot_reservation_before_spawn_leaves_no_false_busy(self):
+        self.providers = ("tencent",)
+        previous = sys.gettrace()
+
+        def interrupt(frame, event, arg):
+            if (event == "line" and frame.f_code is api._bounded_provider_call.__code__
+                    and ("tencent", "realtime_market") in api._request_inflight
+                    and not api._request_inflight_lock.locked()):
+                sys.settrace(previous)
+                signal.raise_signal(signal.SIGINT)
+            return interrupt
+
+        try:
+            sys.settrace(interrupt)
+            with self.assertRaises(KeyboardInterrupt):
+                self.request()
+        finally:
+            sys.settrace(previous)
+        self.assertEqual([], self.loads)
+        self.assertEqual([], self.workers)
+        try:
+            self.assertEqual({}, api._request_inflight)
+        finally:
+            # Preserve test isolation on the known-red implementation without a worker.
+            with api._request_inflight_lock:
+                api._request_inflight.pop(("tencent", "realtime_market"), None)
+        self.assertEqual("tencent", self.request()["_meta"]["provider_used"])
+
+    def test_real_sigint_handler_exceptions_after_job_start_keep_requested_and_slot(self):
+        # Signal handlers are isolated to this child; production signal handling is untouched.
+        script = textwrap.dedent('''
+            import json, signal, socket, sys, threading
+            from dataclasses import replace
+            from datetime import datetime
+            from types import SimpleNamespace
+            from unittest.mock import patch
+            from ym_stock_data import api, query
+            from ym_stock_data.contracts import TZ_SHANGHAI
+            from ym_stock_data.providers.base import ProviderOutcome
+            from ym_stock_data.routing import route_for
+            observations = []
+            now = datetime(2026, 11, 16, 10, 0, tzinfo=TZ_SHANGHAI)
+            for error_type in (RuntimeError, TimeoutError):
+                entered, release = threading.Event(), threading.Event()
+                loads, workers = [], []
+                def load(name):
+                    loads.append(name)
+                    workers.append(threading.current_thread())
+                    def call(intent, params):
+                        entered.set()
+                        assert release.wait(1), 'child release missing'
+                        return ProviderOutcome(name, 'success', {
+                            '上证指数': 3200, '深证指数': 10000, '创业指数': 2100,
+                            'quote_time': now.isoformat()})
+                    return SimpleNamespace(call=call)
+                def handler(signum, frame):
+                    raise error_type('fixture_signal_handler')
+                def trace(frame, event, arg):
+                    if event == 'return' and frame.f_code is threading.Thread.start.__code__:
+                        sys.settrace(None)
+                        assert entered.wait(.5), 'child provider not entered'
+                        signal.raise_signal(signal.SIGINT)
+                    return trace
+                previous_handler = signal.signal(signal.SIGINT, handler)
+                try:
+                    with patch.object(api, '_provider_for', load), \\
+                            patch.object(api, '_provider_state', lambda: SimpleNamespace(active_breaker=lambda name: None)), \\
+                            patch.object(api, '_now_shanghai', lambda: now), \\
+                            patch.object(api, 'load_compiled_policy', lambda: SimpleNamespace(route=lambda intent, params:
+                                replace(route_for(intent, params), providers=('tencent',)))), \\
+                            patch.object(socket.socket, 'connect', side_effect=AssertionError('network forbidden')):
+                        sys.settrace(trace)
+                        result = query('realtime_market', request_budget_seconds=.5)
+                        sys.settrace(None)
+                        row = {'error_type': error_type.__name__,
+                            'code': result['_meta']['attempts'][0]['error_code'],
+                            'requested': result['_meta']['attempt_diagnostics'][0]['requested'],
+                            'slots': len(api._request_inflight), 'alive': workers[0].is_alive()}
+                        busy = query('realtime_market', request_budget_seconds=.05)
+                        row.update(busy_code=busy['_meta']['attempts'][0]['error_code'], loads_before_release=len(loads))
+                        release.set()
+                        for worker in workers:
+                            worker.join(1)
+                            assert not worker.is_alive()
+                        recovered = query('realtime_market', request_budget_seconds=.2)
+                        row['recovered'] = recovered['_meta']['provider_used']
+                        observations.append(row)
+                finally:
+                    sys.settrace(None)
+                    signal.signal(signal.SIGINT, previous_handler)
+                    release.set()
+                    for worker in workers:
+                        worker.join(1)
+                        assert not worker.is_alive()
+                    assert not api._request_inflight
+            print(json.dumps({'module': api.__file__, 'observations': observations}))
+        ''')
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", script], capture_output=True, text=True, timeout=5, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(api.__file__, payload["module"])
+        self.assertEqual(2, len(payload["observations"]))
+        for row in payload["observations"]:
+            self.assertEqual("REQUEST_START_FAILED", row["code"])
+            self.assertTrue(row["requested"])
+            self.assertEqual(1, row["slots"])
+            self.assertTrue(row["alive"])
+            self.assertEqual("REQUEST_INFLIGHT", row["busy_code"])
+            self.assertEqual(1, row["loads_before_release"])
+            self.assertEqual("tencent", row["recovered"])
 
 
 if __name__ == "__main__":
