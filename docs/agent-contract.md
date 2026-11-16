@@ -1,5 +1,7 @@
 # 数据管道开发契约
 
+**11-16可选指数预算**：仅 `realtime_market`、`index_kline` 接受 `request_budget_seconds`（有限正整数或浮点数），未传参保持原路径。参数由公共层消费，不透传 provider；单调期限、在途槽、`requested`、稳定错误码和取消限制以[指数预算契约](index-request-budget.md)为准。天元两意图合计默认5秒，不改变其他消费者的默认等待或质量门。
+
 仅在修改 provider、路由、契约、凭据或下游迁移时读取相关章节。相对路径以仓库根为准。
 当前 canonical checkout 是 `/Users/yimu/Projects/YM_Capital/YM-data-pipeline`。
 

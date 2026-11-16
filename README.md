@@ -1,5 +1,7 @@
 # ym-stock-data
 
+**11-16指数可选运行预算已验收**：`realtime_market` / `index_kline` 可传 `request_budget_seconds`，覆盖构造、源调用和迟到接收；未传参保持原行为。预算路径限制同源同意图的在途作业，超时不复用结果。该变更经本人跨仓确认；这是工程等待预算，不能强杀上游。参数、错误码和取消边界见[完整契约](docs/index-request-budget.md)。
+
 [弈沐资本导航](../README.md) · [文档与历史资料](docs/README.md)
 
 弈沐资本 A 股统一数据通道。canonical checkout 是
