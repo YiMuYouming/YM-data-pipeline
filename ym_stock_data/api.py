@@ -1313,6 +1313,11 @@ def _quality_failure_code(
         tolerant = outcome.provider == "stocktoday" and not (
             params.get("source") == "stocktoday" and params.get("quote_age_policy") == "wall_clock"
         )
+        # A strict automatic whole-route fallback uses the same per-code
+        # contract as the StockToday fill path.  Final validation drops bad
+        # rows; one bad Tencent row must not discard the usable remainder.
+        tolerant = tolerant or (outcome.provider == "tencent" and not params.get("source")
+                                and params.get("quote_age_policy") == "wall_clock")
         valid_rows = 0
         for requested in params["codes"]:
             failure = _snapshot_row_failure(requested, data.get(requested), now, max_age_sec,
@@ -1599,6 +1604,7 @@ def _query_with(
     fetched_at = None
     auth = None
     observed_auth = None
+    snapshot_rejected = {}
     compare_deadline = time.monotonic() + _COMPARE_BUDGET_SECONDS if intent == "index_intraday_compare" else None
     compare_state = state_loader() if compare_deadline is not None else None
 
@@ -1722,6 +1728,14 @@ def _query_with(
                     spec.max_age_sec,
                 )
                 if quality_error is not None:
+                    if (intent == "stock_snapshot" and call_params.get("quote_age_policy") == "wall_clock"
+                            and not call_params.get("source") and actual == "tencent"):
+                        checked_at = _now_shanghai()
+                        snapshot_rejected = {
+                            code: failure for code in call_params["codes"]
+                            if (failure := _snapshot_row_failure(
+                                code, outcome.data.get(code), checked_at, spec.max_age_sec, "wall_clock"))
+                        }
                     attempts.append(
                         ProviderAttempt(
                             actual,
@@ -1843,6 +1857,7 @@ def _query_with(
     if (intent == "stock_snapshot" and call_params.get("quote_age_policy") == "wall_clock"
             and isinstance(data, dict)):
         # Final check also covers whole-route fallback and time spent filling other rows.
+        whole_fallback = provider_used == "tencent" and not call_params.get("source")
         now = _now_shanghai()
         rejected = {}
         for code in call_params["codes"]:
@@ -1855,15 +1870,25 @@ def _query_with(
                 quote_time = _parse_strict_quote_datetime(data[code].get("quote_time"))
                 if quote_time is not None:
                     data[code]["lag_sec"] = max(0, int((now - quote_time).total_seconds()))
+        if whole_fallback:
+            snapshot_rejected = rejected
         if rejected and final_quality is not None:
             requested_count = len(call_params["codes"])
-            final_quality.update(status="partial", requested_count=requested_count,
+            remaining = requested_count - len(rejected)
+            failed_whole_fallback = whole_fallback and not remaining
+            final_quality.update(status="error" if failed_whole_fallback else "partial", requested_count=requested_count,
                                  returned_count=requested_count - len(rejected),
                                  missing=list(rejected), missing_count=len(rejected),
                                  coverage=round((requested_count - len(rejected)) / requested_count, 6))
             final_quality["reason_codes"] = sorted(set(final_quality.get("reason_codes") or [])
                                                     | set(rejected.values()) | {"MISSING_CODES"})
-            final_status = "degraded"
+            final_status = "error" if failed_whole_fallback else "degraded"
+            if failed_whole_fallback:
+                # Contract errors name no successful provider.  Preserve the
+                # actual source in its attempt and retain its receipt time.
+                attempts[-1] = replace(attempts[-1], status="quality_failure",
+                                       error_code="QUALITY_SNAPSHOT_INCOMPLETE")
+                provider_used, final_count = None, 0
             observation = data.get("_stocktoday")
             if isinstance(observation, dict):
                 observation["missing_codes"] = list(rejected)
@@ -1878,6 +1903,14 @@ def _query_with(
     quality = final_quality or _failure_quality(
         intent, call_params, final_status, final_count
     )
+    if (intent == "stock_snapshot" and call_params.get("quote_age_policy") == "wall_clock"
+            and not call_params.get("source") and provider_used is None
+            and attempts and attempts[-1].provider == "tencent"):
+        requested_count = len(call_params["codes"])
+        quality.update(requested_count=requested_count, returned_count=0,
+                       missing=list(call_params["codes"]), missing_count=requested_count, coverage=0.0)
+        quality["reason_codes"] = sorted(set(quality.get("reason_codes") or [])
+                                         | set(snapshot_rejected.values()) | {"MISSING_CODES"})
     policy_status = getattr(compiled_policy, "policy_status", "inactive")
     policy_evidence_sha256 = getattr(
         compiled_policy, "policy_evidence_sha256", None
@@ -1925,6 +1958,8 @@ def _query_with(
         cooldown_items = [item for item in attempt_diagnostics if item.get("kind") == "vendor_cooldown"]
         if cooldown_items:
             result["_meta"]["vendor_cooldown"] = cooldown_items[-1]
+    if snapshot_rejected:
+        result["_meta"]["snapshot_rejected"] = snapshot_rejected
     if call_params.get("use_case") in ZJ_MINUTE_EVIDENCE_USE_CASES:
         # 只作审计标记，不改变 provider/quality/attempts 既有标记。
         result["_meta"]["evidence_use_case"] = call_params["use_case"]
